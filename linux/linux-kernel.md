@@ -1,0 +1,281 @@
+# 深入理解 linux 内核
+
+## 概念
+
+### 页表
+
+(内存的)虚拟地址到物理地址的映射一般由**多级页表**完成
+
+1. 第一级称为全局页目录(PGD). PGD 用于索引进程中的一个数组(每个进程中有且仅有一个 PGD 数组), PGD 项指向另一些项的起始地址, 即中间页目录(PMD)
+2. PMD 指向的下级页目录, 称为页表或页目录(PTE)
+3. 偏移量 -- 指向页内部的一个字节位置
+
+优: 对未使用的区域不需要建立中间页目录或页表
+劣: 每次访问内存都需要逐级访问多个数组才能将虚拟地址转换为物理地址
+
+CPU 优化:
+
+1. MMU
+2. 对于地址转换最频繁的那部分地址, 保存到 **地址转换后备缓冲器(TLB)** 的 CPU 高速缓存中
+
+### 物理内存分配
+
+#### 伙伴系统
+
+- 系统中的空闲内存块总是两两分组, 每组中的俩个内存块称为伙伴
+- 内核对大小相同的伙伴(1, 2, 4, 8, 16...), 都放置到同一个列表中管理
+
+#### slab 缓存
+
+对于需要比完整帧小的小内存, 则使用一般性缓存 -- slab 缓存
+
+- 对频繁使用的对象, 内核定义了只包含了所需*类型对象实例*的缓存(slab 自动维护与伙伴系统的交互, 在缓存用尽时会请求新的页帧)
+- 对通常情况下的小内存块的分配, 内核针对不同大小的对象定义了一组 slab 缓存, 可以通过 kmalloc/kfree 交互
+- *slab 缓存*一般作为伙伴系统的下一级缓存
+
+#### 页面交换和页面回收
+
+- 页面交换
+  - 将硬盘空间作为扩展内存
+  
+- 页面回收
+  - 用于将内存映射被修改的内容与底层的块设备同步
+  
+#### 对象管理与引用计数
+
+在内核中跟踪/记录/管理 C 的结构实例
+
+部分功能
+- 引用计数
+- 管理对象链表(集合)
+- 集合加锁
+- 将对象属性导出到用户空间(通过 sysfs)
+
+```c
+struct kobject {
+    const char          * k_name;
+    struct kref         kref; // 引用技术 -- 方便原子操作
+    struct list_head    entry;
+    struct kobject      * parent;
+    struct kset         * kset; // 类型集合
+    struct kobj_type    * ktype; // 详细信息, 析构
+    struct sysfs_dirent * sd;
+}
+```
+
+##### 类型
+
+```c
+struct kobj_type {
+    struct sysfs_ops * sysfs_ops;
+    struct attribute ** default_attrs;
+}
+```
+
+##### 引用计数
+
+```c
+struct kref {
+  atomic_t refconunt;
+}
+```
+
+### 进程管理和调度
+
+```c
+struct task_struct {
+  volatile long state;  /* -1:不可运行 0:可运行 >0:停止 */
+  void *stack;
+  atomic_t usage;
+  unsigned long flags;  /* 进程标志 */
+  unsigned long ptrace;
+  int lock_depth;       /* 大内核锁深度 */
+  
+  int prio, static_prio, normal_prio;
+  struct list_head run_list;
+  const struct sched_class *sched_class;
+  struct sched_entity se;
+  
+  unsigned short ioprio;
+  
+  unsigned long policy;
+  cpumask_t cpus_allowed;
+  unisgned int time_slice;
+  
+#if defined(CONFIG_SCHEDSTATS) || defined (CONFIG_TASK_DELAY_ACCT)
+  struct sched_info sched_info;
+#endif
+  
+  struct list_head tasks;
+  
+  /*
+    ptrace_list/ptrace_children -- ptrace 观测到的当前进程的子进程列表
+  */
+  
+  struct list_head ptrace_children;
+  
+  struct list_head ptrace_list;
+  
+  struct mm_struct *mm, *active_mm;
+  
+  /* 进程状态 */
+  struct linux_binfmt *binfmt;
+  long exit_state;
+  int exit_code, exit_signal;
+  int pdeath_signal; /* 在父进程终止时发送的信号 */
+  
+  unsigned int personality;
+  unsigned did_exec:1;
+  pid_t pid;
+  pit_t tpid;
+  
+  /*
+   * 分别指向(原)父进程, 最年轻的子进程, 年幼的兄弟进程, 年长的兄弟进程(??在哪)
+   */
+  struct task_struct *real_parent; /* 真正的父进程 -- 调式下 */
+  struct task_struct *parent;
+
+  /*
+   * children/sibling 链表外加当前调试的进程, 构成了单签进程的所有子进程
+   */
+  struct list_head children;
+  struct list_head sibling;
+  struct taks_struct *group_leader;
+  
+  /* PID 与 PID 散列表的联系 */
+  struct pid_link pids[PIDTYPE_MAX];
+  struct list_head thread_group;
+  
+  struct completion *vfork_done; /* 用于 vfrok() */
+  int __user *set_child_tid; /* CLONE_CHILD_SETTID */
+  int __user *clear_child_tid; /* CLONE_CHILD_CLEARTID */
+  
+  unsigned long rt_priority;
+  cputime_t utime, stime, utimescaled, stimescaled;
+  unsigned long nvcsw, nivcsw;
+  struct timespec start_time;
+  struct timespec real_start_time;
+
+  /* 内存管理器失效和页交换信息(有争议)
+   * 既可以看作是特定于 内存管理器 的,
+   * 也可以看作特定于 线程 的
+   */
+  unsigned long min_flt, maj_flt;
+
+  cputime_t it_prof_expires, it_virt_expires;
+  unsigned long long it_sched_expires;
+  struct list_head cpu_times[3];
+
+  /* 进程身份凭据 */
+  uid_t uid, euid, suid, fsuid;
+  gid_t gid, egid, sgid, fsgid;
+  struct group_info *group_info;
+  kernel_cap_t cap_effective, cap_inheritable, cap_permitted;
+
+  unsigned keep_capabilities:1;
+  struct user_struct *user;
+
+  /* 删除路径后的 可执行文件名称
+   * 用 [gs]et_task_comm 访问 (用 task_lock() 锁定)
+   * 用 flush_old_exec 初始化
+   */
+  char comm[TASK_COMM_LEN];
+
+  /* 文件系统信息 */
+  int link_count, total_link_count;
+  /* ipc 相关 */
+  struct sysv_sem, sysvsem;
+  /* 当前进程特定于 CPU 的状态信息 */
+  struct thread_struct thread;
+  /* 文件系统信息 */
+  struct fs_struct *fs;
+  /* 命名空间 */
+  struct nsproxy *nsproxy;
+  /* 信号处理程序 */
+  struct signal_struct *signal;
+  struct sighand_struct *sighand;
+
+  sigset_t blocked, real_blocked;
+  sigset_t saved_sigmask; /* 用 TIF_RESTORE_SIGMASK 恢复 */
+  struct sigpending pending;
+
+  unsigned long sas_ss_sp;
+  size_t sas_ss_size;
+  int (*notifier)(void *priv);
+  void *notifier_data;
+  sigset_t *notifier_mask;
+
+#ifdef CONFIG_SECURITY
+  void *security;
+#endif
+
+  /* 线程组跟踪 */
+  u32 parent_exec_id;
+  u32 self_exec_id;
+
+  /* 日志文件系统信息 */
+  void journal_info;
+
+  /* 虚拟内存状态 */
+  struct reclaim_state *reclaim_state;
+
+  struct backing_dev_info *backing_dev_info;
+
+  struct io_context *io_context;
+
+  unsigned long ptrace_message;
+  siginfo_t *last_siginfo; /* 由 ptrace 使用 */
+}
+```
+
+#### state
+
+- TASK_RUNNING
+- TASK_INTERRUPTIBLE
+- TASK_UNINTERUPTIBLE
+- TASK_STOPPED
+- TASK_TRACED
+
+以下常量对 state 和 exit_state 字段都有效
+
+- EXIT_ZOMBIE
+- EXIT_DEAD
+
+#### namespace
+
+#### 进程 ID
+
+1. 进程 ID
+  1. 线程组 -- TGID
+  2. 进程组 -- PGID
+  3. 会话 -- SID
+  
+### 锁与进程间通信
+
+#### 近似的 pre-CPU
+
+通过 **链式结构** 把多 CPU 的操作分散, 但是导致值的中间态很可能是 **不准确** 的
+
+#### 锁竞争与细颗粒度锁
+
+锁的目的:
+- 防止对代码的并发访问
+- 对性能的影响必须尽可能的小
+
+较细颗粒度的锁的问题:
+- 获取多个锁会增加操作的开销, 很自然会出现一个操作需要同时访问数个受保护的区域, 即安全的锁**获取/释放**顺序
+
+#### SysV 进程间通信
+
+```c
+struct kern_ipc_perm {
+  int id;
+  key_t key; // 标识用的魔数
+  uid_t uid;
+  gid_t gid;
+  uid_t cuid;
+  gid_t cgid;
+  mode_t mode; // 访问权限 掩码
+  unsigned long seq; // 分配 IPC 对象
+}
+```

@@ -1,0 +1,56 @@
+# 一致性
+
+## Innodb 一致性
+
+### 事务的隔离级别
+
+- 未提交读 -- 一个事务可以读取另一个**未提交**的数据
+- 提交读 -- 在一个事务提交后, 另外的事务才能够读取到提交的变化; 可能同时出现事务读取操作前后的不一致, 即**幻读**
+- 可重复读 -- 在该事务操作的整个过程中, 读取的数据都是一致的; 但**不保障**实际的数据不被修改
+- 序列化 -- 所有的事务操作串行处理; 牺牲了效率
+
+Innodb 默认是**可重复读**级别
+但是提供了以下手段, 以避免幻读:
+- select * from table for update; (排他写锁)
+  - 使用 Innodb 提供的 **next-key locks** 锁定被操作的表, 令该表获得该事务期间的**序列化**
+- select * from table lock in share mode; (共享读锁)
+  - **next-key locks**获得**加锁读**
+  
+### MVCC -- Innodb 的多版本并发控制
+
+- 每行记录后面都会由两个隐藏的列
+- 这两列分别保存该行的**创建时间**和**删除时间**对应的系统版本号
+- 系统版本号随操作(update, insert, delete)的进行而递增
+- 设该事务版本号为 X , 无锁操作下会查找 创建版本号 <=X 且 删除版本号 >X(或 undefined) 的行
+
+### Innodb 锁相关
+
+1. 记录锁(Read Lock/Record Lock): 在行相应的索引记录上的锁
+
+2. gap 锁: 是在索引记录间歇上的锁 -- 锁定一个范围, 但不包含记录本身
+
+3. next-key 锁: 是记录锁和在此索引记录之前的 GAP 上的锁的结合 -- 锁定一个范围, 并且锁定记录本身
+
+4. innodb 行锁的加锁方式: 当根据 innodb 表的索引搜索时, 设置共享锁(S)和排它锁(X) (以及意向共享(IS) 或 意向排他(IX)) 在索引记录上
+
+5. 行锁实际上是索引锁
+
+6. innodb_locks_unsafe_for_binlog: 当为 0 时 (disabled), 这个开启了 gap 锁; 设置为 1, 关闭 gap 锁(这会导致幻读,引起主从同步不一致)
+
+7. 开启这个选项 innodb_locks_unsafe_for_binlog 并不关闭 gap 锁在外键检查方面的作用
+
+8. 在 UPDATE 和 DELETE 时，innodb 首先对遇到的每一行加行锁; 如果 innodb_locks_unsafe_for_binlog 开启, 那么不匹配的行上的锁将被释放; 如果未开启, 不匹配的行上的锁也不释放, 直到事务结束
+
+9. 即使 innodb 表上没有索引，也会使用内部的 clustered index 来进行锁定
+
+10. innodb 除主键的索引之外的其他索引和 clustered index 在内部是建立一张索引对应表; 当利用其他索引扫描记录时, 对其他索引加的锁最后都转换为对 clustered index 的锁
+
+11. 在 UPDATE 模式下, 对检索中遇到的记录加排它锁; 在 INSERT...SELECT 模式下, 对检索中遇到的记录加共享锁(S); 在 INSERT 模式下, 对检索中遇到的记录加排它锁(X); 在 DELETE 模式下, 对检索中遇到的记录加排它锁
+
+12. 在使用 unique index 进行搜索, 并且只返回一行时, 不使用 gap 锁
+
+13. next-key 锁举例: 假设索引包括 10，11，13，20，则 next-key 锁为: (negative infinity, 10], (10, 11], (11, 13], (13, 20], (20, positive infinity)
+
+14. 使用 next-key 锁可以预防幻读
+
+15. gap 锁在 read_committed 下或当 innodb_locks_unsafe_for_binlog=on 时被关闭; 当在这种情况下时, 不匹配的行上的锁将被释放
