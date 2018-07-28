@@ -279,3 +279,53 @@ struct kern_ipc_perm {
   unsigned long seq; // 分配 IPC 对象
 }
 ```
+
+## 内核调度的不完全抢占
+
+### 禁用/使能可抢占条件的操作
+
+对 **preempt_count** 操作
+
+```C
+add_preempt_count
+sub_preempt_count
+inc_preempt_count
+dec_preempt_count
+```
+
+- 使能: preempt_enable
+- 禁能: preempt_disable
+
+### 什么时候不允许抢占
+
+- **preempt_count()** 获取 preempt_count 的值
+- **preemptible()** 判断内核是否可抢占
+
+#### 内核正在进行中断操作
+
+_中断_只能被其他(优先级更高的)_中断_中止/抢占, _进程_**不允许**中止/抢占_中断_
+
+*进程调度函数 schedule() 会对此作出判断, 如果是在中断中调用, 会打印出错信息*
+
+#### 内核正在进行中断上下文的 Bottom Half (中断下部分)处理
+
+硬件中断返回前会执行**软中断**, 此时仍然处于中断上下文
+
+#### 内核的代码段帧持有 spinlock 自旋锁
+
+内核中的锁是为了在 SMP 系统中短时间内保证不同 CPU 上运行的程序并发执行的正确性
+当持有这些锁时, 内核不能被抢占
+
+#### 内核正在执行调度程序 Scheduler
+
+抢占的目地就是为了进行调度
+
+#### 内核正在对每个 CPU "私有"的数据结构操作
+
+在 SMP 中, 对于 per-CPU 数据结构未使用 spinlock 保护, 因为这些数据结构隐含的被 CPU 自身保护
+若允许抢占, 可能导致 per-CPU 数据调度到其他 CPU 上
+
+### 临界区
+
+处于**内核**临界区的程序不能被调度
+处于**用户**临界区的程序是可以的
