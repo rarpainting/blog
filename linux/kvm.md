@@ -184,5 +184,30 @@ Linux 进程调度
 - 处理器亲和性: 可设置 vCPU 在指定的物理 CPU 上运行
 - vCPU 数目不超过物理 CPU 数, 否则, 会出现线程间 CPU 内核资源竞争
 
+### 客户端 vCPU 分配规则
 
+1. 根据负载需要分配最少 vCPU
+2. 客户机 vCPU 总数不应超过物理 CPU 内核总数, 否则, 存在 CPU 竞争, CPU 核内线程切换, 导致 overhead
+3. 负载分为 计算负载和 I/O 负载; 对于计算负载, 需要分配较多 vCPU, 甚至需要考虑 CPU 亲和性
+
+### KVM 内存虚拟化
+
+利用 mmap 系统调用, 在 QEMU 主线程的虚拟地址空间中模拟 MMU 
+
+![两个到多个虚拟机](011413028483143.jpg)
+
+- VA->PA -- *客户机虚拟地址* 到 *客户机内存物理地址* 的映射
+- PA->MA -- VMM 负责的 *客户物理内存* 到 *实际机器内存* 的映射
+
+![内存虚拟化](011413028483143.jpg)
+
+VMM 内存虚拟化:
+- 软件方式 -- 内存地址翻译, Shadow page table
+- 硬件实现 -- 基于 CPU 的辅助虚拟化, AMD-NPT(Nested Page Tables) 和 Intel-EPT(Extended Page Tables)
+
+![Intel-EPT](011445076768587.jpg)
+
+EPT 硬件辅助虚拟化:
+- Guest Physical Address -> System Physical Address, VMM 不需要保留 SPT(Shadow Page Table), 不经过 SPT 转换过程
+- 能耗低, 硬件指令集更可靠和稳定
 
