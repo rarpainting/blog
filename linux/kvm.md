@@ -207,7 +207,86 @@ VMM 内存虚拟化:
 
 ![Intel-EPT](011445076768587.jpg)
 
-EPT 硬件辅助虚拟化:
+EPT 硬件辅助虚拟化 -- **两阶段记忆体转换**:
 - Guest Physical Address -> System Physical Address, VMM 不需要保留 SPT(Shadow Page Table), 不经过 SPT 转换过程
 - 能耗低, 硬件指令集更可靠和稳定
 
+### KSM(Kernel SamePage Merging OR Kernel Shared Memory)
+
+#### 原理
+
+作为 内核守护进程的 **KSMD** , 定期执行页面扫描, 识别副本页面并合并副本(借助 Linux 将内核相似的内存页合并成一个内存页)
+
+增加了内核开销
+提高了内存效率
+
+能实现更多的内存超分, 运行更多的虚机
+
+#### 实现过程 -- 合并过程
+
+**TODO**
+![合并](011433302547754.jpg)
+
+![Guest1 写内存后](011434087852627.jpg)
+
+### KVM Huge Page Backed Memory(巨页内存技术)
+
+- 技术链接 -- MongoDB
+
+## I/O 全虚拟化和准虚拟化
+
+在 QEMU/KVM 中 客户机可以使用的设备大致分为三类:
+
+- 模拟设备: 完全由 QEMU 纯软件模拟的设备
+- Virtio: 实现 VIRTIO API 的半虚拟化设备
+- PCI 设备直接分配
+
+### 全虚拟化 I/O 设备
+
+软件模拟设备
+
+过程:
+- 客户机的设备驱动程序发起 I/O 请求操作请求
+- KVM 模块中的 I/O 模块捕获代码拦截该 I/O 请求
+- 经过处理后将本次 I/O 请求放到 **I/O 共享页(sharing page)** , 并通知用户空间的 QEMU 程序
+- QEMU 获得 I/O 操作的具体信息后, 交由 **硬件模拟代码** 来模拟出本次 I/O 操作
+- 完成后, QEMU 将结果放回 I/O 共享页, 并通知 KVM 模块中的 I/O 操作捕获代码
+- KVM 模块的捕获代码读取 I/O 共享页中的操作结果, 返回给客户机
+
+- 能模拟出各种硬件设备
+- 上下文切换多, 数据复制多, 性能差
+
+**注: 当客户机通过 DMA(Direct Memory Access) 访问大块 I/O 时, QEMU 通过内存映射(Memory Map)方式将结果直接写在客户机的内存中, 然后通知 KVM 模块告诉客户机 DMA 操作已经完成**
+
+#### QEMU 模拟网卡的实现
+
+全虚拟化下, KVM 虚机可以选择的**网络**模式包括:
+
+1. 默认用户模式(User) -- [-net user[,vlan=n]]: 不需要管理员权限来运行, 没有指定 -net 选项下, 默认 [-net tap[,vlan=n][,fd=h]]
+2. 基于网桥模式(Bridge)的模式 -- [-net nic[,vlan=n][,macaddr=adr]]: 创建一个新的网卡, 与 VLAN n 连接, 如果没有指定 -net 选项, 则创建一个单一的 NIC
+3. 基于 NAT(Network Address Teanslation)的模式 -- [-net tap[,vlan=n][,fd=h][,iframe=name][,script=file]]: 将 TAP 网络接口 name 与 VLAN n 进行连接, 并用 网络配置脚本文件(Default Is /etc/qemu-ifup) 配置, 如果没有指定 name , OS 自动分配; fd=h 可以用来指定一个已打开的 TAP 主机接口的句柄
+
+#### qemu-kvm 关于磁盘设备和网络设备的主要选项
+
+| 类型                      | 选项                                                                                                                                                                                                                                                                                                                     |
+| --                        | --                                                                                                                                                                                                                                                                                                                       |
+| 磁盘设备(软盘 磁盘 CDROM) | -drive option[,option[,option[,...]]]: 定义一个硬盘设备; 可用子选项有很多                                                                                                                                                                                                                                                |
+|                           | file=/path/to/somefile: 硬件映像文件路径                                                                                                                                                                                                                                                                                 |
+|                           | if=interface: 指定硬盘设备所连接的接口类型, 即控制器类型, 如 ide、scsi、sd、mtd、floppy、pflash 及 virtio 等                                                                                                                                                                                                             |
+|                           | index=index: 设定同一种控制器类型中不同设备的索引号，即标识号                                                                                                                                                                                                                                                            |
+|                           | media=media: 定义介质类型为硬盘(disk)还是光盘(cdrom)                                                                                                                                                                                                                                                                     |
+|                           | format=format: 指定映像文件的格式, 具体格式可参见 qemu-img 命令                                                                                                                                                                                                                                                          |
+|                           | -boot [order=drives][,once=drives][,menu=on OR off]: 定义启动设备的引导次序, 每种设备使用一个字符表示; 不同的架构所支持的设备及其表示字符不尽相同, 在 x86 PC 架构上, a、b 表示软驱、c 表示第一块硬盘, d 表示第一个光驱设备, n-p 表示网络适配器; 默认为硬盘设备(-boot order=dc,once=d)                                    |
+| 网络                      | -net nic[,vlan=n][,macaddr=mac][,model=type][,name=name][,addr=addr][,vectors=v]：创建一个新的网卡设备并连接至vlan n中；PC架构上默认的NIC为e1000，macaddr用于为其指定MAC地址，name用于指定一个在监控时显示的网上设备名称；emu可以模拟多个类型的网卡设备；可以使用“qemu-kvm -net nic,model=?”来获取当前平台支持的类型   |
+|                           | -net tap[,vlan=n][,name=name][,fd=h][,ifname=name][,script=file][,downscript=dfile]：通过物理机的TAP网络接口连接至vlan n中，使用script=file指定的脚本(默认为/etc/qemu-ifup)来配置当前网络接口，并使用downscript=file指定的脚本(默认为/etc/qemu-ifdown)来撤消接口配置；使用script=no和downscript=no可分别用来禁止执行脚本 |
+|                           | -net user[,option][,option][,...]：在用户模式配置网络栈，其不依赖于管理权限；有效选项有:                                                                                                                                                                                                                                 |
+|                           | vlan=n: 连接至 vlan n, 默认 n=0                                                                                                                                                                                                                                                                                          |
+|                           | name=name: 指定接口的显示名称, 常用于监控模式中                                                                                                                                                                                                                                                                          |
+|                           | net=addr[/mask]: 设定 GuestOS 可见的 IP 网络，掩码可选, 默认为 10.0.2.0/8                                                                                                                                                                                                                                                |
+|                           | host=addr: 指定 GuestOS 中看到的物理机的 IP 地址, 默认为指定网络中的第二个, 即 x.x.x.2                                                                                                                                                                                                                                   |
+|                           | dhcpstart=addr: 指定 DHCP 服务地址池中 16 个地址的起始 IP, 默认为第 16 个至第 31 个, 即 x.x.x.16-x.x.x.31                                                                                                                                                                                                                |
+|                           | dns=addr: 指定 GuestOS 可见的 dns 服务器地址; 默认为 GuestOS 网络中的第三个地址，即 x.x.x.3                                                                                                                                                                                                                              |
+|                           | tftp=dir: 激活内置的 tftp 服务器, 并使用指定的 dir 作为 tftp 服务器的默认根目录                                                                                                                                                                                                                                         |
+|                           | bootfile=file:BOOTP 文件名称, 用于实现网络引导 GuestOS; 如: qemu -hda linux.img -boot n -net user,tftp=/tftpserver/pub,bootfile=/pxelinux.0                                                                                                                                                                             |
+
+#### 准虚拟化(Para-virtualization) I/O 驱动 virtio
