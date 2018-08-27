@@ -20,3 +20,20 @@ Linux 提供了以下 7 种不同的命名空间
 - [kthreadd] -- 内核进程, 负责管理和调度其他进程
 
 
+## 网络
+
+Docker 的网络模式
+- Host
+- Container
+- None
+- Bridge
+
+## CGoup(Control Group)
+
+CGroup 为一组进程分配(CPU 内存 网络等宽等)资源
+
+功能:
+- Resource Limiting
+- Prioritization
+- Accounting
+- Control
