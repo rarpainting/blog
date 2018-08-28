@@ -290,3 +290,58 @@ EPT 硬件辅助虚拟化 -- **两阶段记忆体转换**:
 |                           | bootfile=file:BOOTP 文件名称, 用于实现网络引导 GuestOS; 如: qemu -hda linux.img -boot n -net user,tftp=/tftpserver/pub,bootfile=/pxelinux.0                                                                                                                                                                             |
 
 #### 准虚拟化(Para-virtualization) I/O 驱动 virtio
+
+Linux 的 设备驱动标准框架
+
+##### virtio 框架
+
+在 Guest OS 内核中安装前端驱动(Front-end driver) 和在 QEMU 中实现后端驱动(Back-end)的方式
+前后端采用 **Vring** 直接通信, 从而绕过 KVM 模块
+
+![Virtio Transport](011805499882916.jpg)
+
+纯软件模拟和 Virtio 的区别:
+    Virtio 省去了纯模拟的异常捕捉, 即 Guest OS 直接和 QEMU 的 I/O 模块**直接通信**
+    
+![Difference between Pure-software and Virtio](011807259737673.jpg)
+
+Virtio 的完整虚机流程
+
+![Virtio 的完整流程](011809286761592.jpg)
+
+- KVM 通过中断的方式通知 QEMU 去获取数据, 放到 Virtio Queue 中
+- KVM 再通知 Guest 去 virtio 中取数据
+
+##### Linux 下实现
+
+- 前端驱动: 客户机(Guest OS)中安装的驱动程序模块
+- 后端驱动: 在 QEMU 中实现, 调用主机上的物理设备, 或者完全由软件实现
+- virtio 层: 虚拟队列接口, 从概念上连接 前端和后端; 根据需要使用不同数量的队列, 如 virtio-net 使用两个队列, virtio-block 使用一个队列; 该队列使用 virtio-ring 虚拟
+- virtio-ring: 实现虚拟队列的环形缓冲区
+
+Linux 内核中实现的前端驱动:
+
+- 块设备(磁盘等)
+- 网络设备
+- PCI 设备
+- 气球驱动设备(动态管理客户机 *内存* 使用情况)
+- 控制台驱动程序
+
+当 Guest OS 使用某个 virtio 设备时, 对应的驱动会被加载
+
+示例: virtio-net
+
+![virtio-net](022013482737327.jpg)
+
+特点
+
+- 多个虚机共享主机网卡 eth0
+- QEMU 使用标准 tun/tap 将虚机的网络桥接到主机网卡上
+- 每个虚机看起来有一个直接连接到主机 PCI 总线的私有 virtio 网络设备
+- 需要在虚机中安装 virtio 驱动
+
+![virtio-net 流程](022011246173106.jpg)
+
+Virtio 优缺点: 
+- 优点: 更高的 I/O 性能, 几乎和原生系统相近
+- 缺点: 客户端必须安装特定的 virtio 驱动, 难以兼容旧版 Linux(< 2.6.24), 部分 Windows 需要安装特定驱动
