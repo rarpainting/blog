@@ -15,9 +15,14 @@
 - 闭包作用域
 - jQuery/组件销毁时 事件没有解除绑定
 
-## preload prefetch
+## link 优化页面
 
-- preload -- 之后 **必定** 需要的资源
+- dns-prefetch -- 预解析域名
+- subresource -- 将用到的关键性资源
+- preload -- 之后 **必定** 需要的资源, 加载等级比 prefetch 高
 - prefetch -- 之后 **可能** 需要的资源
+- prerender -- 预渲染页面
+
+*IE9 支持 "DNS-prefetch", 但标签是 "prefetch" ; 在 IE10+ 中, dns-prefetch 和 prefetch 等价 都能用于 DNS 预获取*
 
 *preload 与 prefetch 混用, 会导致重复加载*
