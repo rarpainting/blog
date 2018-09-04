@@ -367,8 +367,6 @@ virtio-net 与 vhost-net 对比
 同时多队列 virtio-net 会相应增加 CPU 的负担, 可能会降低 **对外数据流** 的性能
 
 
-## 延伸
-
 ### Tun/Tap
 
 虚拟网卡驱动
@@ -397,4 +395,39 @@ virtio-net 与 vhost-net 对比
 
 1. 目标数据 -> Tun/Tap 设备字符驱动 --> tun_chr_write --> tun_get_user(从用户区接收数据)
 2. 将数据存入 skb 中, 然后调用 netif_rx(skb) 将 skb 送给 tcp/ip 协议栈处理
+
+## KVM I/O 设备直接分配和 SR-IOV
+
+### PCI/PCI-E 设备直接分配给虚机 (PCI Pass-through)
+
+![PCI/PCI-E 的区别](041136014418109.jpg)
+
+PCI-E 直接连接在 IOMMU 上, PCI 连接在一个 IO Hub 上, 所以 PCI 卡的性能没有 PCI-E 高
+
+主要的 PCI 设备
+- Network cards(wired or wireless)
+- SCSI adapters
+- Bus controllers: USB, PCMICIA, I2C, FireWire, IDE
+- Graphics and Video cards
+- Sound cards
+
+#### PCI/PCIe Pass-through 原理
+
+- KVM 支持客户机以 **独占方式** 访问主机的 PCI/PCIe 设备, 客户机对该设备的 I/O 交互操作和实际的物理设备操作完全一样, 不需要或者很少需要 KVM 的参与
+- 几乎所有的 PCI/PCIe 设备都支持直接分配, 除了 *显卡* 除外
+- 一般的 SATA 或者 SAS 等硬盘的控制器都是直接接入 PCI 或者 PCIe 总线的, 所以也可以将硬盘作为普通的 PCI 设备直接分配给客户机, 这时候分配的是 SATA 或者 SAS 的 **控制器**
+
+设备直接分配的优势和不足
+
+优势
+- 在执行 I/O 操作时大量减少或者避免 VM-Exit(进入 root operation VMX) 陷入到 Hypervisor 中, 极大提高了性能
+- VT-d 克服了 virtio 兼容性不好, CPU 使用频率高的问题
+
+不足:
+- 一块主板允许添加的 PCI/PCIe 设备是有限的, 大量使用 VT-d 独立分配设备给客户机, 硬件设备数量增加, 导致硬件投资成本高
+- VT-d 直接分配的做法, 导致其动态迁移功能受限, 不过能通过 *热插拔* 或者 *libvirt* 等工具解决
+
+解决方案:
+- 对网络性能要求高的客户机使用 VT-d 直接分配, 其他使用 纯模拟 或者 virtio 实现多个客户机共享一个设备
+- 对于 网络 I/O, 选择 SR-IOV 使一个网卡产生多个独立的虚拟网卡, 在单独分配到每一个客户机
 

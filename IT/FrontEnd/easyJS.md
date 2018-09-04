@@ -14,3 +14,10 @@
 - dom 间接引用
 - 闭包作用域
 - jQuery/组件销毁时 事件没有解除绑定
+
+## preload prefetch
+
+- preload -- 之后 **必定** 需要的资源
+- prefetch -- 之后 **可能** 需要的资源
+
+*preload 与 prefetch 混用, 会导致重复加载*
