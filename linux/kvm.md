@@ -396,6 +396,7 @@ virtio-net 与 vhost-net 对比
 1. 目标数据 -> Tun/Tap 设备字符驱动 --> tun_chr_write --> tun_get_user(从用户区接收数据)
 2. 将数据存入 skb 中, 然后调用 netif_rx(skb) 将 skb 送给 tcp/ip 协议栈处理
 
+
 ## KVM I/O 设备直接分配和 SR-IOV
 
 ### PCI/PCI-E 设备直接分配给虚机 (PCI Pass-through)
@@ -431,3 +432,31 @@ PCI-E 直接连接在 IOMMU 上, PCI 连接在一个 IO Hub 上, 所以 PCI 卡�
 - 对网络性能要求高的客户机使用 VT-d 直接分配, 其他使用 纯模拟 或者 virtio 实现多个客户机共享一个设备
 - 对于 网络 I/O, 选择 SR-IOV 使一个网卡产生多个独立的虚拟网卡, 在单独分配到每一个客户机
 
+### SR-IOV 设备分配
+
+单根 I/O 虚拟化, SR-IOV 使的一个单一的功能单元能看起来像多个独立的物理设备; 一个带有 SR-IOV 功能的物理设备能被配置为多个功能单元
+
+SR-IOV 使用两种功能
+- 物理功能(Physical Functions-PF): 完整的带有 SR-IOV 能力的 PCIe 设备; PF 能像 PCI 设备那样被发现, 管理和配置
+- 虚拟设备(Virtual Functions-VF): 简单的 PCIe 功能, 只能处理 I/O; 每个 VF 都是从 PF 分离出来的; 一个 PF 最多能被虚拟成 **有限制数目** 的 VF, 供虚拟机使用
+
+网卡 SR-IOV 例子:
+![1](041217128487605.jpg)
+![2](011818595515631.jpg)
+
+#### SR-IOV 条件
+
+1. 需要 CPU 支持 Intel VT-x 和 VT-D(或者 AMD 的 SVM 和 IOMMU)
+2. 需要支持 SR-IOV 规范的设备 (Intel 的中高端网卡等)
+3. 需要 QEMU/KVM 支持
+
+#### 优势和不足
+
+优势:
+1. 真正实现设备共享(多个客户机共享一个 SR-IOV 设备的物理端口)
+2. 接近原生性能
+3. 相比 VT-D, SR-IOV 可以使用更少的设备来支持更多的客户机, 提高数据中心的空间利用率
+
+不足:
+1. 对设备有依赖(需要支持 SR-IOV 规范的设备)
+2. 不方便动态迁移客户机: 由于此时虚机直接使用主机上的物理设备, 即虚机的迁移(migiration)和保存(save)目前都不支持
