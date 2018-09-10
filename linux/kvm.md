@@ -192,7 +192,7 @@ Linux 进程调度
 
 ### KVM 内存虚拟化
 
-利用 mmap 系统调用, 在 QEMU 主线程的虚拟地址空间中模拟 MMU 
+利用 mmap 系统调用, 在 QEMU 主线程的虚拟地址空间中模拟 MMU
 
 ![两个到多个虚拟机](011413028483143.jpg)
 
@@ -302,7 +302,7 @@ Linux 的 设备驱动标准框架
 
 纯软件模拟和 Virtio 的区别:
     Virtio 省去了纯模拟的异常捕捉, 即 Guest OS 直接和 QEMU 的 I/O 模块**直接通信**
-    
+
 ![Difference between Pure-software and Virtio](011807259737673.jpg)
 
 Virtio 的完整虚机流程
@@ -342,7 +342,7 @@ Linux 内核中实现的前端驱动:
 
 ![virtio-net 流程](022011246173106.jpg)
 
-Virtio 优缺点: 
+Virtio 优缺点:
 - 优点: 更高的 I/O 性能, 几乎和原生系统相近
 - 缺点: 客户端必须安装特定的 virtio 驱动, 难以兼容旧版 Linux(< 2.6.24), 部分 Windows 需要安装特定驱动
 
@@ -351,6 +351,7 @@ Virtio 优缺点:
 将 Virtio-net 的后端处理任务放在内核空间中执行
 
 virtio-net 与 vhost-net 对比
+
 ![对比](022016033364356.jpg)
 
 ##### virtio-balloon(Linux-2.6.27 qemu-kvm-0.13)
@@ -391,7 +392,7 @@ virtio-net 与 vhost-net 对比
 2. skb(?) 将会被加入 skb 链表, 唤醒被阻塞的使用 Tun/Tap 设备字符驱动读数据的进程
 3. --> tun_chr_read 读取 skb 链表, 发送到目标用户区
 
-#### 接受过程: 
+#### 接受过程:
 
 1. 目标数据 -> Tun/Tap 设备字符驱动 --> tun_chr_write --> tun_get_user(从用户区接收数据)
 2. 将数据存入 skb 中, 然后调用 netif_rx(skb) 将 skb 送给 tcp/ip 协议栈处理
@@ -441,6 +442,7 @@ SR-IOV 使用两种功能
 - 虚拟设备(Virtual Functions-VF): 简单的 PCIe 功能, 只能处理 I/O; 每个 VF 都是从 PF 分离出来的; 一个 PF 最多能被虚拟成 **有限制数目** 的 VF, 供虚拟机使用
 
 网卡 SR-IOV 例子:
+
 ![1](041217128487605.jpg)
 ![2](011818595515631.jpg)
 
@@ -460,3 +462,17 @@ SR-IOV 使用两种功能
 不足:
 1. 对设备有依赖(需要支持 SR-IOV 规范的设备)
 2. 不方便动态迁移客户机: 由于此时虚机直接使用主机上的物理设备, 即虚机的迁移(migiration)和保存(save)目前都不支持
+
+![虚拟化方式比较](041757191911525.jpg)
+![虚拟化方式比较](041757434104956.jpg)
+
+Virtio 和 Pass-Through 的比较
+
+![Virtio 和 Pass-Through 比较](030648412277872.jpg)
+
+
+#### 综合结论
+
+- I/O 设备尽量使用准虚拟化(virtio 和 vhost_net)
+- 如果需要实施迁移, 不能使用 SR-IOV
+- 有更高的 I/O 要求, 且不需要实时迁移的, 可以使用 SR-IOV
