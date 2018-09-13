@@ -476,3 +476,11 @@ Virtio 和 Pass-Through 的比较
 - I/O 设备尽量使用准虚拟化(virtio 和 vhost_net)
 - 如果需要实施迁移, 不能使用 SR-IOV
 - 有更高的 I/O 要求, 且不需要实时迁移的, 可以使用 SR-IOV
+
+## Libvirt
+
+### Libvirt 提供了什么
+
+- 统一 稳定 开放的源代码的应用程序接口(API) 守护进程(libvirtd)和管理工具(virsh)
+- 通过一种基于驱动程序的架构来实现对 Hypervisor 的支持
+- 
