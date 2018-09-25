@@ -483,4 +483,53 @@ Virtio 和 Pass-Through 的比较
 
 - 统一 稳定 开放的源代码的应用程序接口(API) 守护进程(libvirtd)和管理工具(virsh)
 - 通过一种基于驱动程序的架构来实现对 Hypervisor 的支持
-- 
+
+## Nova 通过 libvirt 管理 QEMU/KVM 虚机
+
+### Libvirt 在 OpenStack 架构中的位置
+
+![Nova 调用 libvirt 以及其他 API](111010352073441.jpg)
+
+### Nova 中的 libvirt 使用
+
+- 创建虚机
+- 虚机的声明周期管理
+- 添加和删除连接到别的网络的网卡 (interface)
+- 添加和删除 Cinder 卷 (volume)
+
+## 通过 libvirt 作 QEMU/KVM 快照和 Nova 实例的快照
+
+### QEMU/KVM 快照
+
+#### 概念
+
+快照种类:
+
+1. 磁盘快照 -- 磁盘内容在某个时间点上被保存, 用于将来恢复
+
+- 在一个运行中的系统上, 某个磁盘快照可能是 **崩溃一致性**(例如机器突然掉电时的数据状态), 而不是 **完整一致性**, 需要通过文件检查(fcsk 等)对快照进行一致性检查
+- 对一个非运行中的虚机, 如果上次虚机关闭时磁盘是完整一致的, 那么其被快照的磁盘快照也是完整一致的
+
+磁盘快照类型
+
+- 内部快照: 使用单个 Qcow2 的文件来保存快照和快照之后的改动; libvirt 的默认行为, 支持完整的 创建/回滚/删除 操作, 只支持 Qcow2 格式的磁盘镜像文件, 且过程慢
+- 外部快照: 快照为一个只读文件, 快照的修改在另一个 Qcow2 文件中; 能操作各种格式的磁盘镜像文件; 其结果是形成一个 Qcow2 的文件链: original <- snap1 <- snap2 <- snap3; [详细文章](http://wiki.libvirt.org/page/I_created_an_external_snapshot,_but_libvirt_won't_let_me_delete_or_revert_to_it) 
+
+2. 内存状态(虚机状态)
+
+只保持内存和虚机使用的其他资源的状态. 如果虚机状态在恢复之前没有被修改, 那么虚机会持续一个持续的状态; 否则可能导致 **数据 corruption**
+
+3. 系统还原点(system checkpoint)
+
+虚机的所有磁盘快照和内存状态快照的集合, 可用于 **恢复** 完整的系统状态(类似于系统休眠)
+
+0. 关于崩溃一致性
+
+- 尽量避免在虚机 I/O 繁忙时作快照
+- VMware 装一个 tools -- 一个 PV driver, 可以在制造快照的时候 *挂起系统*
+- KVM -- QEMU Guest Agent
+
+快照还能分为 Live snapshot 和 Clod snapshot
+
+- Live snapshot: 系统 *运行状态* 下的快照
+- Cold snapshot: 系统 *停止状态* 下的快照
