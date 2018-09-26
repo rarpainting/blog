@@ -533,3 +533,29 @@ Virtio 和 Pass-Through 的比较
 
 - Live snapshot: 系统 *运行状态* 下的快照
 - Cold snapshot: 系统 *停止状态* 下的快照
+
+#### 制造 snapshot 的各个 API
+
+| snapshot     | 做快照的 libvirt API                                                   | 从快照中恢复的 libvirt API |                                       |
+| --           | --                                                                     | --                         | --                                    |
+| 磁盘快照     | virDomainSnapshotCreateXML(flags=VIR_DOMAIN_SNAPSHOT_CREATE_DISK_ONLY) | virDmainRevertToSnapshot   | virsh snapshot-create/snapshot-revert |
+| 内存状态快照 | virDomainSave                                                          | virDomainRestore           |                                       |
+|              | virDomainSaveFlags                                                     | virDomainRestoreFlags      | virsh save /restore                   |
+|              | virDomainManagedSave                                                   | virDomainCreate            |                                       |
+|              |                                                                        | virDomainCreateWithFlags   |                                       |
+| 系统检查点   | virDomainSnapshotCreateXML                                             | virDomainRevertToSnapshot  | virsh snapshot-create/snapshot-revert |
+
+
+各个 API 工作情况:
+
+1. virDomainSnapshotCreateXML(virDomainPtr domain, const char * xmlDesc, unsigned int flags)
+
+| flags                                | 处于运行状态                                                                                                                                                               | 处于停止状态         |
+| 0                                    | 创建系统检查点, 包括磁盘状态和内存状态(内存内容等)                                                                                                                         | 保持关机时的磁盘状态 |
+| VIR_DOMAIN_SNAPSHOT_CREATE_LIVE      | 快照期间, 虚机不会 paused; 这将增加内存 dump file 的大小, 但是减少了系统停机时间; 部分 Hypervisor 只在做外部的系统检查点时才设置该 flags, 这意味着普通快照还是需要停机(??) |                      |
+| VIR_DOMAIN_SNAPSHOT_CREATE_DISK_ONLY | 只做指定磁盘的快照; 对应运行着的虚机, 磁盘快照可能是不完整的(类似突然掉电的情况)                                                                                           | 只做指定磁盘的快照   |
+
+- 运行中的虚机: 通过 QEMU Monitor 做快照, 磁盘镜像文件必须是 Qcow2; 此时虚机的 CPU 被停止, 快照结束后被重启
+- 停止的虚机: 通过 QEMU-img 操作所有磁盘镜像文件
+
+2. virDomainSave
