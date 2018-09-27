@@ -558,4 +558,29 @@ Virtio 和 Pass-Through 的比较
 - 运行中的虚机: 通过 QEMU Monitor 做快照, 磁盘镜像文件必须是 Qcow2; 此时虚机的 CPU 被停止, 快照结束后被重启
 - 停止的虚机: 通过 QEMU-img 操作所有磁盘镜像文件
 
-2. virDomainSave
+2. virDomainSave API
+
+| virDomainSave        | 该方法会 suspend 一个运行中的虚机, 然后保存内容到一个文件中; 成功调用后, domain 将不会处于 running 状态, 需要通过 virDomainRestore 来恢复虚机                                                                                                                                         |
+| virDomainSaveFlags   | 类似于 virDomainSave API , 一些 Hypervisor 在调用该方法前需要调用 virDomainBlockJobAbort 方法停止 block copy 操作                                                                                                                                                                     |
+| virDomainManagedSave | 类似 virDomainSave API, 区别在于 libvirt 将其内存保存在一个受 libvirt 管理的文件中, 有助于 libvirt 可以一直跟踪 snapshot 的状态; 当调用 virDomainCreate/virDomainCreateWithFlags 重启该 Domain 时, libvirt 会直接使用该受管文件(, 而不是一个空白文件), 这样就可以 restore 该 snapshot |
+
+3. snapshot-create-as
+
+| <不使用额外参数>                                                    | 使用磁盘和内存的内部快照                                                                       |
+| --memspec snapshot=external --diskspec vda,snapshot=external        | 磁盘和内存的外部快照, 虚机需要暂停                                                             |
+| --live --memspec snapshot=external --diskspec vda,snapshot=external | 创建系统检查点(包括磁盘和内存的快照), 且虚机不会被暂停(会暂停, 但是暂停时间比不使用 --live 短) |
+| --disk-only                                                         | 创建所有或者部分磁盘的外部快照                                                                 |
+
+4. 外部快照的删除 -- workaround
+
+### OpenStack 的快照
+
+#### 对 Nova Instance 进行快照
+
+- 对从镜像文件中启动的虚机做快照
+  - 将运行中的虚机的 Root Disk 做成 image, 然后上传到 Glance
+  - Live Snapshot: 对满足特定条件(QEMU 1.3+ Libvirt 1.0.0+ source_format not in ('lvm', 'rbd') and not CONF.ephemeral_storage_encryption.enabled and not CONF.workarounds.disable_libvirt_livesnapshot, 以及能正常调用 libvit.blockJobAbort)的虚机, 会进行 Live snapshot. Live Snapshot 允许用户在虚机处于运行状态时不停机做快照
+  - Cold Snapshot: 对不能做 Live snapshot 的虚机做 Cold snapshot, 此时必须首先 Pause 虚机
+  
+- 对从卷做快照
+
