@@ -575,6 +575,8 @@ Virtio 和 Pass-Through 的比较
 
 ### OpenStack 的快照
 
+OpenStack Snapshot 可分为以下几种:
+
 #### 对 Nova Instance 进行快照
 
 - 对从镜像文件中启动的虚机做快照
@@ -582,5 +584,20 @@ Virtio 和 Pass-Through 的比较
   - Live Snapshot: 对满足特定条件(QEMU 1.3+ Libvirt 1.0.0+ source_format not in ('lvm', 'rbd') and not CONF.ephemeral_storage_encryption.enabled and not CONF.workarounds.disable_libvirt_livesnapshot, 以及能正常调用 libvit.blockJobAbort)的虚机, 会进行 Live snapshot. Live Snapshot 允许用户在虚机处于运行状态时不停机做快照
   - Cold Snapshot: 对不能做 Live snapshot 的虚机做 Cold snapshot, 此时必须首先 Pause 虚机
   
-- 对从卷做快照
+- 对从卷启动的虚机做快照
+  - 对虚机的每个挂载的 Volume 调用 Cinder API 做 Snapshot
+  - Snapshot 出的 **Metadata** 会保存到 Glance 里面, 但是不会有 snapshot 的 **Image** 上传到 Glance
+  - 这个 Snapshot 会出现在 Cinder 的数据库中 , 对 cinder API 可见
+  
+#### 对卷做快照
+- 调用 cinder driver API, 对 Backend 中的 Volume 进行 Snapshot
+- 这个 Snapshot 会出现在 Cinder 的数据库中 , 对 cinder API 可见
+  
+  
+### 从镜像文件启动的 Nova 虚机做快照
+
+严格得说, Nova 虚机的快照, 并不是对虚机做完整的快照, 而是对 **虚机的启动盘(root disk -- vda/hda)** 做快照生成 Qcow2 格式文件, 并传到 Glance, 仅用于方便使用快照生成的镜像来部署新的虚机, 以下式两种快照格式
+
+#### Nova Live Snapshot -- 不停机快照
+
 
