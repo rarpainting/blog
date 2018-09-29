@@ -26,3 +26,11 @@
 *IE9 支持 "DNS-prefetch", 但标签是 "prefetch" ; 在 IE10+ 中, dns-prefetch 和 prefetch 等价 都能用于 DNS 预获取*
 
 *preload 与 prefetch 混用, 会导致重复加载*
+
+## npm
+
+### Puppeteer
+
+```shell
+env PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=1 npm install puppeteer
+```
