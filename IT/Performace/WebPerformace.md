@@ -104,8 +104,6 @@ HTTP2.0 流量控制机制
 
 #### 服务器推送
 
-特点:
-
 - *客户端* 可以缓存推送过来的数据
 - *客户端* 可以拒绝推送过来的数据
 - 推送资源可用于 *不同的页面* 共享
@@ -121,11 +119,43 @@ PUSH_PROMISE
 
 #### 首部压缩
 
-特点:
-
 - HTTP2.0 在客户端和服务端使用 "首部表"来跟踪和存储之前发送的键值对, 对于相同的数据, 不在通过每次请求和响应发送
 - 首部表在 HTTP2.0 的连接存续期内始终存在, 由客户端和服务端共同渐进的更新
 - 每个新的首部键值对要么被追加到当前表的末尾, 要么
 
 #### HTTP2 发现和升级
+
+现代浏览器仍然需要同时兼容 HTTP 1.x 和 HTTP 2.0, 而此时往往有三种情况
+
+- 通过 TLS 和 ALPN 发起新的 HTTPS 连接
+- 根据之前的信息发起新的 HTTP 连接
+- 没有之前的信息发起新的 HTTP 连接
+
+在常规非加密信道建立 HTTP 2.0 连接需要 HTTP upgrade 机制支持
+
+```Req
+GET /page HTTP/1.1
+Host: server.example.com
+Connection: Upgrade, HTTP2-Settings
+Upgrade: HTTP/2.0
+HTTP2-Settings: (SETTINGS payload) -- HTTP/2.0 SETTINGS 净荷的 Base64 URL 编码
+```
+
+```Resp
+HTTP/1.1 200 OK
+Content-length: 243
+Content-type: text/html
+
+(HTTP 1.1 response)
+```
+
+```Resp
+HTTP/1.1 101 Switching Protocols
+Connection: Upgrade
+Upgrade: HTTP/2.0
+
+(HTTP 2.0 response)
+```
+
+#### 二进制分帧
 
