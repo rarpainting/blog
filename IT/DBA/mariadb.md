@@ -166,9 +166,6 @@ sync_binlog = 0 # 事务提交后, 仅把 binlog_cache 中的数据写入 binlog
 
 ## MariaDB 日志
 
-### Monitor
-
-
 ### Error Log
 
 ### General Log
@@ -246,3 +243,59 @@ binlog_format = { STATEMENT | ROW | MIXED } -- 二进制日志格式
 - 直接编辑 mysql 数据库, 则根据 binlog_format 执行日志记录
 - 间接编辑 mysql 数据库, 则统一通过 **语句日志** 记录
 
+## 复制
+
+复制的目地
+- 可扩展性
+- 备份帮助
+- 分发数据
+
+### 设置复制
+
+```yaml
+[master]
+log-bin
+server-id = 1 # 无论 主服务器还是从服务器 都需要设置 唯一 的 server-id
+log-basename = master1 # mariadb 独有
+```
+
+- skip-networking = 1 -- 仅允许于本地通信; 禁止远程连接
+- bind-address = x.x.x.x
+
+#### 锁定 Master 表
+
+- FLUSH TABLES WITH READ LOCK -- 并且获得读锁
+- SHOW MASTER STATUS -- 获得 binlog 文件名
+- 获得 文件(File)和位置(Position)
+- 开始复制
+- UNLOCK TABLES
+
+#### 开启 Slave 服务器
+
+### Relay Log
+
+- 文件格式与 BinLog 相同, 因此能用 mysqlbinlog* 导出
+
+## 线程池
+
+- thread_handling = pool-of-threads # 开启线程池
+- thread_handling = one-thread-per-connection # 一连接一线程
+
+### 线程池功能
+
+
+在 MariaDB 5.5 后, 线程池目标:
+
+- 使线程池动态增长和缩小
+- 最大限度的减少维护线程池本身的开销
+- 充分利用底层操作系统功能
+- 限制线程池使用的资源
+
+### 低级实现及差别
+
+- Windows: 使用 Windows 本地线程池
+  - thread_pool_min_threads
+- 类 Unix: 通用实现
+  - thread_pool_size
+  
+### 
