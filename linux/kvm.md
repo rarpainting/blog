@@ -83,8 +83,8 @@ Intel 和 AMD 的虚拟化技术
 
 该技术下 VMM 运行在 VMX root operation , 客户端 OS 运行在 VMX non-root operation
 
-VM-entry: VMX root operation 通过调用 **VMLAUNCH/VMRESUME** 指令切换到 VMX non-root operation
-VM-exit: 调用 **VMCALL** 指令调用 VMM 服务, 硬件挂起 Guest OS, 切换到 VMX root operation
+VM-entry: VMX root operation 通过调用 `VMLAUNCH/VMRESUME` 指令切换到 VMX non-root operation
+VM-exit: 调用 `VMCALL` 指令调用 VMM 服务, 硬件挂起 Guest OS, 切换到 VMX root operation
 
 ### SMP MPP NUMA
 
@@ -388,14 +388,14 @@ virtio-net 与 vhost-net 对比
 
 #### 发送过程:
 
-1. 目标数据 -> hard_start_xmit --> tun_net_xmit
+1. 目标数据 -> `hard_start_xmit` --> `tun_net_xmit`
 2. skb(?) 将会被加入 skb 链表, 唤醒被阻塞的使用 Tun/Tap 设备字符驱动读数据的进程
-3. --> tun_chr_read 读取 skb 链表, 发送到目标用户区
+3. --> `tun_chr_read` 读取 skb 链表, 发送到目标用户区
 
 #### 接受过程:
 
-1. 目标数据 -> Tun/Tap 设备字符驱动 --> tun_chr_write --> tun_get_user(从用户区接收数据)
-2. 将数据存入 skb 中, 然后调用 netif_rx(skb) 将 skb 送给 tcp/ip 协议栈处理
+1. 目标数据 -> Tun/Tap 设备字符驱动 --> `tun_chr_write` --> `tun_get_user`(从用户区接收数据)
+2. 将数据存入 skb 中, 然后调用 `netif_rx(skb)` 将 skb 送给 tcp/ip 协议栈处理
 
 
 ## KVM I/O 设备直接分配和 SR-IOV
@@ -601,14 +601,14 @@ OpenStack Snapshot 可分为以下几种:
 #### Nova Live Snapshot -- 不停机快照
 
 - 找到 虚机的 Root Disk(Vda OR Hda)
-- 在 CONF.libvirt.snapshot_dirctory 指定的文件夹 (default /var/lib/nova/instances/snapshots) 中创建临时文件夹, 在其中创建一个 uuid 文件名的 Qcow2 格式的 delta 文件, 该文件的 backing file 和 root disk 文件夹的 backing file 相同
-- 调用 virDomainGetXMLDesc 来保存 domain 的 xml 配置
-- 调用 virDomainBlockJobAbort 来停止对 root disk 的活动块的操作
-- 调用 virDomainUndefine 来将 domain 变为 transimit 类型的(因为 BlockRebase API 不能针对 Persistent domain 调用)
-- 调用 virDomainBlockRebase 来将 root disk image 文件中不同的数据拷贝到 delta disk file 中(此时有可能应用正在向该磁盘写数据)
-- Nova 每隔 0.5 秒调用 virDomainBlockJobInfo API 检查上一步骤是否结束
-- 拷贝结束, 调用 virDomainBlockJobAbort 来终止数据拷贝
-- 调用 virDomainDefineXML 将 domain 由 transimisit 改回 persistent
+- 在 `CONF.libvirt.snapshot_dirctory` 指定的文件夹 (default /var/lib/nova/instances/snapshots) 中创建临时文件夹, 在其中创建一个 uuid 文件名的 Qcow2 格式的 delta 文件, 该文件的 backing file 和 root disk 文件夹的 backing file 相同
+- 调用 `virDomainGetXMLDesc` 来保存 domain 的 xml 配置
+- 调用 `virDomainBlockJobAbort` 来停止对 root disk 的活动块的操作
+- 调用 `virDomainUndefine` 来将 domain 变为 transimit 类型的(因为 BlockRebase API 不能针对 Persistent domain 调用)
+- 调用 `virDomainBlockRebase` 来将 root disk image 文件中不同的数据拷贝到 delta disk file 中(此时有可能应用正在向该磁盘写数据)
+- Nova 每隔 0.5 秒调用 `virDomainBlockJobInfo` API 检查上一步骤是否结束
+- 拷贝结束, 调用 `virDomainBlockJobAbort` 来终止数据拷贝
+- 调用 `virDomainDefineXML` 将 domain 由 transimisit 改回 persistent
 - 调用 qemu-img convert 命令将 delta image 文件和 blcking file 变回一个 Qcow2 文件
 - 将 image 的元数据和 Qcow2 文件传到 Glance 中
 
@@ -637,8 +637,8 @@ domain.blockRebase(disk_path, disk_delta, 0,
 ```
 
 - 默认, 该 API 会拷贝整个 @disk 文件到 @base 文件
-- VIR_DOMAIN_BLOCK_REBASE_SHALLOW  -- 只拷贝差异数据 (top data) 因为 @disk 和 @base 使用相同的 backing 文件
-- VIR_DOMAIN_BLOCK_REBASE_REUSE_EXT -- 使用已存在的 @base 文件(因为 Nova 会预先创建好这文件)
+- `VIR_DOMAIN_BLOCK_REBASE_SHALLOW`  -- 只拷贝差异数据 (top data) 因为 @disk 和 @base 使用相同的 backing 文件
+- `VIR_DOMAIN_BLOCK_REBASE_REUSE_EXT` -- 使用已存在的 @base 文件(因为 Nova 会预先创建好这文件)
 
 #### Nova Cold Snapshot -- 停机快照
 
@@ -647,10 +647,10 @@ domain.blockRebase(disk_path, disk_delta, 0,
 - 虚机处于 running OR paused:
   - detach PCI devices
   - detach SR-IOV devices
-  - 调用 virDomainManagedSave API 来将虚机 suspend 并且将内存状态保存到硬盘文件
+  - 调用 `virDomainManagedSave` API 来将虚机 suspend 并且将内存状态保存到硬盘文件
   
 - 调用 qemu-img convert 命令将 root disk 的镜像文件转化为 **相同格式** 的镜像文件
-- 调用 virDomainCreateWithFlags API 将虚机变为初始状态
+- 调用 `virDomainCreateWithFlags` API 将虚机变为初始状态
 - 将在步骤 1 中卸载的 PCI 和 SR-IOV 设备重新挂载回来
 - 将元数据和 Qcow2 文件传到 Glance 中
   
