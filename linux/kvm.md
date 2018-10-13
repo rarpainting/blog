@@ -600,4 +600,113 @@ OpenStack Snapshot 可分为以下几种:
 
 #### Nova Live Snapshot -- 不停机快照
 
+- 找到 虚机的 Root Disk(Vda OR Hda)
+- 在 CONF.libvirt.snapshot_dirctory 指定的文件夹 (default /var/lib/nova/instances/snapshots) 中创建临时文件夹, 在其中创建一个 uuid 文件名的 Qcow2 格式的 delta 文件, 该文件的 backing file 和 root disk 文件夹的 backing file 相同
+- 调用 virDomainGetXMLDesc 来保存 domain 的 xml 配置
+- 调用 virDomainBlockJobAbort 来停止对 root disk 的活动块的操作
+- 调用 virDomainUndefine 来将 domain 变为 transimit 类型的(因为 BlockRebase API 不能针对 Persistent domain 调用)
+- 调用 virDomainBlockRebase 来将 root disk image 文件中不同的数据拷贝到 delta disk file 中(此时有可能应用正在向该磁盘写数据)
+- Nova 每隔 0.5 秒调用 virDomainBlockJobInfo API 检查上一步骤是否结束
+- 拷贝结束, 调用 virDomainBlockJobAbort 来终止数据拷贝
+- 调用 virDomainDefineXML 将 domain 由 transimisit 改回 persistent
+- 调用 qemu-img convert 命令将 delta image 文件和 blcking file 变回一个 Qcow2 文件
+- 将 image 的元数据和 Qcow2 文件传到 Glance 中
 
+对应于命令行顺序是:
+
+```shell
+$ qemu-img create -f qcow2 -o backing_file=/var/lib/nova/instances/_base/ed39541b2c77cd7b069558570fa1dff4fda4f678,size=21474836480 /var/lib/nova/instances/snapshots/tmpzfjdJS/7f8d11be9ff647f6b7a0a643fad1f030.delta
+
+$ virsh blockjob <domain> <path> [--abort] [--async] [--pivot] [--info] [<bandwidth>]
+
+$ qemu-img convert -f [qcow2 | raw | vmdk | vdi] -o dest_fmt # 将 backing file 的 qcow2 image 转换为 不带 backing file 的 flag image
+```
+
+```C
+int virDomainBlockRebase(virDomainPtr dom, const char * disk, const char * base, unsigned long bandwidth, unsigned int flags)
+```
+该 API 从 backing 文件中拷贝数据, 或者拷贝整个 backing 文件到 @base 文件
+
+Nova 中的调用方式:
+
+```C
+domain.blockRebase(disk_path, disk_delta, 0,
+    libvirt.VIR_DOMAIN_BLOCK_REBASE_COPY |
+    libvirt.VIR_DOMAIN_BLOCK_REBASE_REUSE_EXT |
+    libvirt.VIR_DOMAIN_BLOCK_REBASE_SHALLOW)
+```
+
+- 默认, 该 API 会拷贝整个 @disk 文件到 @base 文件
+- VIR_DOMAIN_BLOCK_REBASE_SHALLOW  -- 只拷贝差异数据 (top data) 因为 @disk 和 @base 使用相同的 backing 文件
+- VIR_DOMAIN_BLOCK_REBASE_REUSE_EXT -- 使用已存在的 @base 文件(因为 Nova 会预先创建好这文件)
+
+#### Nova Cold Snapshot -- 停机快照
+
+当虚机不在运行中/不满足 live snapshot 条件的情况下, Nova 则执行 Cold snapshot:
+
+- 虚机处于 running OR paused:
+  - detach PCI devices
+  - detach SR-IOV devices
+  - 调用 virDomainManagedSave API 来将虚机 suspend 并且将内存状态保存到硬盘文件
+  
+- 调用 qemu-img convert 命令将 root disk 的镜像文件转化为 **相同格式** 的镜像文件
+- 调用 virDomainCreateWithFlags API 将虚机变为初始状态
+- 将在步骤 1 中卸载的 PCI 和 SR-IOV 设备重新挂载回来
+- 将元数据和 Qcow2 文件传到 Glance 中
+  
+  
+### 当前 Nova Snapshot 的局限
+
+- Nova Snapshot 其实只是提供一种 **创造系统盘镜像** 的方法; 不支持回滚到快照点, 只能通过该快照镜像重新创建一个新快照
+- 在虚机是从 image-boot 的时候, 只对 **系统盘** 进行快照, 不支持内存快照, 不支持系统还原点
+- (?) Live Snapshot 需要用户进行一致性操作
+- 由于是通过 image 进行保存的, 只支持虚拟机内置(全量)快照, 不支持外置(增量)快照
+- 从 image boot 的虚机的快照以 image 方式保存到 Glance 中, 并非以 Cinder 卷方式保存
+- 过程较长(存储快照 -> 抽取元数据(?) -> 上传到 Glance), 网络开销大
+
+Nova 不支持虚机快照的[讨论](http://www.gossamer-threads.com/lists/openstack/dev/8678)结果:
+
+- Nova snapshot 是一种虚拟化技术, 而不是云计算平台的功能
+- Openstack 需要支持多种虚拟化的技术, 某些虚拟化技术实现这种功能比较困难
+- 创建的 VM state snapshot 会面临 cpu feature 不兼容的问题
+- 目前 libvirt 对 QEMU/KVM 虚机的外部快照的支持还不完善, 即使更新到最新的 libvirt 版本, 兼容性也较差
+
+## 使用 libvirt 迁移 QEMU/KVM 虚机和 Nova 虚机
+
+### QEMU/KVM 迁移的概念
+
+迁移分为系统整体的迁移和某个工作负载的迁移; 静态迁移和动态迁移, 其中静态牵引由明显的一段时间客户机中的服务不可用
+
+静态迁移:
+
+- 关闭客户机, 复制硬盘镜像到另一台宿主机然后恢复启动; 但是不能保留客户机中运行的工作负载
+- 需要迁移间的宿主机共享 **存储系统**, 同时保持客户机迁移前的内存状态和工作负载
+
+动态迁移的关键:
+
+- 保证客户机的 **内存, 硬盘存储和网络连接** 在迁移到目地主机后保持不变
+- 迁移过程中, 服务暂停时间短
+
+### 迁移效率的衡量
+
+动态迁移的应用场景: 负载均衡, 解除硬件依赖, 节约能源, 异地迁移
+
+- 整体迁移时间
+- 服务器停机时间
+- 迁移前后对服务性能的影响
+
+### KVM 迁移操作
+
+#### 静态迁移 
+
+- saveVM 
+
+- loadVM
+
+#### 动态迁移
+
+在源宿主机和目地宿主机共享存储系统时:
+- 迁移开始时, 客户端依然在宿主机上运行, 同时 客户机的内存页被传输到目地主机上
+- QEMU/KVM 监控并记录下迁移过程中所有 *已被传输的内存页的任何修改* , 并在所有内存页都传输完成后即开始传输在前面过程中 *内存页的更改内容*
+- 如果剩余的内存数量能够在一个时间周期内完成传输, QEMU/KVM 会关闭源宿主机上客户机, 再将剩余的数据传输到目地主机, 最后传输过来的内存内容再目地宿主机上恢复客户机的运行状态
+- 迁移完成, 补全(网桥等)剩余的配置
