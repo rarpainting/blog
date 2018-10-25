@@ -62,3 +62,19 @@ $${k = -(F_x(x, y)/F_y(x. y)) = (3x^2 + 2a_2x + a_4 - a_1y)/(2y + a_1x + a_3)}$$
 
 缺点:
 - 设计困难, 实现复杂
+
+# 附
+
+## openssl
+
+- openssl 旧版本版本(<=openssl 1.0.2i / <=libressl2.2.2)用 `md5` 做摘要, openssl 1.1.0 以上用 `sha256`
+
+```shell
+`-pass`
+
+`env:somevar` 从环境变量中获取密码
+`file:somepathname` 从位置的文件的第一行获取密码 pathname
+`fd:number` 从文件描述符号中获取密码。
+`stdin` 从标准输入读取
+```
+
