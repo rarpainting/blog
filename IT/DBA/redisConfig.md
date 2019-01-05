@@ -29,7 +29,7 @@
 - rename-command -- 重命名命令
 
 ## 内存策略
-- maxmemroy-policy -- 内存策略（内存不足时，任何策略都会返回错误）
+- maxmemory-policy -- 内存策略（内存不足时，任何策略都会返回错误）
 	- volatile-lru(default) -- 通过 LRU 算法删除过期集中的某个键
 	- allkeys-lru -- 通过 LRU 删除任意一个键
 	- volatile-random -- 随机删除过期集中的某个键
