@@ -2,6 +2,10 @@
 
 ## React 16
 
+### Context API
+
+TODO:
+
 ### Time Slicing -- 缓解 CPU 处理
 
 - React 延长 render 的时间, 但是不阻塞当前线程, 避免了卡顿
