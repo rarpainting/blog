@@ -2,9 +2,11 @@
 
 整理下这一年半的工作以及学习上的工具链, 顺便整理一下 github 的收藏
 
+绝赞推荐: [后端架构师图谱](https://github.com/xingshaocheng/architect-awesome)
+
 ## rpc
 - grpc
-  - grcp-go
+  - grpc-go
   - grpc-web
 - rpcx
 
