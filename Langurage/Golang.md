@@ -98,5 +98,7 @@ func First(query string, replicas ...Search) Result {
 }
 ```
 
+4. 指针构成的 "循环引⽤" 加上 runtime.SetFinalizer 会导致内存泄露
+
 ### 使用指针接受方法
 
