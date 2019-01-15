@@ -100,10 +100,13 @@ func First(query string, replicas ...Search) Result {
 
 4. 指针构成的 "循环引⽤" 加上 runtime.SetFinalizer 会导致内存泄露
 
-5. database/sql
+5. `go-sql-driver/mysql`
 
-同一个事务每一个 Query 的结果集用的都是同一个缓存
-必须把 Query 后的结果集清空才能再次执行
+- 同一个事务每一个 Query 的结果集用的都是同一个缓存, 必须把 Query 后的结果集清空才能再次执行
+
+- Stmt
+  - `DB.Prepare()` 会重新从连接池获取一条新的连接
+  - `Tx.Prepare()` 重用 事务(Tx) 的连接
 
 ### 使用指针接受方法
 
