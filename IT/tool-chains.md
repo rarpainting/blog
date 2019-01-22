@@ -37,7 +37,7 @@
 - [influxdb](https://github.com/influxdata/influxdb): 备份, 存储分析
 
 ## 协议转换
-- [kcptun](https://github.com/xtaci/kcptun): tcp 转 kcp
+- [kcptun](https://github.com/xtaci/kcptun): tcp 转 kcp+udp
 
 ## 前端工具
 - [banshee](https://github.com/eleme/banshee)/[statsd-benshee](https://github.com/etsy/statsd): golang -- 前端 埋点工具
@@ -73,3 +73,4 @@
 - [KeyCastOW](https://github.com/brookhong/KeyCastOW): 键盘按键修改工具
 - [Spacemacs](https://github.com/syl20bnr/spacemacs): emacs 开箱工具
 - [certbot](https://github.com/certbot/certbot): tls 证书自动更新工具
+
