@@ -298,4 +298,80 @@ log-basename = master1 # mariadb 独有
 - 类 Unix: 通用实现
   - thread_pool_size
   
-### 
+## <<极客时间: MySQL 实战>>
+
+[MySQL 的逻辑架构图](0d2070e8f84c4801adbfa03bda1f98d9.png)
+
+### 一次查询运行流程
+
+#### 连接器
+
+- Mysql 在执行过程中临时使用的内存是管理在 **连接对象** 里面的, 该资源只有在断开才释放; 此时建议在执行 较大的操作/长时间的操作 后执行 **mysql_reset_connection** 重建连接, 该过程不执行重连和权限验证, 仅将 [连接恢复](https://mariadb.com/kb/en/library/mysql_reset_connection/)
+
+#### 查询缓存
+  
+- 查询缓存会因为一次 插入/更新/删除 操作而失效, 因此一般建议关闭 **查询缓存(query_cache_type=DEMAND)**
+- 一般建议在需要使用查询缓存的地方设置 **SQL_CACHE**, 例如: 
+  - `SELECT SQL_CACHE * FROM T WHERE ID=10;`
+- **注**: MySQL 8.0 将删除查询缓存功能; Mariadb 呢?
+
+#### 分析器
+
+- 词法分析
+- 语法分析
+  - 其中包括对字段是否正确的判断 -- 依据: 字段不同于表数据, 结构事先已经缓存在 server 中
+- 语义解析
+
+#### 优化器
+
+优化 ast 执行树
+
+#### 执行器
+
+以 `select * from where ID=10` 为例
+
+1. 权限验证
+  - 命中查询缓存: 在查询缓存 **返回结果** 时, 做权限验证
+  - 查询: 在优化器之前调用 `precheck` 验证权限
+  - **注**: 由于 MySQL 的验证存在 存储过程 等需要在运行中才能确定的权限申请, 因此只能在执行其中
+2. 查询
+  - 调用 InnoDB 引擎接口取第一行, 判断 `ID` 是否符合, 是则保存在结果集中, 否则跳过该条
+
+慢查询日志 -- `rows_examined`
+- 引擎扫描行数和 `rows_examined` 并不完全相同 ??
+
+### 一次更新运行流程(WAL: Write-Ahead Logging)
+
+[redo log](b075250cad8d9f6c791a52b6a600f69c.jpg)
+
+- `checkpoint` 是擦除的位置
+- `write pos` 是当前记录的位置
+
+如果 `checkpoint` - `write pos` 过小, 则表示 redo log 将满, 此时 server 会选择 取消 wirte(?)
+
+redo log 与 binlog 差异:
+- redo log 是 InnoDB 特有的; binlog 是 MySQL 的 Server 层实现的, 对所有引擎开放
+- redo log 是物理日志; binlog 是逻辑日志
+  - redo log 记录了 这个页 "做了什么改动"
+  - binlog 有两种模式: `statement` 记录 `sql` 语句; `row` 格式记录 **更新前 和 更新后** 两条记录
+- `redo log` 是循环写的, 空间固定可能用完; `binlog` 可以追加, 即 写到在一定大小后, 会切换到下一份文件, 而不是覆盖以前的日志 -- 因此: `binlog` 的 **归档** 功能确定了目前它还是无法被 `redo log` 替代
+
+同时 redo log 和 binlog 通过 "事务 ID" 对应
+
+[update 语句执行流程](2e5bff4910ec189fe1ee6e2ecc7b4bbe.png)
+
+#### update 的实际执行流程:
+
+- 先获取 `ID=2` 这一行
+- 执行器拿到引擎的行数据, 在值之上 +1, 再通过引擎接口写入新数据
+- 引擎将该数据更新到 内存 中, 同时记录到 `redo log` 中, 此时 `redo log` 处于 `prepare` 状态; 状态设置后告知 执行器 可以随时提交事务
+- 执行器生成这个操作的 `binlog`, 并把 `binlog` 写入到 磁盘
+- 执行器 调用 引擎 的提交事务接口, 引擎把 `redo log` 改成 `提交(commit)` 状态, 更新完成
+
+#### 两阶段提交
+
+用于保证提交都是成功的
+
+`redo log`:
+- `innodb_flush_log_at_trx_commit`: 每次事务的 `redo log` 都直接持久化到磁盘
+- `sync_binlog`: 每次事务的 `binlog` 都直接持久化到磁盘
