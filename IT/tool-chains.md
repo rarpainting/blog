@@ -37,7 +37,7 @@
 - [influxdb](https://github.com/influxdata/influxdb): 备份, 存储分析
 
 ## 协议转换
-- [kcptun](https://github.com/xtaci/kcptun): tcp 转 kcp+udp
+- [kcptun](https://github.com/xtaci/kcptun): tcp 转 [kcp](https://github.com/skywind3000/kcp)+udp
 
 ## 前端工具
 - [banshee](https://github.com/eleme/banshee)/[statsd-benshee](https://github.com/etsy/statsd): golang -- 前端 埋点工具
