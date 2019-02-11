@@ -70,7 +70,8 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.Mater = undefined;
 ```
-	不使用 export ... from ...;
+
+不使用 export ... from ...;
 
 ```js
 (function(module, exports, __webpack_require__) {
@@ -81,4 +82,5 @@ Object.defineProperty(exports, "__esModule", {
 exports.Mater = undefined;
 ```
 
-	使用 core-js/es6/object 添加方法
+使用 core-js/es6/object 添加方法
+
