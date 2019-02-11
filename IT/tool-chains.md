@@ -13,7 +13,7 @@
 ## 消息队列
 - [kafka](https://github.com/apache/kafka): zookeeper
 - [nsq](https://github.com/nsqio/nsq): zookeeper, golang
-- [redis](https://redis.io/)
+- [redis](https://redis.io/)/[disque](https://github.com/antirez/disque)
 - [etcd](https://github.com/etcd-io/etcd)
 
 ## database
