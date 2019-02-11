@@ -525,3 +525,18 @@ RAPAIR TABLE table;
 - `EXTENDED`: 最慢的选项, 需要逐行重建索引
 - `USE_FRM`: 只有当 MYI 文件丢失时才使用这个选项, 全面重建整个索引
 
+### 脏页及其控制处理
+
+#### 
+
+`innodb_io_capacity`: innodb 一次刷新到磁盘的脏页数
+
+`innodb_io_capacity` 与 磁盘配置 的参考对应
+
+| `Innodb_io_capacity` | 磁盘配置       |
+|                   -: | :-             |
+|                  200 | 单盘 SAS/SATA  |
+|                 2000 | SAS*12 RAID 10 |
+|                 5000 | SSD            |
+|                50000 | FUSION-IO      |
+

@@ -24,9 +24,12 @@
 - [elasticsearch](https://www.elastic.co/): [go-mysql-elasticsearch](https://github.com/siddontang/go-mysql-elasticsearch)
 
 ## 服务器负荷测试
-- [ab](https://httpd.apache.org/docs/2.4/programs/ab.html): apache benchmark
-- [hey](https://github.com/rakyll/hey): golang
-- [bombardier](https://github.com/codesenberg/bombardier): golang
+- http benchmark:
+  - [ab](https://httpd.apache.org/docs/2.4/programs/ab.html): apache benchmark
+  - [hey](https://github.com/rakyll/hey): golang
+  - [bombardier](https://github.com/codesenberg/bombardier): golang
+- [fio](https://github.com/axboe/fio): 磁盘 IOPS 测试
+  - `fio -filename=$filename -direct=1 -iodepth 1 -thread -rw=randrw -ioengine=psync -bs=16k -size=500M -numjobs=10 -runtime=10 -group_reporting -name=mytest`
 
 ## 服务器系统运维
 - [saltStack](http://docs.saltstack.cn/)
