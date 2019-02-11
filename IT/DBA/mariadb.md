@@ -13,7 +13,7 @@ GRANT ALL PRIVILEGES ON *.* TO 'user'@'host' IDENTIFIED BY 'password' REQUIRE SS
 general_log             = 1 # 最大文件数?
 ```
 
-### Slow Log
+### Slow Query Log
 
 ```conf
 slow_query_log # 开启慢查询日志
@@ -21,7 +21,7 @@ long_query_time     = 2 # 限定查询时间 2s , 界限这么宽 ?
 log-queries-not-using-indexes
 ```
 
-### Bin Log
+### Binlog
 
 ```conf
 sync_binlog = 0 # 事务提交后, 仅把 binlog_cache 中的数据写入 binlog 文件中, 但不执行 fsync 同步磁盘
@@ -216,7 +216,12 @@ EXPLAIN SELECT * FROM table;
 
 ### Error Log
 
+错误日志
+
 ### General Log
+
+mysql 接收到的每一个命令, 无论成功与否都记录下来
+需要相当高的系统开销, 一般用于 **调试** 阶段
 
 ### Slow Log
 
@@ -290,6 +295,14 @@ binlog_format = { STATEMENT | ROW | MIXED } -- 二进制日志格式
 
 - 直接编辑 mysql 数据库, 则根据 binlog_format 执行日志记录
 - 间接编辑 mysql 数据库, 则统一通过 **语句日志** 记录
+
+### Redo Log: 重做日志
+
+脏页记录, 确保事务的持久性
+
+### Undo Log: 回滚日志
+
+保存事务前的 mysql-MVCC 版本(视图)
 
 ## 复制
 
@@ -527,9 +540,7 @@ RAPAIR TABLE table;
 
 ### 脏页及其控制处理
 
-#### 
-
-`innodb_io_capacity`: innodb 一次刷新到磁盘的脏页数
+#### `innodb_io_capacity`: innodb 一次刷新到磁盘的脏页数
 
 `innodb_io_capacity` 与 磁盘配置 的参考对应
 
@@ -539,4 +550,11 @@ RAPAIR TABLE table;
 |                 2000 | SAS*12 RAID 10 |
 |                 5000 | SSD            |
 |                50000 | FUSION-IO      |
+
+
+#### `innodb_flush_neighbors`
+
+该参数在
+- mysql<8.0 / mariadb<?? 时默认为 1, 在 flush 脏页时会把相邻的脏页同时 flush , 可能会出现连锁反应, 适用于 SATA 等 IOPS 较低的设备
+- mysql>=8.0 / mariadb>=?? 时默认为 0, 在 flush 脏页时只 flush 当前脏页然后返回, 适用于 SSD 等 IOPS 较高的设备, 减少 SQL 语句响应时间
 
