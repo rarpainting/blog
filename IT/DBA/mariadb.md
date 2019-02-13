@@ -513,7 +513,7 @@ CHECKSUM TABLE table;
 ```sql
 OPTIMIZE TABLE table;
 ```
-> 碎片整理
+> 碎片整理, 等价于 `recreate` + `analyze`
 
 ```sql
 CHECK TABLE table;
