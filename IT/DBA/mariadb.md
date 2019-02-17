@@ -251,6 +251,10 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 - max_binlog_size -- 单日志文件限制尺寸
 - 写入文件到 log_bin_basename, 通过 SHOW BINARY LOGS; 查询二进制日志文件列表
 
+完整 Binlog 的标志:
+- statement 格式: 以 COMMIT 结尾
+- row 格式: 以 XID event 结尾(redo log 也有相应的 XID event)
+
 #### 复制时安全清除二进制文件
 
 - 通过 SHOW BINARY LOGS 获取主服务器上的二进制日志文件列表
@@ -275,6 +279,11 @@ binlog_format = { STATEMENT | ROW | MIXED } -- 二进制日志格式
 ##### ROW
 
 记录影响各个表行的事件
+
+`binlog_row_image`: { MINIMAL | FULL }:
+- 默认为 FULL, 记录每一行的变更
+- MINIMAL : 只记录影响后的行 (注: 腾讯云)
+
 
 ##### MIXED
 
@@ -303,6 +312,19 @@ binlog_format = { STATEMENT | ROW | MIXED } -- 二进制日志格式
 ### Undo Log: 回滚日志
 
 保存事务前的 mysql-MVCC 版本(视图)
+
+### 附议
+
+#### 崩溃恢复
+
+- 如果 redo log 里面的事务时完整的, 即已经有了 commit 标识, 则直接提交
+- 如果 redo log 里面的事务只有完整的 prepare 标识, 则判断对应的事务 binlog 是否存在并完整
+  - 事务 binlog 完整, 则提交事务
+  - 否则 回滚事务
+
+#### redo log 与 binlog 关联
+
+依靠 XID 关联, 崩溃恢复时, 按顺序扫描 redo log 并恢复
 
 ## 复制
 
@@ -515,6 +537,14 @@ OPTIMIZE TABLE table;
 ```
 > 碎片整理, 等价于 `recreate` + `analyze`
 
+用于碎片整理的还有:
+
+```sql
+ALTER TABLE table ENGINE=innodb,ALGORITHM=inplace; # 默认行为, 避免了原表的复制, 仅是对表重组
+ALTER TABLE table ENGINE=innodb,ALGORITHM=copy; # 不仅复制了原表, 还进行了表的重组, 一般用于修改主键(primary key)时使用
+```
+> 以上两者执行中都需要创建 tmp_table
+
 ```sql
 CHECK TABLE table;
 ```
@@ -538,6 +568,10 @@ RAPAIR TABLE table;
 - `EXTENDED`: 最慢的选项, 需要逐行重建索引
 - `USE_FRM`: 只有当 MYI 文件丢失时才使用这个选项, 全面重建整个索引
 
+> 注意:
+> 在重建表的过程中, 页会按照 90% 的比例重新整理页数据(10% 留给 UPDATE 使用)
+> 因此如果该表在重建前利用率已经超过 90% , 重建后反而会导致文件更大
+
 ### 脏页及其控制处理
 
 #### `innodb_io_capacity`: innodb 一次刷新到磁盘的脏页数
@@ -557,4 +591,20 @@ RAPAIR TABLE table;
 该参数在
 - mysql<8.0 / mariadb<?? 时默认为 1, 在 flush 脏页时会把相邻的脏页同时 flush , 可能会出现连锁反应, 适用于 SATA 等 IOPS 较低的设备
 - mysql>=8.0 / mariadb>=?? 时默认为 0, 在 flush 脏页时只 flush 当前脏页然后返回, 适用于 SSD 等 IOPS 较高的设备, 减少 SQL 语句响应时间
+
+### Order by 工作原理
+
+### 附: 杂记
+
+#### inlpace 与 online 的关系
+
+- DDL 过程如果时 online , 就一定是 inplace ()
+- 如果时 inplace 有可能不是 online(全文索引--FULLTEXT index 空间索引--SPATIAL index)
+
+#### Update
+
+如果 `update` 查询后要更改的值和目标值一样, InnoDB 依然会认真的执行该语句(加锁, 数据更新)
+
+因为 MySQL 的隔离规则(可重复读 等), 在一个事务(08 | 事务到底是隔离的还是不隔离的?--图 5)中, 如果该语句(Update)不记录, 不执行
+会直接影响事务后续的语句
 
