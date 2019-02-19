@@ -383,7 +383,7 @@ log-basename = master1 # mariadb 独有
   
 ## <<极客时间: MySQL 实战>>
 
-[MySQL 的逻辑架构图](0d2070e8f84c4801adbfa03bda1f98d9.png)
+![MySQL 的逻辑架构图](0d2070e8f84c4801adbfa03bda1f98d9.png)
 
 ### 一次查询运行流程
 
@@ -425,7 +425,7 @@ log-basename = master1 # mariadb 独有
 
 ### 一次更新运行流程(WAL: Write-Ahead Logging)
 
-[redo log](b075250cad8d9f6c791a52b6a600f69c.jpg)
+![redo log](b075250cad8d9f6c791a52b6a600f69c.jpg)
 
 - `checkpoint` 是擦除的位置
 - `write pos` 是当前记录的位置
@@ -441,7 +441,7 @@ redo log 与 binlog 差异:
 
 同时 redo log 和 binlog 通过 "事务 ID" 对应
 
-[update 语句执行流程](2e5bff4910ec189fe1ee6e2ecc7b4bbe.png)
+![update 语句执行流程](2e5bff4910ec189fe1ee6e2ecc7b4bbe.png)
 
 #### update 的实际执行流程:
 
@@ -593,6 +593,127 @@ RAPAIR TABLE table;
 - mysql>=8.0 / mariadb>=?? 时默认为 0, 在 flush 脏页时只 flush 当前脏页然后返回, 适用于 SSD 等 IOPS 较高的设备, 减少 SQL 语句响应时间
 
 ### Order by 工作原理
+
+mysql 的 `order by` 排序分为两种: 全字段排序 和 rowid 排序
+
+以以下内容作为分析基准:
+
+```sql
+CREATE TABLE `t` (
+  `id` int(11) NOT NULL,
+  `city` varchar(16) NOT NULL,
+  `name` varchar(16) NOT NULL,
+  `age` int(11) NOT NULL,
+  `addr` varchar(128) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `city` (`city`)
+) ENGINE=InnoDB;
+```
+
+```sql
+select city,name,age from t where city='杭州' order by name limit 1000  ;
+```
+
+![city 字段的索引示意图](5334cca9118be14bde95ec94b02f0a3e.png)
+
+#### 全字段排序
+
+- 初始化 sort_buffer, 确定放入 name, city, age 三个字段
+- 从索引 city 找到第一个满足 `city='杭州'` 条件的主键 id, 也就是图中的 ID_X
+- 从主键 id 索引取出整行, 取 name, city, age 三个字段的值, 存入 sort_buffer 中
+- 重复步骤 3/4 直到 city 的值不满足查询条件为止, 对应的主键 id 也就是图中 ID_Y
+- 对 sort_buffer 中的数据按照字段 name 做快速排序
+- 按照排序结果取前 1000 行返回给客户端
+
+![全字段排序](6c821828cddf46670f9d56e126e3e772.jpg)
+
+#### rowid 排序
+
+- 初始化 sort_buffer, 确定放入两个字段 -- 用于索引的 name 和 id
+- 从索引 city 找到第一个满足 `city='杭州'` 条件的主键 id, 即图中的 ID_X
+- 到主键 id 索引取出整行, 取 name, id 字段, 存入 sort_buffer
+- 重复步骤 3/4 直到不满足 `city='杭州'` 条件为止, 即图中的 ID_Y
+- 对 sort_buffer 中的数据按照字段 name 进行排序
+- 遍历排序结果, 取前 1000 行, 并按照 id 的值回到元表中取出 city, name 和 age 三个字段并返回到客户端
+
+![rowid 排序](dc92b67721171206a302eb679c83e86d.jpg)
+
+#### 相关全局变量
+
+##### sort_buffer_size
+
+mysql 为排序设置的 sort_buffer 大小
+
+如果需要排序的数据下雨 sort_buffer_size, 排序会在内存中完成
+
+如果排序数据量太大, 内存不够用, 就不得不利用磁盘临时文件辅助排序
+
+可通过以下方法确定排序语句是否使用了临时文件(MariaDB 无效)
+
+```sql
+/* 打开 optimizer_trace，只对本线程有效 */
+SET optimizer_trace='enabled=on'; 
+
+/* @a 保存 Innodb_rows_read 的初始值 */
+select VARIABLE_VALUE into @a from  performance_schema.session_status where variable_name = 'Innodb_rows_read';
+
+/* 执行语句 */
+select city, name,age from t where city='杭州' order by name limit 1000; 
+
+/* 查看 OPTIMIZER_TRACE 输出 */
+SELECT * FROM `information_schema`.`OPTIMIZER_TRACE`\G
+
+/* @b 保存 Innodb_rows_read 的当前值 */
+select VARIABLE_VALUE into @b from performance_schema.session_status where variable_name = 'Innodb_rows_read';
+
+/* 计算 Innodb_rows_read 差值 */
+select @b-@a;
+```
+
+**注意: 如果需要用到临时文件, 则会使用外部排序(仅是临时文件是归并, 还是 sort_buffer 的算法也替换到归并?), 外部排序一般使用归并排序**
+
+##### max_length_for_sort_data
+
+控制用于排序的行数据长度
+
+- 小于 `max_length_for_sort_data`: 全字段排序
+- 大于 `max_length_for_sort_data`: `rowid` 排序
+
+#### 通过索引优化
+
+##### 为 (city, name) 建立联合索引
+
+```sql
+alter table t add index city_user(city, name);
+```
+
+步骤:
+- 从索引 (city, name) 找到第一个满足 `city='杭州'` 条件的主键 id
+- 到主键 id 索引取出整行, 取 (name, city, age) 三个字段的值, 作为结果集的一部分直接返回
+- 从索引 (city, name) 取下一个记录主键 id
+- 重复步骤 2/3 , 直到查到第 1000 条记录, 或者是不满足 `city='杭州'` 条件时循环结束
+
+![city 和 name 的联合索引示意图](f980201372b676893647fb17fac4e2bf.png)
+
+![(city, name) 联合索引后, 查询执行计划](3f590c3a14f9236f2d8e1e2cb9686692.jpg)
+
+##### 为 (city, name, age) 建立联合索引, 以使用 覆盖索引
+
+```sql
+alter table t add index city_user(city, name, age);
+```
+
+步骤:
+- 从索引 (city, name, age) 找到第一个满足 `city='杭州'` 条件的记录, 取出其中 city, name 和 age 这三个字段的值, 作为结果集的一部分直接返回
+- 从索引 (city, name, age) 取出下一个记录, 如果满足条件, 则同样取出三个字段的值, 直接返回到结果集
+- 重复步骤 2 , 直到满足 `limit` 或者 不满足 `city='杭州'` 条件时循环结束
+
+![(city, name, age) 联合索引后, 查询执行计划](df4b8e445a59c53df1f2e0f115f02cd6.jpg)
+
+#### 结论
+
+- MySQL 在认为内存足够的情况下, 会多利用内存, 尽量减少磁盘访问
+- MySQL 只在原数据是无序的时候才需要生成临时文件, 并且在临时文件中排序
 
 ### 附: 杂记
 
