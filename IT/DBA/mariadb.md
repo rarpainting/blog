@@ -717,6 +717,45 @@ alter table t add index city_user(city, name, age);
 - 对于 **InnoDB 表** 来说, 执行 **全字段排序** 会减少磁盘访问, 因此会被优先选择
 - 对于 **内存表** 来说, 回表过程只是简单的根据数据行的位置, **直接访问内存** 得到数据, 根本不会导致多访问磁盘, 此时 **rowid** 会被优先考虑
 
+### 随机数
+
+```sql
+CREATE TABLE `words` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `word` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+
+delimiter ;;
+create procedure idata()
+begin
+  declare i int;
+  set i=0;
+  while i<10000 do
+    insert into words(word) values(concat(char(97+(i div 1000)), char(97+(i % 1000 div 100)), char(97+(i % 100 div 10)), char(97+(i % 10))));
+    set i=i+1;
+  end while;
+end;;
+delimiter ;
+
+call idata();
+```
+
+```sql
+select word from words order by rand() limit 3;
+```
+
+内部流程:
+- 创建一个临时表; 这个临时表使用的是 memory 引擎, 表里有两个字段, 第一个字段是 *double* 类型(R), 第二个字段是 *varchar(64)* 类型(W); 且该表没有索引
+- 从 `words` 表中, 按主键顺序取出所有的 word 值, 对于每一个 word 值, 调用 rand() 生成一个大于 0 小于 1 的随机小数, 并把这个随机小数和 word 分别存入临时表的 R 和 W 字段中, 到此, 扫描行数是 10000
+- 目前临时表中有 10000 行数据, 接下来需要在没有索引的内存临时表中, 按照字段 R 排序
+- 初始化 sort_buffer, sort_buffer 中有两个字段, double 和 整数
+- 从内存临时表中一行一行的取出 R 和位置信息, 分别存入 sort_buffer 中的两个字段中; 这个过程要对内存临时表作全表扫描, 此时扫描行数增加 10000, 成了 20000
+- 在 sort_buffer 中根据 R 的值进行排序, 注意: 这个过程没有涉及到表操作, 所以不会增加扫描行数
+- 扫描完成后, 取出前三个结果的位置信息, 依次到内存临时表中取出 word 值, 返回给客户端; 该过程访问了表的三行数据, 扫描总行数变成 20003
+
+#### 内存临时表
+
 ### 附: 杂记
 
 #### inlpace 与 online 的关系
@@ -730,4 +769,3 @@ alter table t add index city_user(city, name, age);
 
 因为 MySQL 的隔离规则(可重复读 等), 在一个事务(08 | 事务到底是隔离的还是不隔离的?--图 5)中, 如果该语句(Update)不记录, 不执行
 会直接影响事务后续的语句
-
