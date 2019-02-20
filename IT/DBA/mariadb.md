@@ -717,7 +717,7 @@ alter table t add index city_user(city, name, age);
 - 对于 **InnoDB 表** 来说, 执行 **全字段排序** 会减少磁盘访问, 因此会被优先选择
 - 对于 **内存表** 来说, 回表过程只是简单的根据数据行的位置, **直接访问内存** 得到数据, 根本不会导致多访问磁盘, 此时 **rowid** 会被优先考虑
 
-### 随机数
+### 随机获取行
 
 ```sql
 CREATE TABLE `words` (
@@ -747,14 +747,46 @@ select word from words order by rand() limit 3;
 
 内部流程:
 - 创建一个临时表; 这个临时表使用的是 memory 引擎, 表里有两个字段, 第一个字段是 *double* 类型(R), 第二个字段是 *varchar(64)* 类型(W); 且该表没有索引
-- 从 `words` 表中, 按主键顺序取出所有的 word 值, 对于每一个 word 值, 调用 rand() 生成一个大于 0 小于 1 的随机小数, 并把这个随机小数和 word 分别存入临时表的 R 和 W 字段中, 到此, 扫描行数是 10000
+- 从 `words` 表中, 按主键顺序取出所有的 word 值, 对于每一个 word 值, 调用 rand() 生成一个大于 0 小于 1 的随机小数, 并把这个 随机小数 和 word 分别存入临时表的 R 和 W 字段中, 到此, 扫描行数是 10000
 - 目前临时表中有 10000 行数据, 接下来需要在没有索引的内存临时表中, 按照字段 R 排序
 - 初始化 sort_buffer, sort_buffer 中有两个字段, double 和 整数
-- 从内存临时表中一行一行的取出 R 和位置信息, 分别存入 sort_buffer 中的两个字段中; 这个过程要对内存临时表作全表扫描, 此时扫描行数增加 10000, 成了 20000
+- 从 内存临时表 中一行一行的取出 R 和位置信息, 分别存入 sort_buffer 中的两个字段中; 这个过程要对内存临时表作全表扫描, 此时扫描行数增加 10000, 成了 20000
 - 在 sort_buffer 中根据 R 的值进行排序, 注意: 这个过程没有涉及到表操作, 所以不会增加扫描行数
 - 扫描完成后, 取出前三个结果的位置信息, 依次到内存临时表中取出 word 值, 返回给客户端; 该过程访问了表的三行数据, 扫描总行数变成 20003
 
+![随机排序完整流程图](2abe849faa7dcad0189b61238b849ffc.png)
+
 #### 内存临时表
+
+`rowid`:
+- 引擎用于唯一定位一行数据的信息
+- 对于有主键的 InnoDB 表来说, 这个 rowid 就是主键 ID
+- 对于没有主键的 InnoDB 表来说, 这个 rowid 就是由系统生成的长度为 6 字节的 rowid
+- memory 引擎不是索引组织表, 在这个例子里面, 你可以认为它就是一个数组, 这个 rowid 其实就是数组的下标
+
+即 **order by rand() 使用了内存临时表, 内存临时表排序的时候使用了 rowid 排序方法**
+
+#### 磁盘临时表
+
+- `tmp_table_size` 这个配置限制了内存临时表的大小, 默认值是 16M
+- 如果临时表大小超过 `tmp_table_size`, 那么内存临时表就会转成磁盘临时表
+- 磁盘临时表使用的默认引擎由 `internal_tmp_disk_storage_engine` 设置(默认是 InnoDB), MariaDB 则是 `default_tmp_storage_engine` ?
+
+#### 优先队列(最大/最小堆)算法
+
+- 如果需要存储的临时表内存 size 小于 `innodb_sort_buffer_size`, 则启用 优先队列算法
+- 如果启用了 `OPTIMIZER_TRACE`, `information_schema`.`OPTIMIZER_TRACE`.`filesort_priority_queue_optimiaztion`.`chosen` 为 `true`, 则确定启动排序的 优先队列算法
+- 如果需要存储的临时表内存 size 大于 `innodb_sort_buffer_size`, 仍然会启用 归并排序算法
+
+相对而言, 严格随机的方法
+```sql
+mysql> select count(*) into @C from t;
+set @Y = floor(@C * rand());
+set @sql = concat("select * from t limit ", @Y, ",1");
+prepare stmt from @sql;
+execute stmt;
+DEALLOCATE prepare stmt;
+```
 
 ### 附: 杂记
 
