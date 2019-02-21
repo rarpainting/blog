@@ -779,6 +779,7 @@ select word from words order by rand() limit 3;
 - 如果需要存储的临时表内存 size 大于 `innodb_sort_buffer_size`, 仍然会启用 归并排序算法
 
 相对而言, 严格随机的方法
+
 ```sql
 mysql> select count(*) into @C from t;
 set @Y = floor(@C * rand());
