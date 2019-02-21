@@ -781,13 +781,28 @@ select word from words order by rand() limit 3;
 相对而言, 严格随机的方法
 
 ```sql
-mysql> select count(*) into @C from t;
+select count(*) into @C from t;
 set @Y = floor(@C * rand());
 set @sql = concat("select * from t limit ", @Y, ",1");
 prepare stmt from @sql;
 execute stmt;
 DEALLOCATE prepare stmt;
 ```
+
+### 坑
+
+#### 条件字段的函数操作
+
+- 对索引字段作函数操作, 可能会破坏索引值的 **有序性** , 因而导致优化器决定放弃树搜索功能
+- 即使运算不会破坏有序性, MySQL 也有可能不会考虑索引
+
+#### 隐式类型转换
+
+- 字符串和数字作比较, 是将 字符串 转换到 **数字**(对字符串做数字转换方法), 再做比较
+
+#### 隐式字符编码转换
+
+- 字符串以"按数据长度增加的方向"进行转换, 而转换的过程动用函数
 
 ### 附: 杂记
 
