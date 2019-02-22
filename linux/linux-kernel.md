@@ -41,6 +41,31 @@ CPU 优化:
 - 页面回收
   - 用于将内存映射被修改的内容与底层的块设备同步
   
+#### 页类型
+
+可供分配的页有以下类型:
+
+```c
+#define MIGRATE_UNMOVABLE     0 /* 不可移动页: 这类页在内存中有 固定的位置 , 不能移动(内核中 核心分配 的页面大多属于这种页面) */
+#define MIGRATE_RECLAIMABLE   1 /* 可回收页: 同样不能移动, 但 可删除 , 其内容页可以从其它地方重新生成(从文件映射的数据页) */
+#define MIGRATE_MOVABLE       2 /* 可移动页: 可以 随意移动, 从 slab 页表分配的应用程序页内容属于该类型 */
+#define MIGRATE_PCPTYPES      3 /* the number of types on the pcp lists */ /* per_cpu_pageset: 用于表示每 CPU 页框高速缓存的数据结构中链表的迁移类型数目 */
+#define MIGRATE_RESERVE       3 /* 前三种列表中都没有可满足分配的页时, 则从该类型分配 */
+#define MIGRATE_ISOLATE       4 /* can't allocate from here */ /* 用于跨越 NUMA 节点移动物理内存页 */
+#define MIGRATE_TYPES         5 /* 迁移类型的数目 */
+```
+
+当一个指定的迁移类型所对应的链表中没有空闲块, 将按照以下定义的顺序到其它迁移类型的链表中寻找
+
+```c
+static int fallbacks[MIGRATE_TYPES][MIGRATE_TYPES-1] = {
+	[MIGRATE_UNMOVABLE]   = { MIGRATE_RECLAIMABLE, MIGRATE_MOVABLE,   MIGRATE_RESERVE },
+	[MIGRATE_RECLAIMABLE] = { MIGRATE_UNMOVABLE,   MIGRATE_MOVABLE,   MIGRATE_RESERVE },
+	[MIGRATE_MOVABLE]     = { MIGRATE_RECLAIMABLE, MIGRATE_UNMOVABLE, MIGRATE_RESERVE },
+	[MIGRATE_RESERVE]     = { MIGRATE_RESERVE,     MIGRATE_RESERVE,   MIGRATE_RESERVE }, /* Never used */
+};
+```
+ 
 #### 对象管理与引用计数
 
 在内核中跟踪/记录/管理 C 的结构实例
