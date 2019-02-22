@@ -780,7 +780,7 @@ select word from words order by rand() limit 3;
 
 相对而言, 严格随机的方法
 ```sql
-mysql> select count(*) into @C from t;
+select count(*) into @C from t;
 set @Y = floor(@C * rand());
 set @sql = concat("select * from t limit ", @Y, ",1");
 prepare stmt from @sql;
@@ -788,9 +788,13 @@ execute stmt;
 DEALLOCATE prepare stmt;
 ```
 
+### 函数操作
+
+**由于 B+ 树的有序性是按深度递增, 对索引字段做函数操作, 可能会破坏索引值的有序性, 因此优化器就决定放弃走树搜索功能**
+
 ### 附: 杂记
 
-#### inlpace 与 online 的关系
+#### inplace 与 online 的关系
 
 - DDL 过程如果时 online , 就一定是 inplace ()
 - 如果时 inplace 有可能不是 online(全文索引--FULLTEXT index 空间索引--SPATIAL index)
