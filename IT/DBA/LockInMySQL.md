@@ -28,16 +28,21 @@
 
 ### Next KeyLock
 
-锁数据 + 锁 Gap
+行锁 + Gap 锁 统称 Next keyLock
+
+查询(select) 的时候使用 `lock in share mode` 或者 `for update` 会导致该查询放弃该事务的视图, 而转用最新的视图(可能是 行锁 的添加 S 锁/ X 锁); 破坏了读可重复性, 但是由于不需要回滚 MVCC 版本, 查询效率更高(尤其是该查询的目标表已经进行了大量的更改)
 
 ### Gap 锁(间隙锁)
 
-锁 Gap
+Gap 锁 只在 可重复读(REPEATABLE READ) 隔离级别下有效
+
+- Gap 锁特性是 前开后闭 -- { [n, m), 其中 m>n }
+- Gap 锁之间 不冲突
+- Gap 锁 与 相关操作(CUDA) 冲突
 
 ### RecordLock
 
 锁数据
-
 
 ## 乐观锁
 

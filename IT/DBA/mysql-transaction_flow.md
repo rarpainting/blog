@@ -17,3 +17,49 @@
 14. `prepare` 阶段,将事务的 xid 写入, 将 `binlog_cache` 里的进行 flush 以及 sync 操作(大事务的话这步非常耗时)
 15. commit 阶段, 由于之前该事务产生的 `redo log` 已经 sync 到磁盘了; 所以这步只是在 `redo log` 里标记 `commit`
 16. 当 binlog 和 redo log 都已经落盘以后, 如果触发了刷新脏页的操作, 先把该脏页复制到 `doublewrite buffer` 里, 把 `doublewrite buffer` 里的刷新到共享表空间, 然后才是通过 `page cleaner` 线程把脏页写入到磁盘中
+
+## 19 课
+
+@某/人
+
+版本5.7.13
+rc模式下:
+session 1:
+begin;
+select * from t where c=5 for update; 
+session 2:
+delete from t where c=10; --等待
+session 3:
+insert into t values(100001,8); --成功
+session 4:
+update t set c=100 where id=10; --成功
+session 1:
+commit
+session 2:事务执行成功
+
+rr模式下:
+begin;
+select * from t where c=5 for update; 
+session 2:
+delete from t where c=10 --等待
+session 3:
+insert into t values(100001,8) --等待
+session 4:
+update t set c=100 where id=10; --成功
+session 1:
+commit
+session 2:事务执行成功
+session 3：事务执行成功
+
+从上面这两个简单的例子,可以大概看出上锁的流程
+不管是 rr 模式还是 rc 模式,这条语句都会先在 server 层对表加上 MDL S 锁,然后进入到引擎层
+
+rc模式下, 由于数据量不大只有10W. 通过实验可以证明 session 1 上来就把该表的所有行都锁住了
+导致其他事务要对该表的所有现有记录做更新, 是阻塞状态. 为什么 insert 又能成功 ?
+说明 rc 模式下 for update 语句没有上 gap 锁, 所以不阻塞 insert 对范围加插入意向锁, 所以更新成功
+session 1 commit 后, session 2 执行成功. 表明所有行的 X 锁是在事务提交完成以后才释放
+
+rr模式下, session 1 和 session 2 与 rc 模式下都一样, 说明 rr 模式下也对所有行上了 X 锁
+唯一的区别是 insert 也等待了, 是因为 rr 模式下对没有索引的更新, 聚簇索引上的所有记录, 都被加上了 X 锁. 其次, 聚簇索引每条记录间的间隙(GAP), 也同时被加上了 GAP 锁. 由于 gap 锁阻塞了 insert 要加的插入意向锁, 导致 insert 也处于等待状态. 只有当 session 1 commit 完成以后. session 1 上的所有锁才会释放,S2,S3 执行成功
+
+由于例子中的数据量还比较小, 如果数据量达到千万级别, 就比较直观的能看出, 上锁是逐行上锁的一个过程. 扫描一条上一条, 直到所有行扫描完, rc 模式下对所有行上 X 锁. rr 模式下不仅对所有行上 X 锁, 还对所有区间上 gap 锁. 直到事务提交或者回滚完成后, 上的锁才会被释放
