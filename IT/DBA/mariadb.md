@@ -841,6 +841,18 @@ DEALLOCATE prepare stmt;
 - `sync_binlog=1`: 每次提交事务都执行 fsync
 - `sync_binlog=N(N>1)`: 每次提交事务都 write, 在积累 N 个事务后 sync, 推荐 N 在 (100, 1000) 这个范围, 但是故障重启后会丢失最近 N 个事务的 binlog
 
+![MySQL redo log 存储状态](9d057f61d3962407f413deebc80526d4.png)
+
+redo log 的三种状态:
+- 存在 redo log buffer 种, 物理上是在 MySQL 进程内存中, 即图中的红色部分
+- 写到磁盘(write), 但是没有持久化(fsync), 物理上是在文件系统的 page cache 里, 即黄色部分
+- 持久化到磁盘, 对应 hard disk, 即绿色部分
+
+`innodb_flush_log_trx_commit` -- 控制 redo log 的写入策略:
+- 0: 表示每次事务提交时, 都只是把 redo log 留在 redo log buffer
+- 1: 每次事务提交后, 都将 redo log 持久化到 磁盘
+- 2: 每次事务提交后, 都只是把 redo log 写到 page cache
+
 ### 附: 杂记
 
 #### inplace 与 online 的关系
