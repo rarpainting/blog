@@ -829,6 +829,18 @@ DEALLOCATE prepare stmt;
 - 由于索引都需要查询到不满足的条件, 所以建议尽量使用 **limit** , 访问安全且减小了加锁的范围
 - *读提交(Read-Commit) 没有间隙锁(或者说间隙锁更小), 因此 debug 分析时逻辑更为清晰*
 
+### binlog 写入规则
+
+![binlog 写盘状态](9ed86644d5f39efb0efec595abb92e3e.png)
+
+- **write**: 把日志写入到文件系统的 page cache, 没有持久化数据到磁盘, 速度较块
+- **fsync**: 数据持久化操作; 主要占用 IOPS 的操作
+
+`sync_binlog` 变量:
+- `sync_binlog=0`: 每次提交事务都只 write, 不 fsync
+- `sync_binlog=1`: 每次提交事务都执行 fsync
+- `sync_binlog=N(N>1)`: 每次提交事务都 write, 在积累 N 个事务后 sync, 推荐 N 在 (100, 1000) 这个范围, 但是故障重启后会丢失最近 N 个事务的 binlog
+
 ### 附: 杂记
 
 #### inplace 与 online 的关系
