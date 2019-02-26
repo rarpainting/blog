@@ -841,6 +841,11 @@ DEALLOCATE prepare stmt;
 - `sync_binlog=1`: 每次提交事务都执行 fsync
 - `sync_binlog=N(N>1)`: 每次提交事务都 write, 在积累 N 个事务后 sync, 推荐 N 在 (100, 1000) 这个范围, 但是故障重启后会丢失最近 N 个事务的 binlog
 
+**没有提交的事务 redo log** 在以下情况写入到磁盘:
+- InnoDB 每秒 1 次的写磁盘操作
+- redo log buffer 占用的空间即将达到 **innodb_buffer_size** 一半的时候, 后台进程会主动写盘
+- 并行的事务提交的时候, 顺带将这个事务的 redo log buffer 持久化到磁盘
+
 ### 附: 杂记
 
 #### inplace 与 online 的关系
