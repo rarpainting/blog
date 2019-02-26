@@ -848,10 +848,15 @@ redo log 的三种状态:
 - 写到磁盘(write), 但是没有持久化(fsync), 物理上是在文件系统的 page cache 里, 即黄色部分
 - 持久化到磁盘, 对应 hard disk, 即绿色部分
 
-`innodb_flush_log_trx_commit` -- 控制 redo log 的写入策略:
+已经提交的事务, `innodb_flush_log_trx_commit` 会控制 redo log 的写入策略:
 - 0: 表示每次事务提交时, 都只是把 redo log 留在 redo log buffer
 - 1: 每次事务提交后, 都将 redo log 持久化到 磁盘
 - 2: 每次事务提交后, 都只是把 redo log 写到 page cache
+
+**没有提交的事务 redo log** 在以下情况写入到磁盘:
+- InnoDB 每秒 1 次的写磁盘操作
+- redo log buffer 占用的空间即将达到 **innodb_buffer_size** 一半的时候, 后台进程会主动写盘
+- 并行的事务提交的时候, 顺带将这个事务的 redo log buffer 持久化到磁盘
 
 ### 附: 杂记
 
