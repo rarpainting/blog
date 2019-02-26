@@ -445,6 +445,10 @@ redo log 与 binlog 差异:
 
 ![update 语句执行流程](2e5bff4910ec189fe1ee6e2ecc7b4bbe.png)
 
+WAL 得益于两方面:
+- redo log 和 binlog 都是顺序写, 磁盘的顺序写比随机写速度快
+- 组提交机制, 可以大幅度降低磁盘的 IOPS 消耗
+
 #### update 的实际执行流程:
 
 - 先获取 `ID=2` 这一行
@@ -857,6 +861,22 @@ redo log 的三种状态:
 - InnoDB 每秒 1 次的写磁盘操作
 - redo log buffer 占用的空间即将达到 **innodb_buffer_size** 一半的时候, 后台进程会主动写盘
 - 并行的事务提交的时候, 顺带将这个事务的 redo log buffer 持久化到磁盘
+
+> 双 1 配置:
+> `sync_binlog` 和 `innodb_flush_log_at_trx_commit` 都为 1:
+> 一个事务完整提交的同时需要 redo log (prepare 阶段) 和 binlog 两次写盘
+
+组提交机制:
+- LSN(日志逻辑序列号): 单调递增, 对应 redo log 的 **写入点**; 每次写入 length 的 redo log, LSN 的值就加上 LSN
+- 并发事务在 perpare 阶段, 写完 redo log buffer , 准备持久化到磁盘; 该组的 leader (一般是第一个写盘的事务)以该组的 LSN 总和的方式写盘
+
+![redo log 组提交](933fdc052c6339de2aa3bf3f65b188cc.png)
+
+![两阶段提交, 组提交细节](5ae7d074c34bc5bd55c82781de670c28.png)
+
+binlog 的 fsync 变量(mysql/mariadb):
+- `binlog_group_commit_sync_delay`/`binlog_commit_wait_usec`: 等待时间
+- `binlog_group_commit_sync_no_delay_count`/`binlog_commit_wait_count`: 等待累计数
 
 ### 附: 杂记
 
