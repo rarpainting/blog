@@ -229,19 +229,19 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 
 长时间的 **SQL 查询** 记录
 
-- slow_query_log = 1
-- 慢查询设置(log_query_time)时间级别是 微秒级
-- 写入文件到 slow_query_log_file, 写入表到 mysql.slow_log
-- log_queries_not_using_indexes -- 执行 不使用索引或者不限制行数 的查询都会被记录
-- log_slow_admin_statements -- 设置存储缓慢的管理查询, 包括 ALTER TABLE / ANALYZE TABLE / CHECK TABLE / CREATE INDEX / DROP INDEX / OPTIMIZE TABLE / REPAIR TABLE
-- log_slow_disabled_statements -- 禁止某些类型语句的记录(admin / call / slave / sp(存储过程))
-- min_examined_row_limit -- 如果查询结果的行数超过该值, 则将该查询记录到 slow_query_log
+- `slow_query_log = 1`
+- 慢查询设置(`log_query_time`)时间级别是 微秒级
+- 写入文件到 `slow_query_log_file`, 写入表到 mysql.slow_log
+- `log_queries_not_using_indexes` -- 执行 不使用索引或者不限制行数 的查询都会被记录
+- `log_slow_admin_statements` -- 设置存储缓慢的管理查询, 包括 ALTER TABLE / ANALYZE TABLE / CHECK TABLE / CREATE INDEX / DROP INDEX / OPTIMIZE TABLE / REPAIR TABLE
+- `log_slow_disabled_statements` -- 禁止某些类型语句的记录(admin / call / slave / sp(存储过程))
+- `min_examined_row_limit` -- 如果查询结果的行数超过该值, 则将该查询记录到 `slow_query_log`
 
 #### 统计扩展(Extended Statistics)
 
-- log_slow_rate_limit -- 限制实际写入慢查询的 行数/比例(?) ...
-- log_slow_verbosity -- { (Empty) | query_plan | innodb | explain }
-- log_slow_filter -- 通过 ',' 分割; 过滤器: 如果需要记录的查询同时 **匹配过滤器中的某类型** , 则将其记录到慢日志中:
+- `log_slow_rate_limit` -- 限制实际写入慢查询的 行数/比例(?) ...
+- `log_slow_verbosity` -- { (Empty) | query_plan | innodb | explain }
+- `log_slow_filter` -- 通过 ',' 分割; 过滤器: 如果需要记录的查询同时 **匹配过滤器中的某类型** , 则将其记录到慢日志中:
   - admin / filesort / filesort_on_disk / filesort_priority_queue(>= MariaDB 10.3.1) / full_join / full_scan / query_cache / query_cache_miss / tmp_table / tmp_table_on_disk
 
 ### Bin Log
@@ -249,9 +249,9 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 包含数据库 **所有** 更改(CREATE ALTER INSERT UPDATE DELETE)的记录(即使该记录对数据不影响)
 是 **复制** 所必备的, 可用于备份后还原数据
 
-- sql_log_bin = 1 -- 开启 二进制日志
-- max_binlog_size -- 单日志文件限制尺寸
-- 写入文件到 log_bin_basename, 通过 SHOW BINARY LOGS; 查询二进制日志文件列表
+- `sql_log_bin` = 1 -- 开启 二进制日志
+- `max_binlog_size` -- 单日志文件限制尺寸
+- 写入文件到 `log_bin_basename`, 通过 SHOW BINARY LOGS; 查询二进制日志文件列表
 
 完整 Binlog 的标志:
 - statement 格式: 以 COMMIT 结尾
@@ -266,13 +266,13 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 
 #### 选择性的记录
 
-binlog_do_db/binlog_ignore_db -- 特意记录的数据库和需要忽略的数据库
+`binlog_do_db`/`binlog_ignore_db` -- 特意记录的数据库和需要忽略的数据库
 
 - 不接受 ',' 分割的数据库, 多个设置则需要多次使用
 
 #### 二进制日志格式
 
-binlog_format = { STATEMENT | ROW | MIXED } -- 二进制日志格式
+`binlog_format` = { STATEMENT | ROW | MIXED } -- 二进制日志格式
 
 ##### STATEMENT
 
@@ -294,7 +294,7 @@ binlog_format = { STATEMENT | ROW | MIXED } -- 二进制日志格式
 - INSERT-DELEYED
 - 更新具有 **ATUO_INCREMENT 列** 的表并启用 **触发器(trigger)** 或者 **存储函数(stored function)**
 - LOAD_FILE()
-- ROW_COUNT() / FOUND_ROWS()
+- `ROW_COUNT()` / `FOUND_ROWS()`
 - USER() / CURRENT_USER()
 - UUID()
 - 其中有某些表是 mysql database 的 log table
@@ -349,11 +349,11 @@ log-basename = master1 # mariadb 独有
 
 #### 锁定 Master 表
 
-- FLUSH TABLES WITH READ LOCK -- 并且获得读锁
-- SHOW MASTER STATUS -- 获得 binlog 文件名
+- `FLUSH TABLES WITH READ LOCK` -- 并且获得读锁
+- `SHOW MASTER STATUS` -- 获得 binlog 文件名
 - 获得 文件(File)和位置(Position)
 - 开始复制
-- UNLOCK TABLES
+- `UNLOCK TABLES`
 
 #### 开启 Slave 服务器
 
@@ -379,9 +379,9 @@ log-basename = master1 # mariadb 独有
 ### 低级实现及差别
 
 - Windows: 使用 Windows 本地线程池
-  - thread_pool_min_threads
+  - `thread_pool_min_threads`
 - 类 Unix: 通用实现
-  - thread_pool_size
+  - `thread_pool_size`
   
 ## <<极客时间: MySQL 实战>>
 
@@ -448,6 +448,8 @@ redo log 与 binlog 差异:
 WAL 得益于两方面:
 - redo log 和 binlog 都是顺序写, 磁盘的顺序写比随机写速度快
 - 组提交机制, 可以大幅度降低磁盘的 IOPS 消耗
+
+**WAL 机制只保证写完了 redo log 和 内存, 不保证写数据到磁盘**
 
 #### update 的实际执行流程:
 
@@ -646,11 +648,11 @@ select city,name,age from t where city='杭州' order by name limit 1000  ;
 
 #### 相关全局变量
 
-##### sort_buffer_size
+##### `sort_buffer_size`
 
 mysql 为排序设置的 sort_buffer 大小
 
-如果需要排序的数据下雨 sort_buffer_size, 排序会在内存中完成
+如果需要排序的数据下雨 `sort_buffer_size`, 排序会在内存中完成
 
 如果排序数据量太大, 内存不够用, 就不得不利用磁盘临时文件辅助排序
 
@@ -875,8 +877,73 @@ redo log 的三种状态:
 ![两阶段提交, 组提交细节](5ae7d074c34bc5bd55c82781de670c28.png)
 
 binlog 的 fsync 变量(mysql/mariadb):
-- `binlog_group_commit_sync_delay`/`binlog_commit_wait_usec`: 等待时间
-- `binlog_group_commit_sync_no_delay_count`/`binlog_commit_wait_count`: 等待累计数
+- `binlog_group_commit_sync_delay` / `binlog_commit_wait_usec`: 等待时间
+- `binlog_group_commit_sync_no_delay_count` / `binlog_commit_wait_count`: 等待累计数
+
+### MySQL 设计问答
+
+#### 为什么 binlog cache 是每个线程独立维护, 而 redo log buffer 是全局共用
+
+- binlog 不能被打断: 一个事务的 binlog 必须连续写, 因此要整个事务完成后, 再一起写到文件
+- redo log 为了减少写盘次数, 会携带并发时的其他事务一起写盘
+
+#### binlog 已写盘 , redo log 也 commit 了, 但是因为网络原因, 客户端接受不到响应, 此时仍然是正常情况
+
+数据库的 "crash-safe" 保证以下内容:
+- 如果客户端收到事务成功的消息, 事务就一定持久化了
+- 如果客户端收到事务失败(主键冲突, 回滚等)的消息, 事务就一定失败了
+- 如果客户端收到 "执行异常" 的消息, 应用需要重连后通过查询当前状态来继续后续的逻辑; 此时数据库只保证内部(数据和日志/主库和备库之间)一致
+
+### 主备一致
+
+预备: 备库节点设置成 readonly
+- 有时候一些运营类的查询语句会被放到备库查询, 设置为只读更安全
+- 放置 切换时 出现双写, 造成主备不一致
+- 可以用 readonly 状态, 来判断节点的角色
+- readonly 设置对 超级(super)权限 用户无效
+
+![主备流程图](a66c154c1bc51e071dd2cc8c1d6ca6a3.png)
+
+一个事务日志同步的完整流程:
+- 在备库 B 上通过 `change master` 命令, 设置主库 A 的 IP, 端口, 用户名, 密码, 以及要从呢个位置开始请求 binlog, 这个位置包含 文件名和日志偏移量
+- 在备库 B 上执行 `start slave` 命令, 这时候备库会启动两个线程 -- `io_thread`/`sql_thread`; 其中 io_thread 负责与主库建立连接
+- 主库 A 验证完(用户名, 密码)后, 开始按照备库 B 传来的位置, 从本地读取 binlog , 发给 B
+- 备库 B 拿到 binlog 后, 写到本地文件, 即 中转日志(relay log)
+- sql_thread 读取中转日志, 解析出日志里的命令, 并执行
+
+`binlog_format`:
+- ROW:
+  - FULL: 记录改动的 行 的 所有字段的值
+  - MINIMAL: 只记录必要的信息(主键, 但是好像没有索引?)
+- STATEMENT:
+  - 只记录 sql 语句
+  - 通过添加 `SET TIMESTAMP=XXX` 确保主备数据一致性
+- MIXED:
+  - 在可能主备数据不一致的地方使用 ROW 格式, 否则使用 STATEMENT
+  
+#### 复制循环问题
+
+双 M 结构(互为主备)
+
+![MySQL 主备切换流程 - 双 M 结构](20ad4e163115198dc6cf372d5116c956.png)
+
+双 M 结构互为主备关系, 在切换时不需要修改主备关系
+
+`log_slave_update`: 备库执行 relay log 后生成 binlog
+
+循环复制问题: 节点 A 更新了一条语句, 生成的 binlog 发给节点 B, 节点 B 执行完后也生成 binlog; 此时如果节点 A 也是节点 B 的备库(双 M 结构), 相当于又把节点 B 新生成的 binlog 拿过来
+
+MySQL 是在 binlog 中记录该命令的 server id, 以解决复制循环的问题的
+
+双 M 结构规定:
+- 两个库的 server id 必须不同, 如果相同, 则它们之间不能设定为主备关系
+- 一个备库接收到 binlog 并在重放的过程中, 生成于原 binlog 的 server id 相同的 binlog
+- 每个库在收到从字节的主库发过来的日志后, 先判断 server id , 如果与自己相同, 表示这个日志是自己生成的, 就直接丢弃这个日志
+
+按照上面逻辑, 如果我们设置了双 M 结构, 日志的执行流程:
+- 从节点 A 更新的事务, binlog 里面记的都是 A 的 server id
+- 传到节点 B 执行一次以后, 节点 B 生成的 binlog 的 server id 也是 A 的 server id
+- 再传回给节点 A , A 判断到这个 server id 与自己的相同, 就不会再处理这个日志, 所以, 死循环再这里断掉
 
 ### 附: 杂记
 
@@ -891,3 +958,9 @@ binlog 的 fsync 变量(mysql/mariadb):
 
 因为 MySQL 的隔离规则(可重复读 等), 在一个事务(08 | 事务到底是隔离的还是不隔离的?--图 5)中, 如果该语句(Update)不记录, 不执行
 会直接影响事务后续的语句
+
+#### MySQL 配置
+
+mysql >= 5.7 后, 默认开启 ssl, 即使用 unixsock 连接, 也会读取 /etc/mysql/conf.d 里的 ssl 配置先行验证
+
+但是 mycli 用不了是 ??
