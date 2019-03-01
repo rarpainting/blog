@@ -1,5 +1,32 @@
 # MariaDB
 
+## 数据库语言
+
+### DDL(Data Definition Language) -- 数据定义语言
+
+操作对象和对象的属性(主键/索引等), 会导致锁表的 DDL Lock
+
+- Create
+- Drop
+- Alter
+
+### DML(Data Manipulation Language) -- 数据操作语言
+
+Insert/Delete/Update
+
+### DCL(Data Control Language) -- 数据控制语句
+
+数据库对象的权限, 与 数据安全 相关
+
+- Grant
+- Revoke
+
+### TCL(Transaction Control Language) 事务控制语言
+
+- Savepoint 设置保存点
+- Rollback
+- set Transaction
+
 ## MariaDB SSL 开启
 
 GRANT ALL PRIVILEGES ON *.* TO 'user'@'host' IDENTIFIED BY 'password' REQUIRE SSL;
@@ -376,13 +403,19 @@ log-basename = master1 # mariadb 独有
 - 充分利用底层操作系统功能
 - 限制线程池使用的资源
 
-### 低级实现及差别
+### 底层实现及差别
 
 - Windows: 使用 Windows 本地线程池
   - `thread_pool_min_threads`
 - 类 Unix: 通用实现
   - `thread_pool_size`
   
+## MySQL 同步策略
+
+- async
+- semi-sync: 只要有一个 slave 响应成功, master 就 commit
+- sync
+
 ## <<极客时间: MySQL 实战>>
 
 ![MySQL 的逻辑架构图](0d2070e8f84c4801adbfa03bda1f98d9.png)
@@ -913,8 +946,8 @@ binlog 的 fsync 变量(mysql/mariadb):
 
 `binlog_format`:
 - ROW:
-  - FULL: 记录改动的 行 的 所有字段的值
-  - MINIMAL: 只记录必要的信息(主键, 但是好像没有索引?)
+  - FULL: 记录改动的 行 的 所有字段的值; 同时记录所有的 前镜像(表中修改前的内容) 和 后镜像(表中修改后的内容)
+  - MINIMAL: 只记录必要的信息(主键, 修改列等); 前镜像只记录唯一识别列(唯一索引列, 主键列), 后镜像只记录 修改列
 - STATEMENT:
   - 只记录 sql 语句
   - 通过添加 `SET TIMESTAMP=XXX` 确保主备数据一致性
@@ -945,6 +978,25 @@ MySQL 是在 binlog 中记录该命令的 server id, 以解决复制循环的问
 - 传到节点 B 执行一次以后, 节点 B 生成的 binlog 的 server id 也是 A 的 server id
 - 再传回给节点 A , A 判断到这个 server id 与自己的相同, 就不会再处理这个日志, 所以, 死循环再这里断掉
 
+##### 数据库迁移导致的循环复制
+
+数据库迁移途中如果由双 M 结构, 可能会导致 循环复制, 建议做法
+
+```sql
+stop slave;
+CHANGE MASTER TO IGNORE_SERVER_IDS=(server_id_of_B);
+start slave;
+```
+
+停止非主备双方的复制; 一段时间后, 把 ignore 改回来
+
+```sql
+stop slave;
+CHANGE MASTER TO IGNORE_SERVER_IDS=();
+start slave;
+```
+
+
 ### 高可用
 
 #### 主备延迟
@@ -960,25 +1012,106 @@ MySQL 是在 binlog 中记录该命令的 server id, 以解决复制循环的问
 
 #### 主备切换策略
 
+结论: 在满足可靠性的前提下, 可用性依赖于 `seconds_behind_master`(SBM); SBM 越小, 可用性越高
+
 ##### 可靠性优先策略
+
+在 双 M 结构 下, 从状态 1 到状态 2 切换:
+- 判断备库 B 现在的 `seconds_behind_master`(SBM), 如果小于某个值, 继续下一步, 否则持续重试这一步
+- 把主库 A 改成 只读 状态, 即把 readonly 设置为 true
+- 判断备库 B 的 `seconds_behind_master` 的值, 直到这个值变成 0 位置
+- 把备库改成 可读写 状态, 即把 readonly 设置为 false
+- 把业务请求切换到备库 B
+
+![MySQL 可靠性优先主备切换流程](54f4c7c31e6f0f807c2ab77f78c8844a.png)
 
 ##### 可用性优先策略
 
-### 附: 杂记
+把 可靠性优先 的后两步提前执行, 来略过中间的服务不可用(主备 readonly)的环节
 
-#### inplace 与 online 的关系
+可用性可能导致数据不一致的情况, 因此更建议 `binlog_format` 设置为 `ROW` 格式
+
+### 备库并行复制
+
+`slave_parallel_workers`: 用于控制 work 线程数量, 一般取 8-16(32 核物理机)
+
+![多线程模型](bcf75aa3b0f496699fd7885426bc6245.png)
+
+- coordinator: 原先的 sql_thread , 不直接更新数据, 而只负责中转日志和分发事务
+- worker: 真正更新日志的线程, 个数受 `slave_parallel_workers` 决定
+
+#### MySQL 5.5 版本的并行复制策略 -- 丁奇
+
+##### 按表分发策略
+
+如果两个事务更新不同的表, 则它们可以并行
+
+用于命中 worker 的 hash 为 hash.tableX
+
+每个事务在分发的时候, 更所有 worker 的冲突关系包括以下三种情况:
+- 如果跟所有 worker 都不冲突, coordinator 线程就会把这个事务分配给最空闲的 worker
+- 如果跟多于一个 worker 冲突, coordinator 线程就进入等待状态, 直到和这个事务存在冲突关系的 worker 只剩下一个
+- 如果只跟一个 worker 冲突, coordinator 线程就会把这个事务分配给这个存在冲突关系的 worker
+
+##### 按行分发策略
+
+**必须为 row 格式**
+
+按行分发 还需要考虑 唯一键 的 顺序问题, 即 hash 应为 "库名+表名+索引 a 的名字 + a 的值"
+
+相比于按表并行分发策略, 按行并行策略在决定线程分发的时候, 需要消耗更多的计算资源
+
+#### MySQL 5.6 版本的并行复制策略
+
+##### 按库分发策略
+
+可以以各种格式存储
+
+#### MariaDB 的并行复制策略
+
+利用 redo log 的 组提交(group commit) 特性:
+- 能够在同一个组里提交的事务, 一定不会修改同一行
+- 主库上可以并行执行的事务, 备库上一定是可以并行执行的
+
+于是, 实现上:
+- 在一组里面一起提交的事务, 有一个相同的 commit_id, 下一个组就是 commit_id+1
+- commit_id 直接写在 binlog 里面
+- 传到备库应用的时候, 相同 commit_id 的事务分发到多个 worker 执行
+- 这一组全部执行完成后, coordinator 再去取下一批
+
+#### MySQL 5.7 的并行复制策略
+
+`slave-parallel-type`: 控制并行复制策略:
+- `DATABASE`: 使用 5.6 的按库并行策略
+- `LOGICAL_CLOCK`: 再两阶段提交中, 只要能达到 redo log perpare 阶段, 就表示事务已经通过锁冲突的检验
+  - 同时处于 prepare 状态的事务, 再备库执行时时可以并行的
+  - 处于 prepare 状态的事务, 与处于 commit 状态的事务之间, 在备库执行时也是可以并行的
+  - 那么通过组提交的策略, 通过控制 `binlog_group_commit_sync_delay` 和 `binlog_group_commit_sync_no_delay_count`, 提高备库复制的并行度
+
+#### MySQL 5.7.22 的并行复制策略
+
+`binlog_transation_dependency_tracking`: 控制是否开启新策略
+- `COMMIT_ORDER`: 根据同时进入 `prepare` 和 `commit` 来判断是否可以并行的策略
+- `WRITESET`: 对于事务涉及更新的每一行, 计算出这一行的 hash 值, 组成集合 `writeset`; 如果两个事务的 `writeset` 没有交集, 就认为没有操作相同的行, 可以并行
+- `WRITESET_SESSION`: 在 `WRITESET` 之上, 在主库上 同一个线程 先后执行的两个事务, 在备库执行的时候, 要保证相同的先后顺序
+
+相比 丁奇版 的 优势:
+
+## 附: 杂记
+
+### inplace 与 online 的关系
 
 - DDL 过程如果时 online , 就一定是 inplace ()
 - 如果时 inplace 有可能不是 online(全文索引--FULLTEXT index 空间索引--SPATIAL index)
 
-#### Update
+### Update
 
 如果 `update` 查询后要更改的值和目标值一样, InnoDB 依然会认真的执行该语句(加锁, 数据更新)
 
 因为 MySQL 的隔离规则(可重复读 等), 在一个事务(08 | 事务到底是隔离的还是不隔离的?--图 5)中, 如果该语句(Update)不记录, 不执行
 会直接影响事务后续的语句
 
-#### MySQL 配置
+### MySQL 配置
 
 mysql >= 5.7 后, 默认开启 ssl, 即使用 unixsock 连接, 也会读取 /etc/mysql/conf.d 里的 ssl 配置先行验证
 
