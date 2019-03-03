@@ -412,9 +412,34 @@ log-basename = master1 # mariadb 独有
   
 ## MySQL 同步策略
 
-- async
-- semi-sync: 只要有一个 slave 响应成功, master 就 commit
-- sync
+###  async
+
+### semi-sync: 只要有一个 slave 响应成功, master 就 commit
+
+配置
+
+在主库安装 semisync_master 插件：
+
+```shell
+mysql> INSTALL PLUGIN rpl_semi_sync_master SONAME 'semisync_master.so'; //linux
+mysql> INSTALL PLUGIN rpl_semi_sync_master SONAME 'semisync_master.dll'; //windows
+```
+
+在备库安装 semisync_slave 插件:
+
+```shell
+mysql> INSTALL PLUGIN rpl_semi_sync_slave SONAME 'semisync_slave.so'; //linux
+mysql> INSTALL PLUGIN rpl_semi_sync_slave SONAME 'semisync_slave.so';//windows
+```
+
+```conf
+rpl_semi_sync_master_enabled=1
+rpl_semi_sync_master_timeout=1000
+```
+
+
+
+### sync
 
 ## <<极客时间: MySQL 实战>>
 
@@ -1090,12 +1115,152 @@ start slave;
 
 #### MySQL 5.7.22 的并行复制策略
 
+**注意: 该策略导致该版本的 binlog 不向下兼容**
+
 `binlog_transation_dependency_tracking`: 控制是否开启新策略
-- `COMMIT_ORDER`: 根据同时进入 `prepare` 和 `commit` 来判断是否可以并行的策略
+- `COMMIT_ORDER`: 根据 redo log 的规则, 是否同时进入 `prepare` 和 `commit` 来判断是否可以并行的策略
 - `WRITESET`: 对于事务涉及更新的每一行, 计算出这一行的 hash 值, 组成集合 `writeset`; 如果两个事务的 `writeset` 没有交集, 就认为没有操作相同的行, 可以并行
-- `WRITESET_SESSION`: 在 `WRITESET` 之上, 在主库上 同一个线程 先后执行的两个事务, 在备库执行的时候, 要保证相同的先后顺序
+- `WRITESET_SESSION`: 在 `WRITESET` 之上, 在主库上 同一个线程(**线程约束**) 先后执行的两个事务, 在备库执行的时候, 要保证相同的先后顺序
 
 相比 丁奇版 的 优势:
+- **writeset** 是在主库生成后直接写入到 binlog 里; 那么在备库执行时, 不需要解析 binlog 内容(event 里的数据行) , 节省解析时的计算量
+- 不需要把整个事务的 binlog 都扫一遍, 才能决定分发到哪个 worker
+- 由于备库分发策略不依赖 binlog 内容, 即使 binlog 格式是 statement 也没问题, 通用性更强
+
+### 主备故障排除
+
+当在主库 A 发生故障停机, 主备切换时, 可能在备库 A' 和 从库 B 之间发生不一致的情况; 在无官方方案时, 可选用:
+在主备切换且发生数据冲突时, 临时主动跳过错误, 直到错误停止:
+- `sql_slave_skip_counter`: 跳过指定数量的事务
+- `sql_skip_errors`: 跳过指定错误
+
+**注: 该方案要求错误停止后关闭以上连个参数, 以免掩盖后续的错误, 导致数据不一致**
+
+#### GTID(Global Transaction Identifier)
+
+全局事务 ID , 是一个事务在提交时生成的, 是这个事务的唯一标识; 格式是: GTID=`server_uuid:gno`/`source_id:transaction_id`
+- `server_id`/`source_id`: 一个实例第一次启动自动生成, 是一个全局唯一的值
+- `gno`/`transaction_id`: 整数, 初始值为 1 , 每次 **提交事务(commit)** 即 +1
+- 在 binlog 文件头部的 `Previous_gtids` 有该文件的 GTID 范围信息, mysql 就是靠这个粗定位 GTID 位置的
+
+使能 GTID:
+- `gtid_mode`
+- `enforce_gtid_consistency`
+
+GTID 生成方式:
+- `gtid_next`: session 变量/当前会话变量
+  - `automatic`: 默认值
+    -  记录 binlog 的时候, 先记录一行: `set @@SESSION.GTID_NEXT='server_uuid:gno'`
+    - 把这个 GTID 假如本实例的 GTID 集合
+  - `current_gtid`: 私自指定的一个 GTID 值
+    - 如果 `current_gtid` 存在, 则该事务会被系统 **直接忽略**
+    - 如果 `current_gtid` 不存在, 则将该 GTID 分配到接下来要执行的事务; 此时系统不生成新的 GTID, gno 值也不会 +1
+
+使用 GTID 后原主库的从库设置为新主库的从库语句:
+```sql
+CHANGE MASTER TO
+MASTER_HOST=$host_name
+MASTER_PORT=$port
+MASTER_USER=$user_name
+MASTER_PASSWORD=$password
+master_auto_position=1
+```
+
+`master_auto_position`: 主备关系启用 GTID 协议
+
+#### GTID 与在线 DDL
+
+#### 课后问题
+
+在需要创建主从关系时由于 binlog 不充足, 导致主从关系建立失败, 可从以下方面考虑:
+1. 如果业务允许主从不一致的情况那么可以在主上先 show global variables like 'gtid_purged', 得到 `gtid_purged1`; 然后在从上执行 set global gtid_purged ='gtid_purged1' . 指定从库从哪个 gtid 开始同步; 此时 binlog 缺失那一部分数据在从库上会丢失, 会造成主从不一致
+2. 需要主从数据一致的话, 最好还是通过重新搭建从库来做
+3. 如果有其它的从库保留有全量的 binlog 的话，可以把从库指定为保留了全量 binlog 的从库为主库(级联复制)
+4. 如果 binlog 有备份的情况,可以先在从库上应用缺失的 binlog,然后在 start slave
+
+### 读写分离
+
+#### 客户端直连
+
+- 不需要 proxy 转发请求, 性能更好, 架构简单
+- 直接连接, 需要客户端处理对不同服务的连接, 耦合高(可以用 zookeeper 之类的负责后端管理)
+
+#### proxy
+
+- 服务的两端耦合低
+- proxy 本身对可用性的需求在系统中是最高的, 对团队要求高
+
+#### 过期读
+
+这种 "在从库上会读到系统的一个过期状态" 的现象, 暂且称之为 "过期读"
+
+##### 强制走主库
+
+对实时性要求高的查询, 直接查询主库
+
+##### Sleep
+
+在更新完主库后, 等待一定时间再查询备库(1s?)
+
+##### 判读主备无延迟
+
+![show slave status](00110923007513e865d7f43a124887c1.png)
+
+- 每次读从库先读取 `seconds_behind_master` , 直到该值为 0 再读取
+- 对比位点确保主备无延迟
+  - `Master_Log_File` 和 `Read_Master_Log_Pos` 表示的是读到的主库的最新位置
+  - `Relay_Master_Log_File` 和 `Exec_Master_Log_Pos` 表示的是备库执行到的最新位置
+  - 如果 `Master_Log_File` 和 `Relay_Master_Log_File`, `Read_Master_Log_Pos` 和 `Exec_Master_Log_Pos` 两两相等, 则认为接收到的日志已经同步完
+- 对比 GTID 集合确保主备无延迟
+  - `Auto_Position=1` -- 主备关系启用 GTID 协议
+  - `Retrieved_Gtid_Set` -- 备库收到的所有日志的 GTID 集合
+  - `Executed_Gtid_Set` -- 备库所有已经执行的 GTID 集合
+  - 如果两个集合相同, 即备库接收到日志都已经同步完成
+
+##### 配合 semi-sync
+
+semi-sync 的设计:
+- 事务提交的时候, 主库把 binlog 发给从库
+- 从库收到 binlog 后, 发回给从库一个 ack , 表示收到了
+- 主库收到这个 (多个从库中随意一个) ask , 才给客户端返回 "事务完成" 的确认
+
+但是 semi-sync 仍然会有以下问题:
+- 一主多从时, 从库执行查询请求可能仍然有过期读
+- 在事务繁忙时, 可能由于持续延迟, 而导致客户端过度等待
+
+##### 等主库位点
+
+如果在 从库 执行以下命令:
+
+```sql
+select master_pos_wait(file, pos[, timeout]);
+```
+
+return:
+- NULL: 执行期间, 备库同步线程发生 **异常**
+- -1: 等待时间超过 timeout
+- 0: 刚开始执行, 就发现已经执行过这个位置
+- >0: 从命令开始执行, 到从库执行完 file 和 pos 表示的 binlog 位置, 执行了多少事务
+
+从以上信息, 如果只要求获得查询语句要求的最新数据:
+- 目标事务执行完, 马上执行 `show master status` 得到当前主库执行到的 file 和 pos
+- 选定一个从库准备执行查询语句
+- 先在从库执行 `select master_pos_wait(File, Position, 1)`
+- 返回 >=0 , 则在该从库执行查询语句
+- 否则, 在主库执行查询语句(退化机制)
+
+
+##### 等 GTID
+
+```sql
+select wait_for_executed_gtid_set(gtid_set, 1);
+```
+
+return:
+- 等待, 直到该(从)库执行的事务中包含传入的 gtid_set , 返回 0
+-  超时返回 1
+
+`session_track_gtids`=`OWN_GTID`: 开启事务执行后返回 GTID , 在 C 中需要调用 `mysql_session_track_get_first` , GO 有这东西吗 ?
 
 ## 附: 杂记
 
