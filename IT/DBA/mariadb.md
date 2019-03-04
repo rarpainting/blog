@@ -1262,6 +1262,70 @@ return:
 
 `session_track_gtids`=`OWN_GTID`: 开启事务执行后返回 GTID , 在 C 中需要调用 `mysql_session_track_get_first` , GO 有这东西吗 ?
 
+#### 课后问题
+
+假设一个一主多从且主备方案是 GTID , 现在需要在一张大表上做 DDL , 可能会出现什么情况
+
+大表做 DDL 的时候可能导致 **主从延迟** , 导致 等 GTID 的方案可能导致这个时间段的流量全部流到主库, 或者全部超时
+
+如果流量太大, 则需要避免该请况, 可以考虑先在从库做 DDL , 主备切换后, 主库再做 DDL
+- 在各个从库先 `SET sql_log_bin=OFF` , 做 DDL , 所有从库及备库做完后, 做主从换, 最后在原来的主库用同样的方式做 DDL
+- 在从库执行 DDL; 将从库上执行 DDL 产生的 GTID 在主库上利用生成一个空事务 GTID 的方式将这个 GTID 在主库上生成出来
+
+但是以上方案, 在 DDL 期间主库完成的事务需要同步到 DDL 过的从库, 如果 DDL 内容是 **删除列** 的操作, 会导致同步出错
+
+因此, 该方案下, 支持的 DDL 只有:
+- 创建/删除索引
+- 新增最后一列, 删除最后一列
+
+### 如何判断数据库是否出问题
+
+#### select 1
+
+`innodb_thread_concurrency`: InnoDB  **并发查询** 的并发线程上限
+
+不足: 如果 并发线程数 已经到上限了, 那么 `select 1` 能够返回成功, 但是 SQL 语句依然会被阻塞
+
+**在线程进入锁等待之后, 并发线程的计数会减一**, 即等 行锁/间隙锁 的线程不算在 `innodb_thread_concurrency` 之内
+
+#### 查表判断
+
+在 mysql 库创建一个表, 里面只放一行数据, 定期执行
+
+```sql
+select * from mysql.health_check;
+```
+
+不足: 这种情况可以判断查询, 不能判断事务更新
+
+#### 更新判断
+
+```sql
+UPDATE mysql.health_check SET t_modified=now();
+```
+
+放一个 timestamp 字段, 更新最后一次执行检测的时间
+
+但是如果是 双 M 结构, 则需要考虑可能出现 行冲突 , 导致同步停止的情况; 此时可以在该更新行上添加上 `server_id` .
+
+```sql
+CREATE TABLE `health_check` (
+  `id` int(11) NOT NULL,
+  `t_modified` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+
+/* 检测命令 */
+insert into mysql.health_check(id, t_modified) values
+  (@@server_id, now()) on duplicate key update t_modified=now();
+```
+
+不足: 不能充分反映 IO 资源的短缺
+
+#### 内部统计 -- `performance_schema`
+
+`performance`.`file_summary_by_event_name`: 统计各个类型, 每次 IO 请求的时间
+
 ## 附: 杂记
 
 ### inplace 与 online 的关系
@@ -1281,3 +1345,27 @@ return:
 mysql >= 5.7 后, 默认开启 ssl, 即使用 unixsock 连接, 也会读取 /etc/mysql/conf.d 里的 ssl 配置先行验证
 
 但是 mycli 用不了是 ??
+
+### go-sql-driver
+
+```shell
+  - fieldTypeDate, fieldTypeNewDate --> Date YYYY-MM-DD
+  - fieldTypeTime --> Time [-][H]HH:MM:SS[.fractal]
+  - fieldTypeTimestamp, fieldTypeDateTime --> Timestamp YYYY-MM-DD HH:MM:SS[.fractal]
+```
+
+connect 时, 加 `?parseTime=true` , MySQL-Server 读时间时会返回时间的 二进制
+
+从上面的类型看:
+- `binaryRows`.`readRow`: 新版 stmt 协议 "prepared statement protocol", >= mysql/4.1
+  - fieldTypeTime: -- "-838:59:59" 到 "838:59:59" 3 字节
+    - formatBinaryTime -- 二进制 编码到 time 字符串
+  - !fieldTypeTime && hasParams(conn, "parseTime=true"):
+    - parseBinaryDateTime -- 二进制 直接编码到 time.Time
+  - 其余:
+    - formatBinaryDateTime -- 二进制 编码到 time 字符串
+- `textRows`.`readRow`: 旧版协议, >= mysql/3.20
+  - hasPrarms(conn, "parseTime=true") && fieldTypeTimestamp, fieldTypeDateTime, fieldTypeDate, fieldTypeNewDate:
+    - parseDateTime -- "YYYY-MM-DD HH:MM:SS.MMMMMM" -> time.Parse(sql.timeFormat) -> time.Time
+
+由于 go 里面不能直接赋值到 `time`.`Time` , 所以如果没有添加 "parseTime=true" , 那么在结构体里面不能使用 `time`.`Time` , 而是用 `database/sql`.`NullString` , 再自行转换到 `time`.`Time`
