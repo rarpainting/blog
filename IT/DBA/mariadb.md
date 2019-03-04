@@ -1324,7 +1324,33 @@ insert into mysql.health_check(id, t_modified) values
 
 #### 内部统计 -- `performance_schema`
 
-`performance`.`file_summary_by_event_name`: 统计各个类型, 每次 IO 请求的时间
+- `performance`.`file_summary_by_event_name`: 统计各个类型, 每次 IO 请求的各种时间结果(平均, 最大最小)
+- `performance`.`setup_instruments`: 各个统计数据类型的开关
+
+其中:
+- `wait/io/file/innodb/innodb_log_file` -- 关于 redo log 的统计
+- `wait/io/file/sql/binlog` -- 关于 binlog 的统计
+
+使能监控:
+
+```sql
+update setup_instruments set `ENABLED`='YES', `TIMED`='YES' where name like '?';
+```
+
+例如:
+
+```sql
+select `EVENT_NAME`, `MAX_TIMER_WAIT` FROM `performance_schema`.`file_summary_by_event_name` where `EVENT_NAME` in ('wait/io/file/innodb/innodb_log_file','wait/io/file/sql/binlog') and `MAX_TIMER_WAIT`>200*1000000000;
+```
+
+检测 binlog 和 redo log 的单次 IO 请求时间是否超过 200 ms
+
+
+```sql
+truncate table `performance_schema`.`file_summary_by_event_name`;
+```
+
+清空统计值, 以免统计值影响下次判断
 
 ## 附: 杂记
 
