@@ -106,26 +106,26 @@ EXPLAIN SELECT * FROM table;
 
 ### 获取有关数据库和表的信息
 
-- SELECT DATABASE(); -- 当前数据库
-- SHOW DATABASES; -- 所有数据
-- SHOW TABLES; -- 当前数据库的表
-- DESCRIBE table; -- 获得一个表列信息 === SHOW COLUMNS FROM table;
+- `SELECT DATABASE();` -- 当前数据库
+- `SHOW DATABASES;` -- 所有数据
+- `SHOW TABLES;` -- 当前数据库的表
+- `DESCRIBE table;` -- 获得一个表列信息 === `SHOW COLUMNS FROM table;`
 
-- SELECT column(s) FROM table ORDER BY RULE DESC; -- *倒序* 排序所获得的行
-- SELECT column(s) FROM table1 {LEFT|RIGHT|INNER} JOIN table2 ON table1.columns { < | > | = | ... } table2.columns; -- 返回{包括左表的所有记录和右表符合联结关系的字段 | 包括右表的所有记录和左表符合联结关系的字段 | 两个表中符合联结关系的字段}
-- SELECT column1(s) FROM table WHERE column2(s) IS NULL; -- 从 table 中找出能同时满足 column2(s) 是 NULL 字段的 column1(s) 行
+- `SELECT column(s) FROM table ORDER BY RULE DESC;` -- *倒序* 排序所获得的行
+- `SELECT column(s) FROM table1 {LEFT|RIGHT|INNER} JOIN table2 ON table1.columns { < | > | = | ... } table2.columns;` -- 返回{包括左表的所有记录和右表符合联结关系的字段 | 包括右表的所有记录和左表符合联结关系的字段 | 两个表中符合联结关系的字段}
+- `SELECT column1(s) FROM table WHERE column2(s) IS NULL;` -- 从 table 中找出能同时满足 column2(s) 是 NULL 字段的 column1(s) 行
 
-- SQL SECURITY { DEFINER | INVOKER }: 指明谁有权限执行添加该信息的(view/trigger/function/procedure/event); DEFINER 表示按定义者拥有的权限执行, INVOKER 表示按调用者的权限来执行, 默认下 系统指定为 **DEFINER**
+- `SQL SECURITY { DEFINER | INVOKER }`: 指明谁有权限执行添加该信息的(view/trigger/function/procedure/event); DEFINER 表示按定义者拥有的权限执行, INVOKER 表示按调用者的权限来执行, 默认下 系统指定为 **DEFINER**
 
-- PURGE {BINARY|MASTER} LOGS {TO 'log_name' | BEFORE datatime_expr}
+- `PURGE {BINARY|MASTER} LOGS {TO 'log_name' | BEFORE datatime_expr}`
   - 删除指定日志文件名或者日期之前的 **二进制** 文件
   - **注意**: 如果从站处于活跃状态且 **未从** 将删除的文件中读取内容, 则文件删除后, 从站将无法继续复制
-  - RESET MASTER -- 删除所有日志文件; FLUSH LOGS -- 写入记录到磁盘
+  - `RESET MASTER` -- 删除所有日志文件; `FLUSH LOGS` -- 写入记录到磁盘
   - 所记录的二进制文件将在 **expire_logs_days** 后自动删除; 0 -- 关闭自动删除
 
-- RESET reset_option[, reset_option] -- 用于清除各种服务器操作的状态, **重置** 服务器状态到初始状态
+- `RESET reset_option[, reset_option]` -- 用于清除各种服务器操作的状态, **重置** 服务器状态到初始状态
 
-- SHOW ENGINE innodb status; -- 最新一次记录的死锁日志(记录的是 **等待锁的 sql 语句** 记录, 而不是 完整事务 的 sql 记录)
+- `SHOW ENGINE innodb status;` -- 最新一次记录的死锁日志(记录的是 **等待锁的 sql 语句** 记录, 而不是 完整事务 的 sql 记录)
 
 ## MYSQL 数据目录
 
@@ -134,34 +134,34 @@ EXPLAIN SELECT * FROM table;
 - sys: sys 模式, 提供了用于解释性能模式信息的一组对象
 
 - mysql: 系统数据库
-  - columns_stats: 引擎无关的表统计信息, 基于直方图的统计功能
-  - columns_priv: **列** 级权限相关的信息 -- <a href="#permission">权限</a>
-  - db: 与 **数据库** 权限相关的信息
-  - event
-  - func
-  - general_log -- 常规日志(general log)内容
-  - gitd_slave_pos -- 用于从属服务器的复制
-  - help_category -- HELP 命令使用的表, 用于地理信息相关, 其他的 help 信息相关的还有 help_keyword, help_relation, help_topic
-  - host -- 主机及其权限的表, 将在 MariaDB_10.4 版本去除
-  - index_stats -- 存储与引擎无关的表统计信息, 索引相关(?)
-  - innodb_index_stats -- 与 InnoDB 持久统计相关的信息, 包含每个索引的多个行
-  - innodb_table_stats -- 与 InnoDB 持久统计相关的信息, 每个表一行
-  - ndb_binlog_index -- 兼容 MySQL Cluster , 将在 MariaDB_10.4 版本去除
-  - plugin -- 使用 INSTALL_SONAME, INSTALL_PLUGIN 或者 mysql_plugin 等插件列表; 不包含有关内置插件或使用 --plugin-load 选项加载的插件的信息
-  - proc -- 包含存储过程和存储函数的信息, 该信息与 INFORMATION SCHEMA.ROUTINES 表中存储的信息相似
-  - procs_priv -- 包含存储过程和存储函数 **权限** 的信息, 同时 INFORMATION SCHEMA.ROUTINES 派生自 mysql.procs_priv
-  - roles_mapping -- 包含与角色(roles)相关的信息
-  - servers -- 包含有关 Spinder/FEDERATED/FederatedX 存储引擎(Storage Engine)使用的服务器信息
-  - slow_log -- 慢日志(slow log)内容
-  - tables_priv -- 表级权限, 派生表 -- INFORMATION_SCHEMA.TABLE_PRIVILEGES 
-  - table_stats -- 表统计信息相关
-  - time_zone -- 与时区相关的信息
-  - time_zone_leap_second -- 与时区相关的信息
-  - time_zone_name -- 与时区相关的信息
-  - time_zone_transition -- 与时区相关的信息
-  - time_zone_transition_type -- 与时区相关的信息
-  - transaction_registry -- **事务**精确版本控制
-  - user -- 访问服务器上的用户的权限, 及其全局权限的信息
+  - `columns_stats`: 引擎无关的表统计信息, 基于直方图的统计功能
+  - `columns_priv`: **列** 级权限相关的信息 -- <a href="#permission">权限</a>
+  - `db`: 与 **数据库** 权限相关的信息
+  - `event`
+  - `func`
+  - `general_log` -- 常规日志(general log)内容
+  - `gitd_slave_pos` -- 用于从属服务器的复制
+  - `help_category` -- HELP 命令使用的表, 用于地理信息相关, 其他的 help 信息相关的还有 help_keyword, help_relation, help_topic
+  - `host` -- 主机及其权限的表, 将在 MariaDB_10.4 版本去除
+  - `index_stats` -- 存储与引擎无关的表统计信息, 索引相关(?)
+  - `innodb_index_stats` -- 与 InnoDB 持久统计相关的信息, 包含每个索引的多个行
+  - `innodb_table_stats` -- 与 InnoDB 持久统计相关的信息, 每个表一行
+  - `ndb_binlog_index` -- 兼容 MySQL Cluster , 将在 MariaDB_10.4 版本去除
+  - `plugin` -- 使用 INSTALL_SONAME, INSTALL_PLUGIN 或者 mysql_plugin 等插件列表; 不包含有关内置插件或使用 --plugin-load 选项加载的插件的信息
+  - `proc` -- 包含存储过程和存储函数的信息, 该信息与 INFORMATION SCHEMA.ROUTINES 表中存储的信息相似
+  - `procs_priv` -- 包含存储过程和存储函数 **权限** 的信息, 同时 INFORMATION SCHEMA.ROUTINES 派生自 mysql.procs_priv
+  - `roles_mapping` -- 包含与角色(roles)相关的信息
+  - `servers -- 包含有关 Spinder/FEDERATED/FederatedX 存储引擎(Storage Engine)使用的服务器信息
+  - `slow_log` -- 慢日志(slow log)内容
+  - `tables_priv` -- 表级权限, 派生表 -- INFORMATION_SCHEMA.TABLE_PRIVILEGES 
+  - `table_stats` -- 表统计信息相关
+  - `time_zone` -- 与时区相关的信息
+  - `time_zone_leap_second` -- 与时区相关的信息
+  - `time_zone_name` -- 与时区相关的信息
+  - `time_zone_transition` -- 与时区相关的信息
+  - `time_zone_transition_type` -- 与时区相关的信息
+  - `transaction_registry` -- **事务**精确版本控制
+  - `user` -- 访问服务器上的用户的权限, 及其全局权限的信息
 
 <h2 id="permission">MYSQL/MARIADB 权限</h2>
 
@@ -225,11 +225,11 @@ EXPLAIN SELECT * FROM table;
   - PROXY -- 允许一个用户成为另一个用户的代理
   
 - 账户的资源限制
-  - MAX_QUERIES_PER_HOUR
-  - MAX_UPDATE_PER_HOUR
-  - MAX_CONNECTIONS_PER_HOUR
-  - MAX_USER_CONNECTIONS
-  - MAX_STATEMENT_TIME
+  - `MAX_QUERIES_PER_HOUR`
+  - `MAX_UPDATE_PER_HOUR`
+  - `MAX_CONNECTIONS_PER_HOUR`
+  - `MAX_USER_CONNECTIONS`
+  - `MAX_STATEMENT_TIME`
   
 - 账户的 SSL/TLS 选项
   - REQUIRE 只使用一次, 通过 AND 分隔各个选项
@@ -269,7 +269,7 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 - `log_slow_rate_limit` -- 限制实际写入慢查询的 行数/比例(?) ...
 - `log_slow_verbosity` -- { (Empty) | query_plan | innodb | explain }
 - `log_slow_filter` -- 通过 ',' 分割; 过滤器: 如果需要记录的查询同时 **匹配过滤器中的某类型** , 则将其记录到慢日志中:
-  - admin / filesort / filesort_on_disk / filesort_priority_queue(>= MariaDB 10.3.1) / full_join / full_scan / query_cache / query_cache_miss / tmp_table / tmp_table_on_disk
+  - `admin` / `filesort` / `filesort_on_disk` / `filesort_priority_queue`(>= MariaDB 10.3.1) / `full_join` / `full_scan` / `query_cache` / `query_cache_miss` / `tmp_table` / `tmp_table_on_disk`
 
 ### Bin Log
 
@@ -286,8 +286,8 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 
 #### 复制时安全清除二进制文件
 
-- 通过 SHOW BINARY LOGS 获取主服务器上的二进制日志文件列表
-- 到从服务器上通过 SHOW SLAVE STATUS 检查每个从属服务器正在读取的二进制日志文件
+- 通过 `SHOW BINARY LOGS` 获取主服务器上的二进制日志文件列表
+- 到从服务器上通过 `SHOW SLAVE STATUS` 检查每个从属服务器正在读取的二进制日志文件
 - **找到从站正在读取的 最早 的日志文件, 删除在这之前的所有日志文件**
 - 如果需要的话, 在删除日志文件之前, 备份日志文件
 
@@ -880,18 +880,20 @@ DEALLOCATE prepare stmt;
 ### MySQL 加锁规则
 
 - 原则:
-  - 加锁的基本单位是 next-key lock(前开后闭区间)
-  - 查找过程中 访问到的对象(索引, 行等) 才加锁
+  1. 加锁的基本单位是 next-key lock(前开后闭区间)
+  2. 查找过程中 访问到的对象(索引, 行等) 才加锁
 - 优化:
-  - 索引上的 **等值查询** , 给 唯一索引 加锁的时候, next-key lock 退化为 **行锁**
-  - 索引上的 **等值查询**, 向右遍历时且 (在一个 next-key lock 区间)最后一个值不等于等值条件 的时候, next-key lock 退化为 **间隙锁**
+  1. 索引上的 **等值查询** , 给 唯一索引 加锁的时候, next-key lock 退化为 **行锁**
+  2. 索引上的 **等值查询**, **向右遍历** 时且 (在一个 next-key lock 区间)最后一个值 **不等于** 等值条件 的时候, next-key lock 退化为 **间隙锁**
 - BUG:
-  - 唯一索引上的范围查询会访问到不满足条件的第一个值为止
+  1. (唯一?)索引上的范围查询会访问到不满足条件的第一个值为止
   
 - 锁是加载索引上的
 - 如果目的是通过 `lock in share mode` 加 S 锁并且要求防止数据更新, 则需要同时考虑避开 覆盖索引 的优化(可能直接 `for update` 加 X 锁更好 ?)
 - 由于索引都需要查询到不满足的条件, 所以建议尽量使用 **limit** , 访问安全且减小了加锁的范围
-- *读提交(Read-Commit) 没有间隙锁(或者说间隙锁更小), 因此 debug 分析时逻辑更为清晰*
+- **读提交(Read-Commit) 没有间隙锁(或者说间隙锁更小), 因此 debug 分析时逻辑更为清晰**
+- `desc` 语句导致优化器倒序搜索满足条件的值, 那么上面 **优化 2** 的 **向右遍历** , 就变成 **向左遍历**
+- **间隙**, 是由 **这个间隙右边的那个记录** 定义的
 
 ### binlog 写入规则
 
@@ -1345,6 +1347,10 @@ select `EVENT_NAME`, `MAX_TIMER_WAIT` FROM `performance_schema`.`file_summary_by
 
 检测 binlog 和 redo log 的单次 IO 请求时间是否超过 200 ms
 
+### 动态观点看死锁
+
+1. 锁是一个一个加的, 对同一组资源的访问, 要按照尽量相同的顺序访问
+2. 在发生死锁时, `for update` 这条语句占用的资源更多, 回滚成本大, 即如果有的话, InnoDB 会选择了回滚成本更小的 `lock in share mode`
 
 ```sql
 truncate table `performance_schema`.`file_summary_by_event_name`;
