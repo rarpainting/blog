@@ -126,6 +126,10 @@ EXPLAIN SELECT * FROM table;
 - `RESET reset_option[, reset_option]` -- 用于清除各种服务器操作的状态, **重置** 服务器状态到初始状态
 
 - `SHOW ENGINE innodb status;` -- 最新一次记录的死锁日志(记录的是 **等待锁的 sql 语句** 记录, 而不是 完整事务 的 sql 记录)
+  - 在死锁里面:
+    - lock_mode X waiting -- next-key lock
+    - lock_mode X locks rec but not gap -- 行锁
+    - locks gap before rec -- 间隙锁
 
 ## MYSQL 数据目录
 
