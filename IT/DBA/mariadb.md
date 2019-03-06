@@ -1418,6 +1418,8 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 
 - 集群 方案解决
 - 跨机房/跨城市 备份
+  - 如果数据量大, 用物理备份 [xtrabackup](https://github.com/percona/percona-xtrabackup)
+  - 如果数据量小, 用 mysqldump / mysqldumper
 
 #### 生产规范
 
@@ -1426,6 +1428,48 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 - 执行脚本: 对数据变更的脚本, 为防 Update 错数据, 一般连备份表进行 Update 操作
 - 验证脚本: 验证数据变更或影响行数是否达到预期要求效果
 - 回滚脚本: 将数据回滚到修改前的状态。
+
+小 tip:
+**chattr +i**: (无论什么权限)不能 添加/修改/删除/重命名 文件
+
+### kill
+
+当收到 `kill query thread_id` 时, mysql 处理 kill 命令的线程做了两件事
+- 把 session 的运行状态(变量 killed)改成 `THD::KILL_QUERY`
+- 对 session 的执行线程发一个信号, 让该 session 退出等待
+
+当收到 `kill thread_id` 时, mysql 处理 kill 命令的线程做了两件事
+- 把 session 的运行状态(变量 killed)改成 `THD::KILL_CONNECTION`
+- 关掉 session 的网络连接, 此时客户端收到 断开连接 的提示
+
+`show processlist` 部分逻辑:
+- 如果一个线程的状态是 `KILL_CONNECTION` , 就把 Command 列 显示成 Killed
+
+#### kill 无效
+
+##### 线程没有执行到判断线程状态的逻辑
+
+```sql
+select sleep(100) from t;
+```
+
+`sleep` 的等待逻辑不同于 等待行锁(`pthread_cond_timewait`), 该逻辑没有唤醒点
+
+##### 终止逻辑耗时较长
+
+- 超大事务执行期间被 kill; 此时回滚事务, 耗时长
+- 大查询回滚; 查询期间生成较大的临时文件, 或者此时文件系统压力大, 在等待 IO 资源
+- DDL 命令执行到最后阶段, 被 kill, 需要删除临时文件, 也会受文件系统压力影响
+
+#### mysql 客户端资源请求
+
+- 本地缓存(默认 -- `mysql_store_result`), 向服务器请求结果, 并在客户端本地缓存结果
+- 不存储(`-quick` -- `mysql_use_result`), 读一行处理一行
+
+课后问题: 长时间回滚大事务, 应该是重启还是等待完成
+
+- 重启其实还是会继续回滚, 因为 redo log 此时还未提交(Commit); 如果系统资源充足, 更建议继续回滚
+- 如果系统资源紧缺(尤其是 IO) , 那么关闭 -> 切换到备库执行回滚 -> 主备切换 -> 同步 , 是个不错的选择
 
 ## 附: 杂记
 
