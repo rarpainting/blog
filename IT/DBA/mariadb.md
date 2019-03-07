@@ -63,7 +63,7 @@ EXPLAIN SELECT * FROM table;
 ```
 
 获得该此 sql 语句的执行信息:
-- `id`: (该连接?)的 SQL 执行顺序
+- `id`: (该连接的?) SQL 执行顺序
 - `select_type`: 子查询中每个 select 子句的类型
   - `SIMPLE`: (简单 SELECT, 不使用 UNION 或子查询等)
   - `PRIMARY`: (查询中若包含任何复杂的子部分, 最外层的 select 被标记为 PRIMARY)
@@ -126,7 +126,7 @@ EXPLAIN SELECT * FROM table;
 - `RESET reset_option[, reset_option]` -- 用于清除各种服务器操作的状态, **重置** 服务器状态到初始状态
 
 - `SHOW ENGINE innodb status;` -- 最新一次记录的死锁日志(记录的是 **等待锁的 sql 语句** 记录, 而不是 完整事务 的 sql 记录)
-  - 在死锁里面:
+  - 在死锁检查里面:
     - lock_mode X waiting -- next-key lock
     - lock_mode X locks rec but not gap -- 行锁
     - locks gap before rec -- 间隙锁
@@ -441,8 +441,6 @@ rpl_semi_sync_master_enabled=1
 rpl_semi_sync_master_timeout=1000
 ```
 
-
-
 ### sync
 
 ## <<极客时间: MySQL 实战>>
@@ -659,8 +657,8 @@ RAPAIR TABLE table;
 #### `innodb_flush_neighbors`
 
 该参数在
-- mysql<8.0 / mariadb<?? 时默认为 1, 在 flush 脏页时会把相邻的脏页同时 flush , 可能会出现连锁反应, 适用于 SATA 等 IOPS 较低的设备
-- mysql>=8.0 / mariadb>=?? 时默认为 0, 在 flush 脏页时只 flush 当前脏页然后返回, 适用于 SSD 等 IOPS 较高的设备, 减少 SQL 语句响应时间
+- mysql<8.0 / mariadb<10.3.9/?? 时默认为 1, 在 flush 脏页时会把相邻的脏页同时 flush , 可能会出现连锁反应, 适用于 SATA 等 IOPS 较低的设备
+- mysql>=8.0 / mariadb>=10.3.9/?? 时默认为 0, 在 flush 脏页时只 flush 当前脏页然后返回, 适用于 SSD 等 IOPS 较高的设备, 减少 SQL 语句响应时间
 
 ### Order by 工作原理
 
@@ -1445,7 +1443,7 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 `show processlist` 部分逻辑:
 - 如果一个线程的状态是 `KILL_CONNECTION` , 就把 Command 列 显示成 Killed
 
-#### kill 无效
+#### kill 无效的原因
 
 ##### 线程没有执行到判断线程状态的逻辑
 
@@ -1470,6 +1468,46 @@ select sleep(100) from t;
 
 - 重启其实还是会继续回滚, 因为 redo log 此时还未提交(Commit); 如果系统资源充足, 更建议继续回滚
 - 如果系统资源紧缺(尤其是 IO) , 那么关闭 -> 切换到备库执行回滚 -> 主备切换 -> 同步 , 是个不错的选择
+
+### 全表扫描
+
+`net_buffer_length`: 默认 16 k, 网络发送包的一次发送的最大长度
+
+#### 全表扫描时, server 层的影响:
+
+- 获取一行, 写到 net_buffer; 重复获取行, 直到 net_buffer 写满, 调用网络接口发送
+- 发送成功, 就清空 net_buffer , 取下一行, 继续写入
+- 如果 发送函数 返回 `EAGAIN` 或 `WSAEWOULDBLOCK`, 就表示本地网络栈(socket send buffer) 写满了, 进入等待; 直到网络栈重新可写
+
+查询语句的状态变化(`show processlist`.`state`):
+- MySQL 查询语句进入执行阶段, 首先把状态设置为 `Sending data`
+- 发送执行结果的列相关的信息(meta data)给客户端
+- 继续执行语句的流程(还有哪些流程? 写 binlog?redo log commit?)
+- 执行完成后, 把状态(state)设置为空字符串
+
+#### 全表扫描时, InnoDB 层的影响
+
+1. WAL 机制缓存的数据存储在 Buffer Pool(BP), 该机制加速了更新和加速查询的效率
+
+**内存命中率**: WAL 机制加速效果的重要指标
+
+`innodb_buffer_pool_instances`: Buffer Pool 数量
+
+2. InnoDB 通过 最少使用(LRU)算法, 淘汰最久未使用的数据
+
+![InnoDB 的 LRU 算法](25e18920dd204cf99eec2d62755fe99e.png)
+
+InnoDB 按照 5:3 比例把整个 LRU 链表分成了 young 和 old 区域, 通过 LRU_old 指向 old 的首位
+
+InnoDB 的 LRU 完整流程:
+1. 状态 1 , 访问数据页 P3 , 由于 P3 在 young 区域, 因此和优化前的 LRU 算法一样, 将其移到链表头部, 即状态 2
+2. 访问新的不存在于 LRU 链表的数据页, 这时候依然是淘汰数据页 Pm, 但是新插入的数据页 Px, 是在 LRU_old
+3. 处于 old 区域的数据页, 每次被访问都需要基于 `innodb_old_blocks_time`(LRU 链表的 old 区域中判断的时间阈值 -- 默认 1000ms) 做以下判断
+  - 如果这个数据页在 LRU 链表中存在的时间 **超过 innodb_old_blocks_time**, 就把它移动到链表头部
+  - 如果这个数据页在 LRU 链表中存在的时间 **短于 innodb_old_blocks_time**, 位置保持不变
+  
+### JOIN
+
 
 ## 附: 杂记
 
@@ -1514,3 +1552,32 @@ connect 时, 加 `?parseTime=true` , MySQL-Server 读时间时会返回时间的
     - parseDateTime -- "YYYY-MM-DD HH:MM:SS.MMMMMM" -> time.Parse(sql.timeFormat) -> time.Time
 
 由于 go 里面不能直接赋值到 `time`.`Time` , 所以如果没有添加 "parseTime=true" , 那么在结构体里面不能使用 `time`.`Time` , 而是用 `database/sql`.`NullString` , 再自行转换到 `time`.`Time`
+
+### `show processlist`.`state`
+- `Checking table`: 正在检查数据表(这是自动的)
+- `Closing tables`: 正在将表中修改的数据刷新到磁盘中, 同时正在关闭已经用完的表. 这是一个很快的操作, 如果不是这样的话, 就应该确认磁盘空间是否已经满了或者磁盘是否正处于重负中
+- `Connect Out`: 复制从服务器正在连接主服务器。
+- `Copying to tmp table on disk`: 由于临时结果集大于 tmp_table_size , 正在将临时表从内存存储转为磁盘存储以此节省内存
+- `Creating tmp table`: 正在创建临时表以存放部分查询结果
+- `deleting from main table`: 服务器正在执行多表删除中的第一部分, 刚删除第一个表
+- `deleting from reference tables`: 服务器正在执行多表删除中的第二部分, 正在删除其他表的记录
+- `Flushing tables`: 正在执行 `FLUSH TABLES`, 等待其他线程关闭数据表
+- `Killed`: 发送了一个 `kill` 请求给某线程, 那么这个线程将会检查 `kill` 标志位, 同时会放弃下一个 `kill` 请求. MySQL 会在每次的主循环中检查 kill 标志位, 不过有些情况下该线程可能会过一小段才能死掉. 如果该线程程被其他线程锁住了, 那么 kill 请求会在锁释放时马上生效
+- `Locked`: 被其他查询锁住了
+- `Sending data`: 正在处理 `SELECT` 查询的记录, 同时正在把结果发送给客户端
+- `Sorting for group`: 正在为 `GROUP BY` 做排序
+- `Sorting for order`: 正在为 `ORDER BY` 做排序
+- `Opening tables`: 正尝试打开一个表. 这个过程应该会很快, 除非受到其他因素的干扰 -- 例如, 在执 `ALTER TABLE` 或 `LOCK TABLE` 语句行完以前, 数据表无法被其他线程打开
+- `Removing duplicates`: 正在执行一个 `SELECT DISTINCT` 方式的查询, 但是 MySQL 无法在前一个阶段优化掉那些重复的记录. 因此, MySQL 需要再次去掉重复的记录, 然后再把结果发送给客户端
+- `Reopen table`: 获得了对一个表的锁, 但是必须在表结构修改之后才能获得这个锁; 已经释放锁, 关闭数据表, 正尝试重新打开数据表
+- `Repair by sorting`: 修复指令正在排序以创建索引
+- `Repair with keycache`: 修复指令正在利用索引缓存一个一个地创建新索引. 它会比 `Repair by sorting` 慢些
+- `Searching rows for update`: 正在讲符合条件的记录找出来以备更新. 它必须在 UPDATE 要修改相关的记录之前就完成了
+- `Sleeping`: 正在等待客户端发送新请求
+- `System lock`: 正在等待取得一个外部的系统锁; 如果当前没有运行多个 mysqld 服务器同时请求同一个表, 那么可以通过增加 `--skip-external-locking` 参数来禁止外部系统锁
+- `Upgrading lock`: INSERT DELAYED 正在尝试取得一个锁表以插入新记录
+- `Updating`: 正在搜索匹配的记录, 并且修改它们
+- `User Lock`: 正在等待 `GET_LOCK()`
+- `Waiting for tables`: 该线程得到通知, 数据表结构已经被修改了, 需要重新打开数据表以取得新的结构; 然后, 为了能的重新打开数据表, 必须等到所有其他线程关闭这个表. 以下几种情况下会产生这个通知: `FLUSH TABLES tbl_name`, `ALTER TABLE`, `RENAME TABLE`, `REPAIR TABLE`, `ANALYZE TABLE`, 或 `OPTIMIZE TABLE`
+- `Send to client`: 客户端接收数据慢, 或者服务端的网络栈写满
+- `Waiting for handler insert`: `INSERT DELAYED` 已经处理完了所有待处理的插入操作, 正在等待新的请求
