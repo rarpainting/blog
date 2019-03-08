@@ -1510,6 +1510,34 @@ InnoDB 的 LRU 完整流程:
 
 `STRAIGHT_JOIN`: 固定的, 以左边的表作为驱动表, 驱动右表; 改变 优化器 对于 联表查询 的执行顺序
 
+#### NLJ(Index Nested-Loop Join)
+
+使用上被驱动表的记录
+
+#### Simple Nested-Loop Join
+
+无索引无优化
+
+#### BNL(Block Nested-Loop Join)
+
+MySQL 无索引优化
+
+![Block Nested-Loop Join](15ae4f17c46bf71e8349a8f2ef70d573.jpg)
+
+`join_buffer_size`: 设置 join_buffer 的大小
+
+- 如果放不下 驱动表 需要的数据, 那么 驱动表 会被分段放置
+- 把驱动表上的数据需要读到的全部读入到 join_buffer 中
+- 扫描 被驱动表, 把 被驱动表 中的数据和 join_buffer 中的数据对比, 满足 join 条件的, 作为结果集的一部分返回
+
+如果使用 join , 应该选择大表做驱动表还是小表做驱动表
+- 如果是 `Index Nested-Loop Join` , 应该选择小表做驱动表
+- 如果是 `Block Nested-Loop Join`:
+  - 在 `join_buffer_size` 足够大的时候, 是一样的
+  - 在 `join_buffer_size` 不够大的时候, 应该选择小表做驱动表(避免多次表分段)
+- 小表的判断, 需要考虑到 表行数 和 表列数
+
+如果
 
 ## 附: 杂记
 
