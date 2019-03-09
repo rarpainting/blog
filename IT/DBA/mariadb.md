@@ -471,6 +471,41 @@ rpl_semi_sync_master_timeout=1000
 
 优化 ast 执行树
 
+`optimizer_switch`: 优化器策略
+// TODO:
+- index_merge=on
+- index_merge_union=on
+- index_merge_sort_union=on
+- index_merge_intersection=on
+- index_merge_sort_intersection=off
+- engine_condition_pushdown=off
+- index_condition_pushdown=on
+- derived_merge=on
+- derived_with_keys=on
+- firstmatch=on
+- loosescan=on
+- materialization=on
+- in_to_exists=on
+- semijoin=on
+- partial_match_rowid_merge=on
+- partial_match_table_scan=on
+- subquery_cache=on
+- mrr=off
+- mrr_cost_based=off
+- mrr_sort_keys=off
+- outer_join_with_cache=on
+- semijoin_with_cache=on
+- join_cache_incremental=on
+- join_cache_hashed=on
+- join_cache_bka=on
+- optimize_join_buffer_size=off
+- table_elimination=on
+- extended_keys=on
+- exists_to_in=on
+- orderby_uses_equalities=on
+- condition_pushdown_for_derived=on
+- split_materialized=on
+
 #### 执行器
 
 以 `select * from where ID=10` 为例
@@ -1464,7 +1499,7 @@ select sleep(100) from t;
 - 本地缓存(默认 -- `mysql_store_result`), 向服务器请求结果, 并在客户端本地缓存结果
 - 不存储(`-quick` -- `mysql_use_result`), 读一行处理一行
 
-课后问题: 长时间回滚大事务, 应该是重启还是等待完成
+#### 课后问题: 长时间回滚大事务, 应该是重启还是等待完成
 
 - 重启其实还是会继续回滚, 因为 redo log 此时还未提交(Commit); 如果系统资源充足, 更建议继续回滚
 - 如果系统资源紧缺(尤其是 IO) , 那么关闭 -> 切换到备库执行回滚 -> 主备切换 -> 同步 , 是个不错的选择
@@ -1505,6 +1540,14 @@ InnoDB 的 LRU 完整流程:
 3. 处于 old 区域的数据页, 每次被访问都需要基于 `innodb_old_blocks_time`(LRU 链表的 old 区域中判断的时间阈值 -- 默认 1000ms) 做以下判断
   - 如果这个数据页在 LRU 链表中存在的时间 **超过 innodb_old_blocks_time**, 就把它移动到链表头部
   - 如果这个数据页在 LRU 链表中存在的时间 **短于 innodb_old_blocks_time**, 位置保持不变
+
+## 课后问题
+
+如果客户端压力过大, **长时间不接收数据**, 会对服务端产生什么影响?
+
+- 会造成 长事务
+- 如果该事务有更新, 会锁住目标的行锁/间隙锁, 会导致其他语句的更新被锁住
+- 导致 undo log 不能被回收, 导致回滚段空间膨胀
   
 ### JOIN
 
@@ -1512,7 +1555,7 @@ InnoDB 的 LRU 完整流程:
 
 #### NLJ(Index Nested-Loop Join)
 
-使用上被驱动表的记录
+使用上 被驱动表 的索引
 
 #### Simple Nested-Loop Join
 
@@ -1537,7 +1580,26 @@ MySQL 无索引优化
   - 在 `join_buffer_size` 不够大的时候, 应该选择小表做驱动表(避免多次表分段)
 - 小表的判断, 需要考虑到 表行数 和 表列数
 
-如果
+#### 课后问题
+
+如果被驱动表是一张 **大表** , 且是一个 **冷数据库**, 查询中会对 MySQL 服务器产生什么影响
+
+如果 驱动表 太大导致分段, 那么 被驱动表 就会被多次读取:
+- 如果大表的大小 M 页比 old 区域 N 小(M<N), 循环读取间隔很可能超过 `innodb_old_blocks_time` 的时间, 那么该数据会被迁移到 **young** 区域, 把部分 **热点数据被淘汰**, 导致 "Buffer pool hit rate" 命中率极低; 热点数据的清求需要读磁盘, 因此响应慢, 请求被阻塞等
+- 如果大表的大小 M 页比 old 区域 N 页大(M>N), 则使得读取一次(M 页)大表后再读, 都需要从头开始读取大表(从第 1 页开始), 影响 缓存(buffer pool) 区域的作用
+
+#### Multi-Range Read 优化(MRR)
+
+目的是尽量顺序读盘
+
+前提: **如果数据是按照主键递增顺序插入得到的, 那么可以认为: 如果按照主键的递增顺序查询的话, 对磁盘的读比较接近顺序读, 能够提升读性能**
+
+`read_rnd_buffer_size`: 控制 `read_rnd_buffer_size` 大小
+
+现在版本的优化器会倾向于不适用 MRR, 开启 MRR 优化:
+```sql
+set optimizer_switch="mrr_cost_based=off"
+```
 
 ## 附: 杂记
 
