@@ -58,7 +58,9 @@
 - [fasthttp](https://github.com/valyala/fasthttp): net/http 的快速版本
 - [httprouter](https://github.com/julienschmidt/httprouter): 框架 [Gin](https://github.com/gin-gonic/gin) 使用的路由管理工具
 - [docopt.go](https://github.com/docopt/docopt.go): 命令行参数解析
-- [casbin](https://github.com/casbin/casbin): 
+- [casbin](https://github.com/casbin/casbin): 权限管理认证, 规范工具
+- [casbin-server](https://github.com/casbin/casbin-server): casbin as a server(CAAS), gRPC 交互
+- [go-ldap](https://github.com/go-ldap/ldap): golang 的 [ldap](https://www.cnblogs.com/yjd_hycf_space/p/7994597.html) client
 - [elastic-go](https://github.com/olivere/elastic): elasticsearch 的 golang client
 - [mongo-connector](https://github.com/yougov/mongo-connector): 同步 mongo 和 elasticsearch 数据的工具
 - [go-mysql-elasticsearch](https://github.com/siddontang/go-mysql-elasticsearch): 同步 mysql 和 elasticsearch 数据的工具

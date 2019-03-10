@@ -1580,7 +1580,7 @@ MySQL 无索引优化
   - 在 `join_buffer_size` 不够大的时候, 应该选择小表做驱动表(避免多次表分段)
 - 小表的判断, 需要考虑到 表行数 和 表列数
 
-#### 课后问题
+#### 课后问题 (BNL 的性能问题)
 
 如果被驱动表是一张 **大表** , 且是一个 **冷数据库**, 查询中会对 MySQL 服务器产生什么影响
 
@@ -1588,7 +1588,7 @@ MySQL 无索引优化
 - 如果大表的大小 M 页比 old 区域 N 小(M<N), 循环读取间隔很可能超过 `innodb_old_blocks_time` 的时间, 那么该数据会被迁移到 **young** 区域, 把部分 **热点数据被淘汰**, 导致 "Buffer pool hit rate" 命中率极低; 热点数据的清求需要读磁盘, 因此响应慢, 请求被阻塞等
 - 如果大表的大小 M 页比 old 区域 N 页大(M>N), 则使得读取一次(M 页)大表后再读, 都需要从头开始读取大表(从第 1 页开始), 影响 缓存(buffer pool) 区域的作用
 
-#### Multi-Range Read 优化(MRR)
+#### MRR(Multi-Range Read) 优化
 
 目的是尽量顺序读盘
 
@@ -1596,10 +1596,51 @@ MySQL 无索引优化
 
 `read_rnd_buffer_size`: 控制 `read_rnd_buffer_size` 大小
 
-现在版本的优化器会倾向于不适用 MRR, 开启 MRR 优化:
+现在版本的优化器会倾向于不适用 MRR, 开启 MRR 优化(开启 MRR, 并且在使用前不计算消耗):
 ```sql
-set optimizer_switch="mrr_cost_based=off"
+set optimizer_switch="mrr=on,mrr_cost_based=off";
 ```
+
+开启 MRR 后, 逻辑:
+- 根据索引, 定位到满足条件的记录, 将 id 值放入到 read_rnd_buffer
+- 将 read_rnd_buffer 中的 id 递增排序
+- 以排序后的 id 序列, 依次到主键 id 索引中查记录, 并作为结果返回
+
+#### BKA(Batched Key Access)
+
+开启 BKA -- NLJ + MRR:
+```sql
+-- mysql
+set optimizer_switch="mrr=on,mrr_cost_based=off,batched_key_access=on";
+
+-- mariadb
+set optimizer_switch="";
+```
+
+#### 课后问题
+
+```sql
+CREATE TABLE `t1` (
+ `id` int(11) NOT NULL,
+ `a` int(11) DEFAULT NULL,
+ `b` int(11) DEFAULT NULL,
+ `c` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+
+create table t2 like t1;
+create table t3 like t2;
+-- 初始化三张表的数据
+insert into ... 
+```
+
+```sql
+select * from t1 join t2 on(t1.a=t2.a) join t3 on (t2.b=t3.b) where t1.c>=X and t2.c>=Y and t3.c>=Z;
+```
+
+分析:
+- ((t1 and t2) and t3) ? OR (t1 and (t2 and t3))
+
 
 ## 附: 杂记
 
