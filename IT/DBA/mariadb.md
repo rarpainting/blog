@@ -121,7 +121,7 @@ EXPLAIN SELECT * FROM table;
   - 删除指定日志文件名或者日期之前的 **二进制** 文件
   - **注意**: 如果从站处于活跃状态且 **未从** 将删除的文件中读取内容, 则文件删除后, 从站将无法继续复制
   - `RESET MASTER` -- 删除所有日志文件; `FLUSH LOGS` -- 写入记录到磁盘
-  - 所记录的二进制文件将在 **expire_logs_days** 后自动删除; 0 -- 关闭自动删除
+  - 所记录的二进制文件将在 **expire_logs_days/binlog_expire_logs_seconds** 后自动删除; 0 -- 关闭自动删除
 
 - `RESET reset_option[, reset_option]` -- 用于清除各种服务器操作的状态, **重置** 服务器状态到初始状态
 
@@ -1551,7 +1551,7 @@ InnoDB 的 LRU 完整流程:
   
 ### JOIN
 
-`STRAIGHT_JOIN`: 固定的, 以左边的表作为驱动表, 驱动右表; 改变 优化器 对于 联表查询 的执行顺序
+`STRAIGHT_JOIN`: 固定的, 以左边的表作为驱动表, 驱动右表; 强制 优化器 对于 联表查询 的执行顺序
 
 #### NLJ(Index Nested-Loop Join)
 
@@ -1639,7 +1639,34 @@ select * from t1 join t2 on(t1.a=t2.a) join t3 on (t2.b=t3.b) where t1.c>=X and 
 ```
 
 分析:
-- ((t1 and t2) and t3) ? OR (t1 and (t2 and t3))
+- @Mr.Strive.Z.H.L, 使用 `join`:
+  - (调用 innodb 接口,)从 t1 取一行数据, 返回到 server
+  - 从 t2 取满足条件的数据
+  - 从 t3 取满足条件的数据
+- 如果采用 BKA 进行优化(只有 BKA 可以?), 是直接的嵌套查询; 且每多一个 `join` 部分，就多一个 join_buffer
+- 如果没有 `straight_join` , 那么第一个驱动表 MySQL 会在经过 `where t1.c>=X and t2.c>=Y and t3.c>=Z` 过滤后, 以数据最少的表(在 t1/t2/t3 中选), 作为第一个驱动表, 此时可能出现以下情况:
+  - 如果驱动表是 t1, 则连接顺序是 t1->t2->t3, 则需要在(被驱动表) t2.a 和 t3.b 上创建索引
+  - 如果驱动表是 t3, 连接顺序: t3->t2->t1, 则需要在 t2.b 和 t1.a 上创建索引
+  - 如果驱动表是 t2, 则考虑另外拎个条件的过滤效果
+  - 同时需要在 第一个驱动表 的 c 上创建索引
+
+### 临时表
+
+#### 特性
+
+- 建表语句: `create temporary table`
+- 一个临时表只能被创建它的 **session** 访问, 对其他线程不可见, 且在 session 结束时销毁
+- 临时表可以与普通表同名
+- session 中如果有同名的临时表和普通表, (`show create`/增删查改)语句优先访问 **临时表**
+- `show tables` 显示普通表, `select @@tmpdir` 显示实例的临时文件目录
+- 关于 `InnoDB` 引擎的临时表:
+  - 会生成一个放置在 临时文件夹 , ".frm" 后缀, "#sql{进程 id}_{线程 id}_序列号" 的文件
+  - 表中数据的 存放方式 和版本相关:
+    - <=5.6: 在临时文件目录下创建一个相同前缀, 以 ".idb" 为后缀的文件
+    - >=5.7: MySQL 引入了 临时文件表空间 , 专门用于存放临时文件的数据
+
+#### 应用
+
 
 
 ## 附: 杂记
@@ -1670,7 +1697,8 @@ mysql >= 5.7 后, 默认开启 ssl, 即使用 unixsock 连接, 也会读取 /etc
   - fieldTypeTimestamp, fieldTypeDateTime --> Timestamp YYYY-MM-DD HH:MM:SS[.fractal]
 ```
 
-connect 时, 加 `?parseTime=true` , MySQL-Server 读时间时会返回时间的 二进制
+> connect 时, 加 `?parseTime=true` , MySQL-Server 读时间时会返回时间的 二进制 ?
+> 好像不是, 好像只是, go-sql-driver 在 client 对时间的 二进制 内容转换为 time.Time, 没有加 `parseTime=true` 的时候只是返回字符串
 
 从上面的类型看:
 - `binaryRows`.`readRow`: 新版 stmt 协议 "prepared statement protocol", >= mysql/4.1
