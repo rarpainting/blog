@@ -1726,6 +1726,39 @@ rename table temp_t2 to temp_t3; -------- [2]
 
 #### GROUP BY
 
+```sql
+select id%10 as m, count(*) as c from t1 group by m;
+```
+
+如果没有使用上任何优化手段, group by 的流程是:
+1. 创建内存临时表, 两个字段分别是 m 和 c 主键是 **m**
+2. 扫描表 t1 的索引 a , 依次取出叶子节点上的 id 值, 计算 id%10 的结果, 记为 x
+  - 如果 临时表 中 没有 主键为 x 的行, 就插入一个记录 (x, 1)
+  - 如果表中 有 主键为 x 的行, 就将 x 的行的 c 值 +1
+3. 遍历完后, 再根据字段 m 作排序, 得到的结果返回给客户端
+
+注意事项:
+- 如果使用 `order by null`, 则对结果不排序
+- join_buffer 是无序数组, sort_buffer 是有序数据, 临时表是 二维表结构
+- 如果执行逻辑需要用到 二维表特性 , 就会优先考虑临时表
+
+##### group by 优化 -- 索引
+
+因为 索引 本身有序, 只需要顺序的根据索引获取行并计算, 可以免去生成临时表以及后续的计数计算
+
+##### group by 优化 -- 直接排序
+
+`SQL_BIG_RESULT`: 要求直接使用 磁盘临时表 , 放弃内存临时表的使用
+
+#### 课后作业
+
+```sql
+set tmp_table_size=1024;
+select id%100 as m, count(*) as c from t1 group by m order by null limit 10;
+```
+
+如果该过程数据量太大而启用了 磁盘临时表, 磁盘临时表默认是 innodb 的索引结构表(内存临时表则是默认 memory), 本身按主键(m)有序存储, 因此尽管是 `order by null` , 本身还是对 m 有序
+
 ## 附: 杂记
 
 ### inplace 与 online 的关系
