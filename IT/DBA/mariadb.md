@@ -1759,6 +1759,22 @@ select id%100 as m, count(*) as c from t1 group by m order by null limit 10;
 
 如果该过程数据量太大而启用了 磁盘临时表, 磁盘临时表默认是 innodb 的索引结构表(内存临时表则是默认 memory), 本身按主键(m)有序存储, 因此尽管是 `order by null` , 本身还是对 m 有序
 
+### Memory 引擎
+
+数据引擎的数据组织方式:
+- 索引组织表 -- Index Organizied Table(InnoDB 等): 把数据绑定在 主键索引 上, 其他索引则保存 主键
+- 堆组织表 -- Heap Organized Table(Memory 等): 数据单独存放, 索引上保存数据位置
+
+InnoDB 和 Memory 的不同:
+- InnoDB 存放的数据总是有序存放的, 而内存表的数据是按照写入顺序存放的
+- InnoDB 支持变长数据类型, 不同记录的长度可能不同; 内存表不支持 Blob 和 Text 字段, 并且 varchar(N) 是按照 char(N) 逻辑操作的
+
+![Memory 引擎的 B-Tree 索引](1788deca56cb83c114d8353c92e3bde3.jpg)
+
+#### 锁颗粒
+
+#### 数据持久化
+
 ## 附: 杂记
 
 ### inplace 与 online 的关系
