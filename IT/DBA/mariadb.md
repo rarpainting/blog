@@ -587,6 +587,12 @@ WAL 得益于两方面:
 - 功能测试阶段开启 general_log, 分析日志行为
 - 在 **初始化 DB** 时设置 `innodb_undo_tablespaces`(undo log 表个数) 为 2
 
+MySQL 的事务视图(snapshot) 是在 **事务开始后的第一条语句** 才生成的, 如果希望在事务开始时即生成视图, 则需要:
+
+```sql
+start transaction with consistent snapshot;
+```
+
 ### 索引
 
 - 主键
@@ -1877,6 +1883,14 @@ insert into t values(11,10,10) on duplicate key update d=100;
 - 试图插入一行语句, 如果碰到唯一键冲突, 就执行后面的更新语句, 且给相关的索引( 上面这行是 (5, 10] )加上 **写锁(X next-keylock)**
 - 如果有多个列违反了唯一性约束, 就会按照索引的顺序, 修改第一个索引冲突的行
 - 如果更新成功, `affected rows` 会增加为 2 , 那是因为 insert 和 update 操作都认为自己成功了
+
+### 复制表
+
+#### mysqldump
+
+```sql
+mysqldump -h$host -P$port -u$user --add-locks=0 --no-create-info --single-transaction  --set-gtid-purged=OFF db1 t --where=$where --result-file=/path/to/result.sql
+```
 
 ## 附: 杂记
 
