@@ -165,8 +165,8 @@ generated column(>=5.7):
   - `innodb_table_stats` -- 与 InnoDB 持久统计相关的信息, 每个表一行
   - `ndb_binlog_index` -- 兼容 MySQL Cluster , 将在 MariaDB_10.4 版本去除
   - `plugin` -- 使用 INSTALL_SONAME, INSTALL_PLUGIN 或者 mysql_plugin 等插件列表; 不包含有关内置插件或使用 --plugin-load 选项加载的插件的信息
-  - `proc` -- 包含存储过程和存储函数的信息, 该信息与 INFORMATION SCHEMA.ROUTINES 表中存储的信息相似
-  - `procs_priv` -- 包含存储过程和存储函数 **权限** 的信息, 同时 INFORMATION SCHEMA.ROUTINES 派生自 mysql.procs_priv
+  - `proc` -- 包含存储过程和存储函数的信息, 该信息与 INFORMATION_SCHEMA.ROUTINES 表中存储的信息相似
+  - `procs_priv` -- 包含存储过程和存储函数 **权限** 的信息, 同时 INFORMATION_SCHEMA.ROUTINES 派生自 mysql.procs_priv
   - `roles_mapping` -- 包含与角色(roles)相关的信息
   - `servers -- 包含有关 Spinder/FEDERATED/FederatedX 存储引擎(Storage Engine)使用的服务器信息
   - `slow_log` -- 慢日志(slow log)内容
@@ -1773,7 +1773,110 @@ InnoDB 和 Memory 的不同:
 
 #### 锁颗粒
 
+Memory 引擎只有表锁, 锁颗粒更大
+
 #### 数据持久化
+
+Memory 引擎中的数据在 server 停止后会丢失, 为了保证 主备一致 , MySQL 在数据库重启后, 往 binlog 中写入一条 `DELETE FROM t`
+
+因此, Memory 一般用于临时表的场景:
+- 临时表不会被其他线程访问, 无并发性问题
+- 临时表连接断开后自动删除, 本身没有持久化的需要
+- 备库的临时表不会影响主库的用户线程(?)
+
+### 自增主键
+
+#### 自增值的保存策略
+
+- **表结构是定义在后缀名为 .frm 的文件中, 但是并不会保存自增值**
+- MyISAM: 数据文件中
+- InnoDB:
+  - <=5.7: 保存在内存中; server 重启后, 第一次打开表时, 都会去找自增值的最大值 max(id) , 再将 max(id) + 1 作为当前自增值
+  - >=8.0: 保存在 redo log 中; 重启时依靠 redo log 恢复自增值为重启前的值
+
+#### 自增值修改机制
+
+- 如果插入数据时 id (自增字段) 指定为 { 0 | null | 未指定 } 那么就把这个表当前的 AUTO_INCREMENT 值填到自增字段
+- 如果插入的数据指定了具体的值(X), 就直接用语句中的值执行操作, 同时可能需要修改 自增值(Y)
+  - 如果 X < Y , 那么自增值(Y) 不变
+  - 如果 X >= Y, 那么自增值则为 (X) -- 算法: 从 `auto_increment_offset` 开始, 以 `auto_increment_increment` 为步长, 持续叠加, 直到找到第一个大于 X 的值, 作为新的自增值
+- 自增值变化是在操作完成(binlog 写入)前; 因此, **唯一键冲突/事务回滚/下文的 MySQL 自增键申请策略** 导致插入失败, 都会使自增键不连续
+- 自增锁只增不减, 且分配到执行语句中的自增值 **不会因任何原因** 导致自增值回退
+
+自增值的修改机制使得自增列可能出现 不连续 的状态, 但同时也避免了自增键落入的 序列化 的结局, 保证了性能
+
+#### 自增锁设计
+
+`innodb_autoinc_lock_mode`: 自增锁模式(>=5.1.22)
+- 0(<=5.0): 语句执行后才释放锁
+- 1(default):
+  - insert 插入: 无论是 VALUE 还是 VALUES , MySQL 都可以在执行前知道需要插入多少行; 因此, 在执行前就申请确定的自增键数, 申请后马上释放
+  - { insert...select | replace...select | load data } 批量插入: 因为 MySQL 无法在执行语句前知道需要申请多少个自增键, 因此, 语句结束后才释放
+- 2(Ver>=8.0.2 && `binlog_format=row`--default): 所有申请动作都是申请后马上释放
+
+**由于自增键批量插入的特殊性, 为了性能和安全的考量, 设置:**
+```conf
+innodb_autoinc_lock_mode=2
+binlog_format=row
+```
+
+#### MySQL 批量申请自增键
+
+对于无法在执行前确定需要的自增键数的批量插入语句, MySQL 的策略如下:
+- 语句执行过程中, 第一次申请自增 id , 会分配 1 个
+- 1 个用完后, 该语句第二次申请 id , 会分配 2 个
+- 2 个用完后, 该语句第三次申请 id , 会分配 4 个
+- 依次类推, 同一语句申请自增 id , 每次申请到 自增 id 数都是上一次的两倍
+
+#### 课后问题
+
+```sql
+insert into t2(c,d) select c,d from t;
+```
+
+这个语句会在 `t` 表上加 next_keylock:
+- 保证 binlog 的顺序上是安全
+
+### insert 语句
+
+insert 语句的执行在 (RR 级别 && **binlog_format=statement**) 下, 为了数据一致性, 会有更多锁行为
+
+#### insert...select
+
+```sql
+insert into t2(c,d) select c,d from t;
+```
+
+该语句会在 `t` 表上添加所需的行的 next-keylock
+
+#### 原表的 insert 循环写入
+
+```sql
+insert into t(c,d) select c,d from t force index(c) order by c desc limit 1;
+```
+
+流程如下:
+- 创建临时表, 表中连个字段(c, d)
+- 以索引 c 扫描表 t , 依次(desc)取全部的行(N)并回表(注意此时的子查询并不是只读取一行, 而且对 t 表读到的部分加了 next-keylock), 读到临时表, 这时, Rows_examined=N
+- 由于语义中有 limit 1 , 所以只取了临时表的第一行, 再插入到表 t 中; 这时, Rows_examined 值 +1 , 变成 N+1
+
+#### insert 唯一键冲突
+
+当发生唯一键冲突, 不仅返回了错误, 还为起冲突的索引上添加 **读锁(S next-keylock)**
+
+![唯一键冲突--死锁](63658eb26e7a03b49f123fceed94cd2d.png)
+
+![状态变化图--死锁](3e0bf1a1241931c14360e73fd10032b8.jpg)
+
+#### insert into...on duplicate key update
+
+```sql
+insert into t values(11,10,10) on duplicate key update d=100; 
+```
+
+- 试图插入一行语句, 如果碰到唯一键冲突, 就执行后面的更新语句, 且给相关的索引( 上面这行是 (5, 10] )加上 **写锁(X next-keylock)**
+- 如果有多个列违反了唯一性约束, 就会按照索引的顺序, 修改第一个索引冲突的行
+- 如果更新成功, `affected rows` 会增加为 2 , 那是因为 insert 和 update 操作都认为自己成功了
 
 ## 附: 杂记
 
