@@ -1889,8 +1889,84 @@ insert into t values(11,10,10) on duplicate key update d=100;
 #### mysqldump
 
 ```sql
-mysqldump -h$host -P$port -u$user --add-locks=0 --no-create-info --single-transaction  --set-gtid-purged=OFF db1 t --where=$where --result-file=/path/to/result.sql
+mysqldump -h$host -P$port -u$user --add-locks=0 --no-create-info --single-transaction --{set-gtid-purged|gtid}=OFF db1 t --where=$where --result-file=/client_path/result.sql
 ```
+
+- `--single-transaction`: 导出数据时不对目标表加锁, 而是通过 `START TRANSACTION WITH CONSISTENT SNAPSHOT;` 复制视图
+- `--add-locks=0`: 在输出的文件结果里, 不增加 `lock TABLES t WRITE;`
+- `--no-create-info`: 不需要导出表结构
+- `--{set-gtid-pureged(mysql)|gtid(mariadb)}=OFF`: 不输出跟 GTID 相关的信息
+- `--result-file`: 输出文件的路径
+- `--{extended-insert|skip-extended-insert}`: 开启|关闭 使用多个 VALUES 列表的多行 INSERT
+
+通过以下命令导入文件
+```sql
+source /client_path/to/result.sql
+```
+
+##### 特点:
+
+- 能够筛选, 导出部分数据
+- 无法使用 join 等复杂的条件写法
+
+#### 导出 CSV 文件
+
+```sql
+select * from db1.t where a>900 into outfile '/server_path/t.csv';
+```
+
+- 该语句结果在 server 端
+- `secure_file_priv`: `into outfile` 的文件生成位置规定:
+  - `empty`: 不限制文件生成的位置
+  - 表示路径的字符串: 则要求生成文件必须在该目录下
+  - `NULL`: **禁止** 在该 MySQL 实例上执行 `select...into outfile` 操作
+- 生成的文件必须是不存在的, 否则语句报错
+
+通过下面语句加载导出文件:
+
+```sql
+load data infile '/server_path/t.csv' into table db2.t;
+```
+
+为了主备一致性, 完整的加载流程为:
+- 执行完成后, 将 "/server_path/t.csv" 文件内容写到 binlog 中
+- 往 binlog 文件中写入语句 "load data local infile '/tmp/SQL_LOAD_MB-1-0' INTO TABLE `db2`.`t`"
+- 将该 binlog 日志传到备库
+- 备库的 apply 线程在执行该事务日志时:
+  1. 先将 binlog 中 t.csv 文件的内容读出来, 写入到本地临时目录 '/tmp/SQL_LOAD_MB-1-0'
+  2. 再执行 load data 语句, 往备库的 db2.t 表中插入数据
+
+![load data 的同步流程](3a6790bc933af5ac45a75deba0f52cfd.jpg)
+
+关于 load data 的 **local**, 会出现两种情况:
+- 不加 local: 负责执行的 server 会读取该 server 的文件, 该文件满足 **secure_file_priv** 规定
+- 加 local: 读取 client 的文件, 只需要 client 能访问读取该文件即可; 文件内容将从 client 读取到 server 端, 再执行 load data 流程
+
+由于该方法导出的 csv 没有表结构, 如果需要导出表结构, 可以通过 mysqldump:
+
+```sql
+mysqldump -h$host -P$port -u$user ---single-transaction  --set-gtid-purged=OFF db1 t --where=$where --tab=$secure_file_priv
+```
+
+-- `--tab`: 在该目录下, 创建一个 t.sql 文件保存 建表语句 , 同时创建 t.txt 文件保存 csv 数据
+
+##### 特点:
+
+- 支持所有的 SQL 语法
+- 每次只能导出一张表的数据, 而且表结构需要另外的语句单独备份
+
+#### 物理拷贝
+
+一个 InnoDB 表, 除了 .frm 和 .idb 两个物理文件外, 还需要在数据字典中注册; 因此直接拷贝文件是不能被识别的
+
+可传输表空间(transportable tablespace)(>=5.6)
+
+![物理拷贝表](ba1ced43eed4a55d49435c062fee21a7.jpg)
+
+注意:
+- 执行完 `flush table t` , db1.t 整个表处于只读状态, 直到执行 `unlock tables` 后才释放 读锁
+- 执行 `import tablespace` 时, (为了让文件中的表空间 id 和数据字典中的一致), 会修改 r.idb 的表空间 id , 而这个表空间 id 存在于每一个数据页中; 但是比起逻辑导入时, 完整数据文件生成的流程, 还是相当快的
+- 由于操作的是二进制数据文件, 无法进行筛选; 而且需要 源表 和 目标表 都使用 **InnoDB** 
 
 ## 附: 杂记
 
