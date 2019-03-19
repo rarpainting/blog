@@ -1862,13 +1862,16 @@ insert into t(c,d) select c,d from t force index(c) order by c desc limit 1;
 ```
 
 流程如下:
-- 创建临时表, 表中连个字段(c, d)
-- 以索引 c 扫描表 t , 依次(desc)取全部的行(N)并回表(注意此时的子查询并不是只读取一行, 而且对 t 表读到的部分加了 next-keylock), 读到临时表, 这时, Rows_examined=N
-- 由于语义中有 limit 1 , 所以只取了临时表的第一行, 再插入到表 t 中; 这时, Rows_examined 值 +1 , 变成 N+1
+1. 创建临时表, 表中连个字段(c, d)
+2. 以索引 c 扫描表 t , 依次(desc)取全部的行(N)并回表(注意此时的子查询并不是只读取一行, 而且对 t 表读到的部分加了 next-keylock), 读到临时表, 这时, Rows_examined=N
+3. 由于语义中有 limit 1 , 所以只取了临时表的第一行, 再插入到表 t 中; 这时, Rows_examined 值 +1 , 变成 N+1
+4. (MySQL>8.0): 修改了(2)的不合理情况, 子查询的行数已经是正确的查询行数
 
 #### insert 唯一键冲突
 
-当发生唯一键冲突, 不仅返回了错误, 还为起冲突的索引上添加 **读锁(S next-keylock)**
+当发生 **唯一键** 冲突, 不仅返回了错误, 还为起冲突的索引上(试图)添加 **读锁(S next-keylock)**
+
+与优化器优化的不同, 为冲突的索引加上的 next-keylock 不会退化为行锁
 
 ![唯一键冲突--死锁](63658eb26e7a03b49f123fceed94cd2d.png)
 
@@ -1967,6 +1970,50 @@ mysqldump -h$host -P$port -u$user ---single-transaction  --set-gtid-purged=OFF d
 - 执行完 `flush table t` , db1.t 整个表处于只读状态, 直到执行 `unlock tables` 后才释放 读锁
 - 执行 `import tablespace` 时, (为了让文件中的表空间 id 和数据字典中的一致), 会修改 r.idb 的表空间 id , 而这个表空间 id 存在于每一个数据页中; 但是比起逻辑导入时, 完整数据文件生成的流程, 还是相当快的
 - 由于操作的是二进制数据文件, 无法进行筛选; 而且需要 源表 和 目标表 都使用 **InnoDB** 
+
+### Grant
+
+#### 全局权限
+
+赋予权限:
+
+```sql
+grant all privileges on *.* to 'ua'@'%' with grant option;
+```
+
+实际动作:
+- 磁盘上, 将 mysql.user 表里, 用户 'ua'@'%' 这行的所有表示权限的字段都修改为 'Y'
+- 内存中, 找到数组 acl_users 中该用户对应的对象, 将 access 值(权限位) 修改为 '1'
+
+即:
+- grant 命令同时更新了 磁盘 和 内存 , 命令完成后即时生效, 之后的新创建的连接中会使用新的权限
+- 对于一个已存在的连接, 该连接的全局权限不受 grant 命令影响
+
+回收权限:
+
+```sql
+revoke all privileges on *.* from 'ua'@'%';
+```
+
+- 磁盘上, 将 mysql.user 表里, 用户 'ua'@'%' 改行的表示权限的字段值改为 'N'
+- 内存中, 找到数组 acl_users 中该用户对应的对象, 将 access 值(权限位) 修改为 '0'
+
+#### db 权限
+
+```sql
+grant all privileges on db1.* to 'ua'@'%' with grant option;
+```
+
+实际动作:
+- 磁盘上, 往 mysql.db 表中插入一行记录, 所有表示权限的字段设置为 'Y'
+- 内存中, 添加一个对象到数组 acl_dbs 中, 这个对象的权限位为 '1'
+
+关于 全局权限和 db 权限
+- 全局权限(super 等) 权限信息在线程对象中, revoke 操作影响不到该线程对象(, 除非该 session 结束 ?)
+- acl_dbs 是一个全局数组, 所有线程判断 db 权限都用这个数组, 这样 revoke 操作在修改完 acl_dbs 后就能影响到别的 session
+- 如果一个 session 已经在某 db 中, 那么在 revoke 后, 切换出 db 前都仍然有该 db 的权限
+
+#### 表权限/列权限
 
 ## 附: 杂记
 
