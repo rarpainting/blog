@@ -1973,6 +1973,14 @@ mysqldump -h$host -P$port -u$user ---single-transaction  --set-gtid-purged=OFF d
 
 ### Grant
 
+用户权限的匹对是通过从权限表加载到内存中的数组判断的, 如果内存数组中的权限和表中的不一致(如直接操作权限表而不是通过 grant 命令控制), 就需要以下命令强制刷新内存数组
+
+```sql
+flush privileges
+```
+
+清空 acl_users 数组, 从 mysql.user 表中重新读取/加载/构建 ac_users
+
 #### 全局权限
 
 赋予权限:
@@ -2014,6 +2022,10 @@ grant all privileges on db1.* to 'ua'@'%' with grant option;
 - 如果一个 session 已经在某 db 中, 那么在 revoke 后, 切换出 db 前都仍然有该 db 的权限
 
 #### 表权限/列权限
+
+权限修改后会刷新相关的 数据表和内存 hash
+
+### 分区表
 
 ## 附: 杂记
 
