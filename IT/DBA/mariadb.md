@@ -1745,7 +1745,7 @@ select id%10 as m, count(*) as c from t1 group by m;
 
 注意事项:
 - 如果使用 `order by null`, 则对结果不排序
-- join_buffer 是无序数组, sort_buffer 是有序数据, 临时表是 二维表结构
+- `join_buffer` 是无序数组, `sort_buffer` 是有序数据, 临时表是 二维表结构
 - 如果执行逻辑需要用到 二维表特性 , 就会优先考虑临时表
 
 ##### group by 优化 -- 索引
@@ -1979,7 +1979,7 @@ mysqldump -h$host -P$port -u$user ---single-transaction  --set-gtid-purged=OFF d
 flush privileges
 ```
 
-清空 acl_users 数组, 从 mysql.user 表中重新读取/加载/构建 ac_users
+清空 `acl_users` 数组, 从 mysql.user 表中重新读取/加载/构建 `acl_users`
 
 #### 全局权限
 
@@ -2018,7 +2018,7 @@ grant all privileges on db1.* to 'ua'@'%' with grant option;
 
 关于 全局权限和 db 权限
 - 全局权限(super 等) 权限信息在线程对象中, revoke 操作影响不到该线程对象(, 除非该 session 结束 ?)
-- acl_dbs 是一个全局数组, 所有线程判断 db 权限都用这个数组, 这样 revoke 操作在修改完 acl_dbs 后就能影响到别的 session
+- `acl_dbs` 是一个全局数组, 所有线程判断 db 权限都用这个数组, 这样 revoke 操作在修改完 `acl_dbs` 后就能影响到别的 session
 - 如果一个 session 已经在某 db 中, 那么在 revoke 后, 切换出 db 前都仍然有该 db 的权限
 
 #### 表权限/列权限
@@ -2027,7 +2027,45 @@ grant all privileges on db1.* to 'ua'@'%' with grant option;
 
 ### 分区表
 
+对于 Server 层, 分区表是无感知的
+
+#### 分区策略
+
+
+- MyISAM: 通用分区策略(<8.0)
+- InnoDB: 本地分区策略
+
+#### 分区表的 server 层行为
+
+- **注**: 第一次访问一个分区表时, MySQL 需要把所有分区都访问一遍; 分区过多可能会导致超过 `open_files_limit` 限制
+  - 如果是 InnoDB 引擎, `innodb_open_files` 会控制实际打开的表数量, 超过该值会把之前的文件 close
+- 在 server 层, 认为这是同一张表, 因此所有分区共用 **同一个 MDL 锁**
+- 在引擎层, 认为这是不同的表, 因此 MDL 锁之后的执行过程, 会根据分区表规则, 只访问必要的分区
+
+#### 应用场景
+
+- 对业务透明
+- 如果是删除历史数据的需求, 那么按时间分区的分区表, 可以通过 `alter table t drop partition` 删除分区(直接删除分区文件, 速度快), 从而删除过期的历史数据
+
 ## 附: 杂记
+
+### 主从复制方案
+
+#### 异步复制
+
+默认
+
+主库在执行完客户端提交的事务后会立即将结果返给给客户端, 不等待从库的响应
+
+#### 半同步复制
+
+![AFTER_COMMIT 半同步复制](576154-20160804163916122-156935432.jpg)
+
+`rpl_semi_sync_master_wait_point`(>=5.7.2):
+  - `AFTER_SYNC`: Loss-Less , Waiting Slave dump 在 Storage Commit 之前
+  - `AFTER_COMMIT`
+
+#### 同步复制
 
 ### inplace 与 online 的关系
 
@@ -2075,7 +2113,7 @@ mysql >= 5.7 后, 默认开启 ssl, 即使用 unixsock 连接, 也会读取 /etc
 ### `show processlist`.`state`
 - `Checking table`: 正在检查数据表(这是自动的)
 - `Closing tables`: 正在将表中修改的数据刷新到磁盘中, 同时正在关闭已经用完的表. 这是一个很快的操作, 如果不是这样的话, 就应该确认磁盘空间是否已经满了或者磁盘是否正处于重负中
-- `Connect Out`: 复制从服务器正在连接主服务器。
+- `Connect Out`: 复制从服务器正在连接主服务器
 - `Copying to tmp table on disk`: 由于临时结果集大于 tmp_table_size , 正在将临时表从内存存储转为磁盘存储以此节省内存
 - `Creating tmp table`: 正在创建临时表以存放部分查询结果
 - `deleting from main table`: 服务器正在执行多表删除中的第一部分, 刚删除第一个表
