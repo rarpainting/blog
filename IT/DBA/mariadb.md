@@ -140,6 +140,8 @@ EXPLAIN SELECT * FROM table;
 
 - `SHOW BINLOG EVENTS;` -- MySQL Master 的 binlog 简单记录
 
+- `SHOW WARNINGS;` -- MySQL 优化器(如果有更改), 优化后的真正执行语句
+
 generated column(>=5.7):
 - 实现列数据的关联更新
 - `ALTER TABLE table ADD COLUMN column TYPE GENERATED ALWAYS AS (such as [id%100])`
@@ -2042,18 +2044,140 @@ grant all privileges on db1.* to 'ua'@'%' with grant option;
 - 在 server 层, 认为这是同一张表, 因此所有分区共用 **同一个 MDL 锁**
 - 在引擎层, 认为这是不同的表, 因此 MDL 锁之后的执行过程, 会根据分区表规则, 只访问必要的分区
 
-#### 应用场景
+#### 优点
 
 - 对业务透明
 - 如果是删除历史数据的需求, 那么按时间分区的分区表, 可以通过 `alter table t drop partition` 删除分区(直接删除分区文件, 速度快), 从而删除过期的历史数据
 
+#### 课后问题
+
+分区表的 自增主键(以 ftime 分区): 由于 MySQL 要求主键包含所有的 **分区字段** , 所以需要创建 联合主键
+
+##### (ftime, id)
+
+如:
+```sql
+CREATE TABLE `t` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `ftime` datetime NOT NULL,
+  `c` int(11) DEFAULT NULL,
+  PRIMARY KEY (`ftime`,`id`),
+  KEY `id` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+PARTITION BY RANGE (YEAR(ftime))
+(PARTITION p_2017 VALUES LESS THAN (2017) ENGINE = InnoDB,
+ PARTITION p_2018 VALUES LESS THAN (2018) ENGINE = InnoDB,
+ PARTITION p_2019 VALUES LESS THAN (2019) ENGINE = InnoDB,
+ PARTITION p_others VALUES LESS THAN MAXVALUE ENGINE = InnoDB);
+
+```
+
+解释:
+- 可以利用 前缀索引
+- 如果使用 InnoDB 引擎, InnoDB 要求至少有一个索引, 因此需要一个自增的 `id`
+
+### 答疑(3)
+
+#### Join 的写法
+
+#### distinct 和 group by 的性能
+
+如果是规则的 group by 语句:
+
+```sql
+select field, count(*) from t group by field order by null;
+```
+
+按照字段 field 分组, 计算每组的 field 出现的次数
+
+没有 count(*) 后:
+
+```sql
+select field from t group by field order by null;
+```
+
+按照字段 field 分组, 但不计算次数(没有聚合操作), 这时和 distinct 执行流程 **一致**
+
+#### 备库自增主键
+
+为了保证 主备一致 , 对于自增主键, 每次获取到的主键都会先在 binlog 中写入(无论是 ROW/STATEMENT)
+
+```sql
+SET INSERT_ID=CURRENT_ID;
+```
+
+### 自增主键用完
+
+#### 表定义自增键
+
+范围: [0, 2^32-1]
+
+表定义的自增主键达到上限后, 再申请下一个 id 时, 得到的值保持不变
+
+#### InnoDB 系统自增 row_id
+
+范围: [0, 2^48-1]
+
+在 row_id(2^48) 到达上限后, 会以 0 重新开始, 并且 **覆盖 row_id 相同的行**
+
+#### XID
+
+范围: [0, 2^64-1]
+
+- MySQL 内部维护一个 全局变量 `global_query_id`, 每次执行语句则将其赋给 `Query_id` , 再 +1; 如果当前语句是事务的第一条语句, 则同时赋给 `XID`
+- `query_global_id` 重启后清零, 因此一个 MySQL 实例中不同的事务的 `Xid` 是可能相同的; 但是 MySQL 重启后会生成新的 binlog , 保证了 **同一个 binlog 中 XID 必然是唯一的**
+
+#### InnoDB trx_id
+
+范围: [0, 2^48-1]
+
+生成规律:
+
+- InnoDB 内部维护一个 **持久保存** 的 `max_trx_id` 全局变量, 每次申请 `trx_id` 就把当前的 `max_trx_id` 赋过去, 再 +1
+- 当 `max_trx_id` 增长到 2^48-1 后的 `trx_id` 从 0 开始, 并开始出现 **脏读** (且无法重启解决)
+- update 和 delete 等操作除了事务本身, 还涉及 标记删除旧数据, 把数据排到 purge 队列等待后续物理删除, 该操作也涉及 max_trx_id+1
+- InnoDB 的不可见的后台操作(表的索引信息统计)这类操作, 会启动内部事务, 同样涉及 max_trx_id 的变动
+- 对于只读事务(没有 `for update` 部分), InnoDB 不会分配一个明确的事务 ID
+
+在只读事务中的 随机 "trx_id" 由系统临时计算出: 把当前事务的 trx 变量的指针地址转换为 整型 , 再加上 2^48 , 这种做法的优点:
+
+- 同一个只读事务中, 当前事务的 指针地址 是不变的
+- 多个并发的只读事务, 每个事务的 trx 变量天然不同
+- 加上 2^48 后数字大, 与 读写事务 的 id 做区分, 方便事后分析
+
+只读事务 不分配 `trx_id`:
+
+- 减少事务视图的活跃事务数组大小: 由于运行中的只读事务不影响 可见性隔离 , 那么在创建视图时, InnoDB 只拷贝读写事务的 trx_id 即可
+- 降低 trx_id 申请频率
+
+#### thread_id
+
+范围: [0, 2^32-1]
+
+`show processlist` 第一列
+
+自增分配逻辑:
+
+```sql
+do {
+  new_id = thread_id_counter++;
+} while (!thread_ids.insert_unique(new_id).second);
+```
+
 ## 附: 杂记
+
+### 为什么 `add column` 不指定位置
+
+性能上没有差别, 但是为什么不建议在 `add column` 后指定位置 `after columns_name`, 而是默认加在最后:
+
+- 部分分支(?指 mariadb 等?)支持快速加列(如果加入到最后一列, 则瞬间完成), 而加了 `after column_name` 则没有这种优化
+- (?) 对线上业务做 alter 操作时, 有时候是 "先做备库、切换、再做备库" 的方式完成的, 那么使用 `after column_name` 的时候用不上这种方式
 
 ### 主从复制方案
 
 #### 异步复制
 
-默认
+默认行为
 
 主库在执行完客户端提交的事务后会立即将结果返给给客户端, 不等待从库的响应
 
