@@ -824,3 +824,61 @@ matlab: norm(A, 'fro')
 核范数(某符号为 A 的奇异值): 奇异值之和
 
 ![核范数](img/2.18/equation-he.svg)
+
+##### [拉格朗日乘子法](https://www.zhihu.com/question/38586401)
+
+keyword: 与原点的最近距离 极值 等梯度向量
+
+在极值点 对于圆和曲线, 有以下关系:
+- 在极值点, 圆与曲线相切
+- 梯度与等高线的切线垂直
+
+即在圆与曲线的 相切点 , 圆的梯度向量与曲线的梯度向量 平行
+
+![圆与曲线](img/2.18/v2-b59fd83680cc736a4bde6b7714013915_hd.gif)
+
+![梯度向量平行](img/2.18/equation-lh.svg)
+
+###### 定义
+
+要求函数 f 在 g 的约束下的极值可以表示为:
+
+![约束](img/2.18/equation-lglr-def.svg)
+
+(s.t. subject to -- 服从于, 约束于)
+
+对以下求解
+
+![求解](img/2.18/equation-lglr-res.svg)
+
+中文描述: 在 g(x, y)=0 约束下的 f(x, y) 最小值
+
+###### 例子
+
+令:
+
+![例子](img/2.18/equation-exam.svg)
+
+求:
+
+![数学符号](img/2.18/equation-exam-res.svg)
+
+联立方程:
+
+![联立方程](img/2.18/equation-exam-res2.svg)
+
+###### 多约束条件
+
+求:
+
+![例子](img/2.18/equation-exam2-res.svg)
+
+图:
+
+![图](img/2.18/v2-9611b135439c71afe097bfdcf8d3248c_hd.jpg)
+
+联立方程:
+
+![联立方程](img/2.18/equation-exam2-res2.svg)
+
+从图中可知, $x^2+y^2$ 的法线是 x^2y-3 和 x-y-3 的法线的线性组合
