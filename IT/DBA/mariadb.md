@@ -597,6 +597,28 @@ start transaction with consistent snapshot;
 
 ### 索引
 
+```sql
+show index from table;
+```
+
+- Table
+- Non_unique
+- Key_name: 索引名
+- Seq_in_index: 索引中的列序列号(begin by 1), 用于复数索引
+- Column_name: 列名
+- Collation: 列以什么方式存储在索引中 --  MySQL 中, 有值'A'(升序) 或 NULL(无分类)
+- Cardinality: 索引的散列程度 -- 索引中唯一值的数量的估计值, 通过 mysql 的 ANALYZE 操作可优化索引
+- Sub_part: 如果列只是被部分地编入索引, 则为被编入索引的字符的数目. 如果整列被编入索引, 则为 NULL
+- Packed: 指示关键字如何被压缩 -- 如果没有被压缩, 则为 NULL
+- Null: 该列是否含有 NULL(?, 不是应该意思是 [该列是否未被设置 NON-NULL]) -- 如果有, 则含有 YES. 如果没有, 则该列含有 NO
+- Index_type: 索引方法 -- BTREE, FULLTEXT, HASH, RTREE
+- Comment
+- Index_comment
+- Visible(>= mysql 8.0): 该索引是否可使用; (注: 插入/删除/更新 操作无视该变量, 而依然操作索引)
+- Expression(>= mysql 8.0): TODO:
+
+#### 注意事项
+
 - 主键
   - 主键索引的叶子节点存的是 **整行数据**
   - 非主键索引的叶子节点存的是 **主键的值**, 即查询非主键索引比查询主键索引多了一次查询 B 树的次数(回表)
@@ -606,8 +628,7 @@ start transaction with consistent snapshot;
 - 使用 **业务字段(如身份证)** 作为主键的场景
   - 只有一个索引
   - 该索引必须是唯一索引
-  
-回到主键索引树搜索的过程，称为回表
+- 回到主键索引树搜索的过程，称为回表
  
 #### 索引优化
 
@@ -621,6 +642,12 @@ start transaction with consistent snapshot;
   - like 'hello%’and age > 10 检索, MySQL 5.6 版本之前, 会对匹配的数据进行回表查询; 5.6 版本后, 会先过滤掉 age<10 的数据, 再进行回表查询, 减少回表率, 提升检索速度
 
 #### 字符串索引
+
+**区分度公式**:
+
+```sql
+select count(distinct col)/count(*) as dist from table;
+```
 
 - 直接建立完整索引, 占空间
 - 建立 前缀索引 重点关注 **区分度**, 要求在满足区分度的同时利用上 前缀索引 带来的优化
@@ -664,8 +691,8 @@ OPTIMIZE TABLE table;
 用于碎片整理的还有:
 
 ```sql
-ALTER TABLE table ENGINE=innodb,ALGORITHM=inplace; # 默认行为, 避免了原表的复制, 仅是对表重组
-ALTER TABLE table ENGINE=innodb,ALGORITHM=copy; # 不仅复制了原表, 还进行了表的重组, 一般用于修改主键(primary key)时使用
+ALTER TABLE table ENGINE=innodb[,ALGORITHM=inplace]; # 默认行为, 避免了原表的复制, 仅是对表重组
+ALTER TABLE table ENGINE=innodb[,ALGORITHM=copy]; # 不仅复制了原表, 还进行了表的重组, 一般用于修改主键(primary key)时使用
 ```
 > 以上两者执行中都需要创建 tmp_table
 
