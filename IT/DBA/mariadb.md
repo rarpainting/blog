@@ -1,5 +1,221 @@
 # MariaDB
 
+<!-- TOC -->
+
+- [MariaDB](#mariadb)
+	- [数据库语言](#数据库语言)
+		- [DDL(Data Definition Language) -- 数据定义语言](#ddldata-definition-language----数据定义语言)
+		- [DML(Data Manipulation Language) -- 数据操作语言](#dmldata-manipulation-language----数据操作语言)
+		- [DCL(Data Control Language) -- 数据控制语句](#dcldata-control-language----数据控制语句)
+		- [TCL(Transaction Control Language) 事务控制语言](#tcltransaction-control-language-事务控制语言)
+	- [MariaDB SSL 开启](#mariadb-ssl-开启)
+	- [配置文件](#配置文件)
+		- [General Log](#general-log)
+		- [Slow Query Log](#slow-query-log)
+		- [Binlog](#binlog)
+	- [SQL 语句](#sql-语句)
+		- [SQL 语句分析](#sql-语句分析)
+		- [获取有关数据库和表的信息](#获取有关数据库和表的信息)
+	- [MYSQL 数据目录](#mysql-数据目录)
+	- [MariaDB 日志](#mariadb-日志)
+		- [Error Log](#error-log)
+		- [General Log](#general-log-1)
+		- [Slow Log](#slow-log)
+			- [统计扩展(Extended Statistics)](#统计扩展extended-statistics)
+		- [Bin Log](#bin-log)
+			- [复制时安全清除二进制文件](#复制时安全清除二进制文件)
+			- [选择性的记录](#选择性的记录)
+			- [二进制日志格式](#二进制日志格式)
+				- [STATEMENT](#statement)
+				- [ROW](#row)
+				- [MIXED](#mixed)
+		- [Redo Log: 重做日志](#redo-log-重做日志)
+		- [Undo Log: 回滚日志](#undo-log-回滚日志)
+		- [附议](#附议)
+			- [崩溃恢复](#崩溃恢复)
+			- [redo log 与 binlog 关联](#redo-log-与-binlog-关联)
+	- [复制](#复制)
+		- [设置复制](#设置复制)
+			- [锁定 Master 表](#锁定-master-表)
+			- [开启 Slave 服务器](#开启-slave-服务器)
+		- [Relay Log](#relay-log)
+	- [线程池](#线程池)
+		- [线程池功能](#线程池功能)
+		- [底层实现及差别](#底层实现及差别)
+	- [MySQL 同步策略](#mysql-同步策略)
+		- [async](#async)
+		- [semi-sync: 只要有一个 slave 响应成功, master 就 commit](#semi-sync-只要有一个-slave-响应成功-master-就-commit)
+		- [sync](#sync)
+	- [<<极客时间: MySQL 实战>>](#极客时间-mysql-实战)
+		- [一次查询运行流程](#一次查询运行流程)
+			- [连接器](#连接器)
+			- [查询缓存](#查询缓存)
+			- [分析器](#分析器)
+			- [优化器](#优化器)
+			- [执行器](#执行器)
+		- [一次更新运行流程(WAL: Write-Ahead Logging)](#一次更新运行流程wal-write-ahead-logging)
+			- [update 的实际执行流程:](#update-的实际执行流程)
+			- [两阶段提交与事务](#两阶段提交与事务)
+		- [索引](#索引)
+			- [注意事项](#注意事项)
+			- [索引优化](#索引优化)
+			- [字符串索引](#字符串索引)
+		- [优化器](#优化器-1)
+			- [MySQL 优化指令](#mysql-优化指令)
+		- [脏页及其控制处理](#脏页及其控制处理)
+			- [`innodb_io_capacity`: innodb 一次刷新到磁盘的脏页数](#innodb_io_capacity-innodb-一次刷新到磁盘的脏页数)
+			- [`innodb_flush_neighbors`](#innodb_flush_neighbors)
+		- [Order by 工作原理](#order-by-工作原理)
+			- [全字段排序](#全字段排序)
+			- [rowid 排序](#rowid-排序)
+			- [相关全局变量](#相关全局变量)
+				- [`sort_buffer_size`](#sort_buffer_size)
+				- [max_length_for_sort_data](#max_length_for_sort_data)
+			- [通过索引优化](#通过索引优化)
+				- [为 (city, name) 建立联合索引](#为-city-name-建立联合索引)
+				- [为 (city, name, age) 建立联合索引, 以使用 覆盖索引](#为-city-name-age-建立联合索引-以使用-覆盖索引)
+			- [结论](#结论)
+		- [随机获取行](#随机获取行)
+			- [内存临时表](#内存临时表)
+			- [磁盘临时表](#磁盘临时表)
+			- [优先队列(最大/最小堆)算法](#优先队列最大最小堆算法)
+		- [函数与索引](#函数与索引)
+			- [条件字段的函数操作](#条件字段的函数操作)
+			- [隐式类型转换](#隐式类型转换)
+			- [隐式字符编码转换](#隐式字符编码转换)
+		- [事务与查询与锁](#事务与查询与锁)
+		- [MySQL 加锁规则](#mysql-加锁规则)
+		- [binlog 写入规则](#binlog-写入规则)
+		- [MySQL 设计问答](#mysql-设计问答)
+			- [为什么 binlog cache 是每个线程独立维护, 而 redo log buffer 是全局共用](#为什么-binlog-cache-是每个线程独立维护-而-redo-log-buffer-是全局共用)
+			- [binlog 已写盘 , redo log 也 commit 了, 但是因为网络原因, 客户端接受不到响应, 此时仍然是正常情况](#binlog-已写盘--redo-log-也-commit-了-但是因为网络原因-客户端接受不到响应-此时仍然是正常情况)
+		- [主备一致](#主备一致)
+			- [复制循环问题](#复制循环问题)
+				- [数据库迁移导致的循环复制](#数据库迁移导致的循环复制)
+		- [高可用](#高可用)
+			- [主备延迟](#主备延迟)
+			- [主备切换策略](#主备切换策略)
+				- [可靠性优先策略](#可靠性优先策略)
+				- [可用性优先策略](#可用性优先策略)
+		- [备库并行复制](#备库并行复制)
+			- [MySQL 5.5 版本的并行复制策略 -- 丁奇](#mysql-55-版本的并行复制策略----丁奇)
+				- [按表分发策略](#按表分发策略)
+				- [按行分发策略](#按行分发策略)
+			- [MySQL 5.6 版本的并行复制策略](#mysql-56-版本的并行复制策略)
+				- [按库分发策略](#按库分发策略)
+			- [MariaDB 的并行复制策略](#mariadb-的并行复制策略)
+			- [MySQL 5.7 的并行复制策略](#mysql-57-的并行复制策略)
+			- [MySQL 5.7.22 的并行复制策略](#mysql-5722-的并行复制策略)
+		- [主备故障排除](#主备故障排除)
+			- [GTID(Global Transaction Identifier)](#gtidglobal-transaction-identifier)
+			- [GTID 与在线 DDL](#gtid-与在线-ddl)
+			- [课后问题](#课后问题)
+		- [读写分离](#读写分离)
+			- [客户端直连](#客户端直连)
+			- [proxy](#proxy)
+			- [过期读](#过期读)
+				- [强制走主库](#强制走主库)
+				- [Sleep](#sleep)
+				- [判读主备无延迟](#判读主备无延迟)
+				- [配合 semi-sync](#配合-semi-sync)
+				- [等主库位点](#等主库位点)
+				- [等 GTID](#等-gtid)
+			- [课后问题](#课后问题-1)
+		- [如何判断数据库是否出问题](#如何判断数据库是否出问题)
+			- [select 1](#select-1)
+			- [查表判断](#查表判断)
+			- [更新判断](#更新判断)
+			- [内部统计 -- `performance_schema`](#内部统计----performance_schema)
+		- [动态观点看死锁](#动态观点看死锁)
+			- [课后问题: 如果对空表加锁, 锁的是什么?](#课后问题-如果对空表加锁-锁的是什么)
+		- [误删数据](#误删数据)
+			- [误删库/表 -- 常规操作](#误删库表----常规操作)
+			- [延迟复制备库](#延迟复制备库)
+			- [预防删除库/表](#预防删除库表)
+			- [rm 删除数据](#rm-删除数据)
+			- [生产规范](#生产规范)
+		- [kill](#kill)
+			- [kill 无效的原因](#kill-无效的原因)
+				- [线程没有执行到判断线程状态的逻辑](#线程没有执行到判断线程状态的逻辑)
+				- [终止逻辑耗时较长](#终止逻辑耗时较长)
+			- [mysql 客户端资源请求](#mysql-客户端资源请求)
+			- [课后问题: 长时间回滚大事务, 应该是重启还是等待完成](#课后问题-长时间回滚大事务-应该是重启还是等待完成)
+		- [全表扫描](#全表扫描)
+			- [全表扫描时, server 层的影响:](#全表扫描时-server-层的影响)
+			- [全表扫描时, InnoDB 层的影响](#全表扫描时-innodb-层的影响)
+	- [课后问题](#课后问题-2)
+		- [JOIN](#join)
+			- [NLJ(Index Nested-Loop Join)](#nljindex-nested-loop-join)
+			- [Simple Nested-Loop Join](#simple-nested-loop-join)
+			- [BNL(Block Nested-Loop Join)](#bnlblock-nested-loop-join)
+			- [课后问题 (BNL 的性能问题)](#课后问题-bnl-的性能问题)
+			- [MRR(Multi-Range Read) 优化](#mrrmulti-range-read-优化)
+			- [BKA(Batched Key Access)](#bkabatched-key-access)
+			- [课后问题](#课后问题-3)
+		- [临时表](#临时表)
+			- [特性](#特性)
+			- [注:](#注)
+			- [课后思考](#课后思考)
+		- [内部临时表](#内部临时表)
+			- [UNION](#union)
+			- [GROUP BY](#group-by)
+				- [group by 优化 -- 索引](#group-by-优化----索引)
+				- [group by 优化 -- 直接排序](#group-by-优化----直接排序)
+			- [课后作业](#课后作业)
+		- [Memory 引擎](#memory-引擎)
+			- [锁颗粒](#锁颗粒)
+			- [数据持久化](#数据持久化)
+		- [自增主键](#自增主键)
+			- [自增值的保存策略](#自增值的保存策略)
+			- [自增值修改机制](#自增值修改机制)
+			- [自增锁设计](#自增锁设计)
+			- [MySQL 批量申请自增键](#mysql-批量申请自增键)
+			- [课后问题](#课后问题-4)
+		- [insert 语句](#insert-语句)
+			- [insert...select](#insertselect)
+			- [原表的 insert 循环写入](#原表的-insert-循环写入)
+			- [insert 唯一键冲突](#insert-唯一键冲突)
+			- [insert into...on duplicate key update](#insert-intoon-duplicate-key-update)
+		- [复制表](#复制表)
+			- [mysqldump](#mysqldump)
+				- [特点:](#特点)
+			- [导出 CSV 文件](#导出-csv-文件)
+				- [特点:](#特点-1)
+			- [物理拷贝](#物理拷贝)
+		- [Grant](#grant)
+			- [全局权限](#全局权限)
+			- [db 权限](#db-权限)
+			- [表权限/列权限](#表权限列权限)
+		- [分区表](#分区表)
+			- [分区策略](#分区策略)
+			- [分区表的 server 层行为](#分区表的-server-层行为)
+			- [优点](#优点)
+			- [课后问题](#课后问题-5)
+				- [(ftime, id)](#ftime-id)
+		- [答疑(3)](#答疑3)
+			- [Join 的写法](#join-的写法)
+			- [distinct 和 group by 的性能](#distinct-和-group-by-的性能)
+			- [备库自增主键](#备库自增主键)
+		- [自增主键用完](#自增主键用完)
+			- [表定义自增键](#表定义自增键)
+			- [InnoDB 系统自增 row_id](#innodb-系统自增-row_id)
+			- [XID](#xid)
+			- [InnoDB trx_id](#innodb-trx_id)
+			- [thread_id](#thread_id)
+	- [附: 杂记](#附-杂记)
+		- [为什么 `add column` 不指定位置](#为什么-add-column-不指定位置)
+		- [主从复制方案](#主从复制方案)
+			- [异步复制](#异步复制)
+			- [半同步复制](#半同步复制)
+			- [同步复制](#同步复制)
+		- [inplace 与 online 的关系](#inplace-与-online-的关系)
+		- [Update](#update)
+		- [MySQL 配置](#mysql-配置)
+		- [go-sql-driver](#go-sql-driver)
+		- [`show processlist`.`state`](#show-processliststate)
+
+<!-- /TOC -->
+
 ## 数据库语言
 
 ### DDL(Data Definition Language) -- 数据定义语言
@@ -99,7 +315,7 @@ EXPLAIN SELECT * FROM table;
   - `using join buffer`: 改值强调了在获取连接条件时没有使用索引, 并且需要连接缓冲区来存储中间结果. 如果出现了这个值, 那应该注意, 根据查询的具体情况可能需要添加索引来改进能
   - `impossible where`: 这个值强调了 where 语句会导致没有符合条件的行
   - `select tables optimized away`: 这个值意味着仅通过使用索引, 优化器可能仅从聚合函数结果中返回一行
-  
+
 总结;
 - `EXPLAIN` 不会告诉你关于触发器、存储过程的信息或用户自定义函数对查询的影响情况
 - `EXPLAIN` 不考虑各种 Cache
@@ -172,7 +388,7 @@ generated column(>=5.7):
   - `roles_mapping` -- 包含与角色(roles)相关的信息
   - `servers -- 包含有关 Spinder/FEDERATED/FederatedX 存储引擎(Storage Engine)使用的服务器信息
   - `slow_log` -- 慢日志(slow log)内容
-  - `tables_priv` -- 表级权限, 派生表 -- INFORMATION_SCHEMA.TABLE_PRIVILEGES 
+  - `tables_priv` -- 表级权限, 派生表 -- INFORMATION_SCHEMA.TABLE_PRIVILEGES
   - `table_stats` -- 表统计信息相关
   - `time_zone` -- 与时区相关的信息
   - `time_zone_leap_second` -- 与时区相关的信息
@@ -207,7 +423,7 @@ generated column(>=5.7):
   - EVENT
   - GRANT OPTION -- 授予(当前用户拥有的)数据库权限
   - LOCK TABLES -- 使用 LOCK TABLES 语句获得显式锁; 需要同时拥有 SELECT 目标表的权限, 用于锁定该表
-  
+
 - Table Privileges
   - ALTER
   - CREATE
@@ -223,18 +439,18 @@ generated column(>=5.7):
   - SHOW VIEW
   - TRIGGER
   - UPDATE -- 更新表中的现有行, 需要同时具备 SELECT 该表的权限 或者 适用于 WHERE 子句的列
-  
+
 - Columns Privileges
   - INSERT
   - REFERENCES
   - SELECT
   - UPDATE
-  
+
 - Function Privileges
   - ALTER ROUTINE -- 通过 ALTER FUNCTION 更改存储函数的特征
   - EXECUTE -- 执行存储函数
   - GRANT OPTION
-  
+
 - Procedure Privileges
   - ALTER ROUTINE
   - EXECUTE
@@ -242,14 +458,14 @@ generated column(>=5.7):
 
 - Proxy Privileges
   - PROXY -- 允许一个用户成为另一个用户的代理
-  
+
 - 账户的资源限制
   - `MAX_QUERIES_PER_HOUR`
   - `MAX_UPDATE_PER_HOUR`
   - `MAX_CONNECTIONS_PER_HOUR`
   - `MAX_USER_CONNECTIONS`
   - `MAX_STATEMENT_TIME`
-  
+
 - 账户的 SSL/TLS 选项
   - REQUIRE 只使用一次, 通过 AND 分隔各个选项
   - REQUIRE NONE -- 不需要 TLS
@@ -258,7 +474,7 @@ generated column(>=5.7):
   - REQUIRE ISSUER 'issuer' -- TLS, 有效的 X509 证书; 同时必须通过证书颁发机构 'issuer'
   - REQUIRE SUBJECT 'subject' -- TLS, 有效的 X509 证书; 同时证书的主题必须是 'subject'
   - REQUIRE CIPHER 'cipher' -- -- TLS, 有效的 X509 证书; 同时用于连接的加密必须使用字符串指定的 'cipher'
-  
+
 
 ## MariaDB 日志
 
@@ -428,7 +644,7 @@ log-basename = master1 # mariadb 独有
   - `thread_pool_min_threads`
 - 类 Unix: 通用实现
   - `thread_pool_size`
-  
+
 ## MySQL 同步策略
 
 ###  async
@@ -469,9 +685,9 @@ rpl_semi_sync_master_timeout=1000
 - Mysql 在执行过程中临时使用的内存是管理在 **连接对象** 里面的, 该资源只有在断开才释放; 此时建议在执行 较大的操作/长时间的操作 后执行 **mysql_reset_connection** 重建连接, 该过程不执行重连和权限验证, 仅将 [连接恢复](https://mariadb.com/kb/en/library/mysql_reset_connection/)
 
 #### 查询缓存
-  
+
 - 查询缓存会因为一次 插入/更新/删除 操作而失效, 因此一般建议关闭 **查询缓存(query_cache_type=DEMAND)**
-- 一般建议在需要使用查询缓存的地方设置 **SQL_CACHE**, 例如: 
+- 一般建议在需要使用查询缓存的地方设置 **SQL_CACHE**, 例如:
   - `SELECT SQL_CACHE * FROM T WHERE ID=10;`
 - **注**: MySQL 8.0 将删除查询缓存功能; Mariadb 呢?
 
@@ -629,7 +845,7 @@ show index from table;
   - 只有一个索引
   - 该索引必须是唯一索引
 - 回到主键索引树搜索的过程，称为回表
- 
+
 #### 索引优化
 
 1. 覆盖索引
@@ -803,13 +1019,13 @@ mysql 为排序设置的 sort_buffer 大小
 
 ```sql
 /* 打开 optimizer_trace，只对本线程有效 */
-SET optimizer_trace='enabled=on'; 
+SET optimizer_trace='enabled=on';
 
 /* @a 保存 Innodb_rows_read 的初始值 */
 select VARIABLE_VALUE into @a from  performance_schema.session_status where variable_name = 'Innodb_rows_read';
 
 /* 执行语句 */
-select city, name,age from t where city='杭州' order by name limit 1000; 
+select city, name,age from t where city='杭州' order by name limit 1000;
 
 /* 查看 OPTIMIZER_TRACE 输出 */
 SELECT * FROM `information_schema`.`OPTIMIZER_TRACE`\G
@@ -973,7 +1189,7 @@ DEALLOCATE prepare stmt;
   2. 索引上的 **等值查询**, **向右遍历** 时且 (在一个 next-key lock 区间)最后一个值 **不等于** 等值条件 的时候, next-key lock 退化为 **间隙锁**
 - BUG:
   1. (唯一?)索引上的范围查询会访问到不满足条件的第一个值为止
-  
+
 - 锁是加载索引上的
 - 如果目的是通过 `lock in share mode` 加 S 锁并且要求防止数据更新, 则需要同时考虑避开 覆盖索引 的优化(可能直接 `for update` 加 X 锁更好 ?)
 - 由于索引都需要查询到不满足的条件, 所以建议尽量使用 **limit** , 访问安全且减小了加锁的范围
@@ -1066,7 +1282,7 @@ binlog 的 fsync 变量(mysql/mariadb):
   - 通过添加 `SET TIMESTAMP=XXX` 确保主备数据一致性
 - MIXED:
   - 在可能主备数据不一致的地方使用 ROW 格式, 否则使用 STATEMENT
-  
+
 #### 复制循环问题
 
 双 M 结构(互为主备)
@@ -1597,7 +1813,7 @@ InnoDB 的 LRU 完整流程:
 - 会造成 长事务
 - 如果该事务有更新, 会锁住目标的行锁/间隙锁, 会导致其他语句的更新被锁住
 - 导致 undo log 不能被回收, 导致回滚段空间膨胀
-  
+
 ### JOIN
 
 `STRAIGHT_JOIN`: 固定的, 以左边的表作为驱动表, 驱动右表; 强制 优化器 对于 联表查询 的执行顺序
@@ -1680,7 +1896,7 @@ CREATE TABLE `t1` (
 create table t2 like t1;
 create table t3 like t2;
 -- 初始化三张表的数据
-insert into ... 
+insert into ...
 ```
 
 ```sql
@@ -1716,7 +1932,7 @@ select * from t1 join t2 on(t1.a=t2.a) join t3 on (t2.b=t3.b) where t1.c>=X and 
 - 关于数据表在 内存 中的区分命名 -- `table_def_key`
   - 普通表: `table_def_key` 的值是由 "库名+表名"
   - 临时表: `table_def_key` 的值是由 "库名+表名", 又加上 "{`server_id`}+{`thread_id`}"
-  
+
 #### 注:
 
 如果设置了 `binlog_format={ statement | mixed }`
@@ -1909,7 +2125,7 @@ insert into t(c,d) select c,d from t force index(c) order by c desc limit 1;
 #### insert into...on duplicate key update
 
 ```sql
-insert into t values(11,10,10) on duplicate key update d=100; 
+insert into t values(11,10,10) on duplicate key update d=100;
 ```
 
 - 试图插入一行语句, 如果碰到唯一键冲突, 就执行后面的更新语句, 且给相关的索引( 上面这行是 (5, 10] )加上 **写锁(X next-keylock)**
@@ -1998,7 +2214,7 @@ mysqldump -h$host -P$port -u$user ---single-transaction  --set-gtid-purged=OFF d
 注意:
 - 执行完 `flush table t` , db1.t 整个表处于只读状态, 直到执行 `unlock tables` 后才释放 读锁
 - 执行 `import tablespace` 时, (为了让文件中的表空间 id 和数据字典中的一致), 会修改 r.idb 的表空间 id , 而这个表空间 id 存在于每一个数据页中; 但是比起逻辑导入时, 完整数据文件生成的流程, 还是相当快的
-- 由于操作的是二进制数据文件, 无法进行筛选; 而且需要 源表 和 目标表 都使用 **InnoDB** 
+- 由于操作的是二进制数据文件, 无法进行筛选; 而且需要 源表 和 目标表 都使用 **InnoDB**
 
 ### Grant
 

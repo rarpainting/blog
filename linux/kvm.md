@@ -1,5 +1,78 @@
 # KVM
 
+<!-- TOC -->
+
+- [KVM](#kvm)
+	- [KVM 介绍](#kvm-介绍)
+		- [简单介绍](#简单介绍)
+		- [KVM 功能列表](#kvm-功能列表)
+		- [KVM 工具](#kvm-工具)
+	- [CPU 和内存虚拟化](#cpu-和内存虚拟化)
+		- [为什么需要 CPU 虚拟化](#为什么需要-cpu-虚拟化)
+		- [基于二进制翻译的全虚拟化](#基于二进制翻译的全虚拟化)
+		- [超虚拟化(半虚拟化/操作系统辅助虚拟化)](#超虚拟化半虚拟化操作系统辅助虚拟化)
+		- [硬件辅助的全虚拟化](#硬件辅助的全虚拟化)
+			- [Intel-VT(Virtualization Technology)](#intel-vtvirtualization-technology)
+		- [SMP MPP NUMA](#smp-mpp-numa)
+			- [SMP](#smp)
+			- [MPP](#mpp)
+			- [NUMA](#numa)
+		- [KVM 的 CPU 虚拟化](#kvm-的-cpu-虚拟化)
+		- [CPU 虚拟化](#cpu-虚拟化)
+		- [执行客户机系统代码](#执行客户机系统代码)
+		- [客户机线程到物理 CPU](#客户机线程到物理-cpu)
+		- [客户端 vCPU 分配规则](#客户端-vcpu-分配规则)
+		- [KVM 内存虚拟化](#kvm-内存虚拟化)
+		- [KSM(Kernel SamePage Merging OR Kernel Shared Memory)](#ksmkernel-samepage-merging-or-kernel-shared-memory)
+			- [原理](#原理)
+			- [实现过程 -- 合并过程](#实现过程----合并过程)
+		- [KVM Huge Page Backed Memory(巨页内存技术)](#kvm-huge-page-backed-memory巨页内存技术)
+	- [I/O 全虚拟化和准虚拟化](#io-全虚拟化和准虚拟化)
+		- [全虚拟化 I/O 设备](#全虚拟化-io-设备)
+			- [QEMU 模拟网卡的实现](#qemu-模拟网卡的实现)
+			- [qemu-kvm 关于磁盘设备和网络设备的主要选项](#qemu-kvm-关于磁盘设备和网络设备的主要选项)
+			- [准虚拟化(Para-virtualization) I/O 驱动 virtio](#准虚拟化para-virtualization-io-驱动-virtio)
+				- [virtio 框架](#virtio-框架)
+				- [Virtio 的 Linux 下实现](#virtio-的-linux-下实现)
+				- [Vhost-net(kernel-level virtio server)](#vhost-netkernel-level-virtio-server)
+				- [virtio-balloon(Linux-2.6.27 qemu-kvm-0.13)](#virtio-balloonlinux-2627-qemu-kvm-013)
+				- [RadHat 的多队列 Virtio](#radhat-的多队列-virtio)
+		- [Tun/Tap](#tuntap)
+			- [驱动程序](#驱动程序)
+			- [发送过程:](#发送过程)
+			- [接受过程:](#接受过程)
+	- [KVM I/O 设备直接分配和 SR-IOV](#kvm-io-设备直接分配和-sr-iov)
+		- [PCI/PCI-E 设备直接分配给虚机 (PCI Pass-through)](#pcipci-e-设备直接分配给虚机-pci-pass-through)
+			- [PCI/PCIe Pass-through 原理](#pcipcie-pass-through-原理)
+		- [SR-IOV 设备分配](#sr-iov-设备分配)
+			- [SR-IOV 条件](#sr-iov-条件)
+			- [优势和不足](#优势和不足)
+			- [综合结论](#综合结论)
+	- [Libvirt](#libvirt)
+		- [Libvirt 提供了什么](#libvirt-提供了什么)
+	- [Nova 通过 libvirt 管理 QEMU/KVM 虚机](#nova-通过-libvirt-管理-qemukvm-虚机)
+		- [Libvirt 在 OpenStack 架构中的位置](#libvirt-在-openstack-架构中的位置)
+		- [Nova 中的 libvirt 使用](#nova-中的-libvirt-使用)
+	- [通过 libvirt 作 QEMU/KVM 快照和 Nova 实例的快照](#通过-libvirt-作-qemukvm-快照和-nova-实例的快照)
+		- [QEMU/KVM 快照](#qemukvm-快照)
+			- [概念](#概念)
+			- [制造 snapshot 的各个 API](#制造-snapshot-的各个-api)
+		- [OpenStack 的快照](#openstack-的快照)
+			- [对 Nova Instance 进行快照](#对-nova-instance-进行快照)
+			- [对卷做快照](#对卷做快照)
+		- [从镜像文件启动的 Nova 虚机做快照](#从镜像文件启动的-nova-虚机做快照)
+			- [Nova Live Snapshot -- 不停机快照](#nova-live-snapshot----不停机快照)
+			- [Nova Cold Snapshot -- 停机快照](#nova-cold-snapshot----停机快照)
+		- [当前 Nova Snapshot 的局限](#当前-nova-snapshot-的局限)
+	- [使用 libvirt 迁移 QEMU/KVM 虚机和 Nova 虚机](#使用-libvirt-迁移-qemukvm-虚机和-nova-虚机)
+		- [QEMU/KVM 迁移的概念](#qemukvm-迁移的概念)
+		- [迁移效率的衡量](#迁移效率的衡量)
+		- [KVM 迁移操作](#kvm-迁移操作)
+			- [静态迁移](#静态迁移)
+			- [动态迁移](#动态迁移)
+
+<!-- /TOC -->
+
 ## KVM 介绍
 
 ### 简单介绍
@@ -513,7 +586,7 @@ Virtio 和 Pass-Through 的比较
 磁盘快照类型
 
 - 内部快照: 使用单个 Qcow2 的文件来保存快照和快照之后的改动; libvirt 的默认行为, 支持完整的 创建/回滚/删除 操作, 只支持 Qcow2 格式的磁盘镜像文件, 且过程慢
-- 外部快照: 快照为一个只读文件, 快照的修改在另一个 Qcow2 文件中; 能操作各种格式的磁盘镜像文件; 其结果是形成一个 Qcow2 的文件链: original <- snap1 <- snap2 <- snap3; [详细文章](http://wiki.libvirt.org/page/I_created_an_external_snapshot,_but_libvirt_won't_let_me_delete_or_revert_to_it) 
+- 外部快照: 快照为一个只读文件, 快照的修改在另一个 Qcow2 文件中; 能操作各种格式的磁盘镜像文件; 其结果是形成一个 Qcow2 的文件链: original <- snap1 <- snap2 <- snap3; [详细文章](http://wiki.libvirt.org/page/I_created_an_external_snapshot,_but_libvirt_won't_let_me_delete_or_revert_to_it)
 
 2. 内存状态(虚机状态)
 
@@ -583,17 +656,17 @@ OpenStack Snapshot 可分为以下几种:
   - 将运行中的虚机的 Root Disk 做成 image, 然后上传到 Glance
   - Live Snapshot: 对满足特定条件(QEMU 1.3+ Libvirt 1.0.0+ source_format not in ('lvm', 'rbd') and not CONF.ephemeral_storage_encryption.enabled and not CONF.workarounds.disable_libvirt_livesnapshot, 以及能正常调用 libvit.blockJobAbort)的虚机, 会进行 Live snapshot. Live Snapshot 允许用户在虚机处于运行状态时不停机做快照
   - Cold Snapshot: 对不能做 Live snapshot 的虚机做 Cold snapshot, 此时必须首先 Pause 虚机
-  
+
 - 对从卷启动的虚机做快照
   - 对虚机的每个挂载的 Volume 调用 Cinder API 做 Snapshot
   - Snapshot 出的 **Metadata** 会保存到 Glance 里面, 但是不会有 snapshot 的 **Image** 上传到 Glance
   - 这个 Snapshot 会出现在 Cinder 的数据库中 , 对 cinder API 可见
-  
+
 #### 对卷做快照
 - 调用 cinder driver API, 对 Backend 中的 Volume 进行 Snapshot
 - 这个 Snapshot 会出现在 Cinder 的数据库中 , 对 cinder API 可见
-  
-  
+
+
 ### 从镜像文件启动的 Nova 虚机做快照
 
 严格得说, Nova 虚机的快照, 并不是对虚机做完整的快照, 而是对 **虚机的启动盘(root disk -- vda/hda)** 做快照生成 Qcow2 格式文件, 并传到 Glance, 仅用于方便使用快照生成的镜像来部署新的虚机, 以下式两种快照格式
@@ -648,13 +721,13 @@ domain.blockRebase(disk_path, disk_delta, 0,
   - detach PCI devices
   - detach SR-IOV devices
   - 调用 `virDomainManagedSave` API 来将虚机 suspend 并且将内存状态保存到硬盘文件
-  
+
 - 调用 qemu-img convert 命令将 root disk 的镜像文件转化为 **相同格式** 的镜像文件
 - 调用 `virDomainCreateWithFlags` API 将虚机变为初始状态
 - 将在步骤 1 中卸载的 PCI 和 SR-IOV 设备重新挂载回来
 - 将元数据和 Qcow2 文件传到 Glance 中
-  
-  
+
+
 ### 当前 Nova Snapshot 的局限
 
 - Nova Snapshot 其实只是提供一种 **创造系统盘镜像** 的方法; 不支持回滚到快照点, 只能通过该快照镜像重新创建一个新快照
@@ -697,9 +770,9 @@ Nova 不支持虚机快照的[讨论](http://www.gossamer-threads.com/lists/open
 
 ### KVM 迁移操作
 
-#### 静态迁移 
+#### 静态迁移
 
-- saveVM 
+- saveVM
 
 - loadVM
 
