@@ -88,6 +88,7 @@
 			- [拉格朗日乘子法](#拉格朗日乘子法)
 				- [定义](#定义)
 				- [例子](#例子)
+				- [例子2](#例子2)
 				- [多约束条件](#多约束条件)
 			- [KKT](#kkt)
 				- [问题重述](#问题重述)
@@ -348,8 +349,8 @@ softmax 回归的代价函数, 深度学习中一般将 softmax 作为最后一�
 对数释然代价函数在 二分类时可以花间为交叉熵代价函数的形式
 
 在 tensorflow 中:
-- 与 **sigmoid** 搭配使用的交叉熵函数: tf.nn.sigmoid_cross_cntropy_with_logits
-- 与 **softmax** 搭配使用的交叉熵函数: tf.nn.softmax_cross_cntropy_with_logits
+- 与 **sigmoid** 搭配使用的交叉熵函数: `tf.nn.sigmoid_cross_cntropy_with_logits`
+- 与 **softmax** 搭配使用的交叉熵函数: `tf.nn.softmax_cross_cntropy_with_logits`
 
 ### 交叉熵代替二次代价函数
 
@@ -946,10 +947,11 @@ ${\bf{Ax}} = \lambda {\bf{x}}$
 #### 拉格朗日乘子法
 
 [知乎问题](https://www.zhihu.com/question/38586401)
+[知乎专栏](https://zhuanlan.zhihu.com/p/41489021)
 
 keyword: 与原点的最近距离 极值 等梯度向量
 
-在极值点 对于圆和曲线, 有以下关系:
+假设, 在极值点 对于圆和曲线, 有以下关系:
 - 在极值点, 圆与曲线相切
 - 梯度与等高线的切线垂直
 
@@ -967,7 +969,9 @@ keyword: 与原点的最近距离 极值 等梯度向量
 
 (s.t. subject to -- 服从于, 约束于)
 
-对以下求解
+特点: 该等式约束不能直接合并求解
+
+因此, 现在对以下求解
 
 ![求解](img/2.18/equation-lglr-res.svg)
 
@@ -986,6 +990,23 @@ keyword: 与原点的最近距离 极值 等梯度向量
 联立方程:
 
 ![联立方程](img/2.18/equation-exam-res2.svg)
+
+##### 例子 2
+
+等式约束优化问题的目标函数:
+
+![目标函数](img/2.18/equation-lglr2-2.svg)
+![约束函数](img/2.18/equation-lglr2-3.svg)
+
+此时, 引入拉格朗日乘子 $\alpha$ , 构建拉格朗日函数:
+
+![拉格朗日函数](img/2.18/equation-lglr2-4.svg)
+
+求得拉格朗日函数关于 $x$ 和 $\alpha$ 的偏导数, 使其等于 0:
+
+![拉格朗日函数偏导](img/2.18/equation-lglr2-4.svg)
+
+求得的 $x$ 和 $\alpha$ 为可能的极值点
 
 ##### 多约束条件
 
