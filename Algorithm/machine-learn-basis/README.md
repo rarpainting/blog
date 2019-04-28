@@ -131,9 +131,23 @@ $H(p) = -\sum\limits_{x, y} \tilde p(x) p(y|x) \log_2 p(y|x)$
 - 基于谓词逻辑系统可以实现具有自动推理能力的人工智能
 - 不完备性定理向 "认知的本质是计算" 这一人工智能的基本理念提出挑战
 
-## 线性代数
+## 线性回归
+
+线性回归的目标模型:
 
 $f({\bf x}) = {\bf w} ^ T {\bf x} = \sum\limits_{i = 0}^{n} w_i \cdot x_i$
+
+### 最小二乘法:
+
+${\mathbf{w}}^* = \mathop {\arg \min }\limits_{\mathbf{w}} \sum\limits_{k = 1} {{{({{\mathbf{w}}^T}{{\mathbf{x}}_k} - {y_k})}^2}}
+
+= \mathop {\arg \min }\limits_{\mathbf{w}} \sum\limits_{k = 1} || y_k - \mathbf{w}^T \mathbf{x}_k ||^2$
+
+$X_k$ 代表训练集中的一个样本
+
+在单变量线性回归任务中, 最小二乘法的作用就是, **找到一条直线, 使所有样本到直线的欧式距离之和(L^2 范数)最小**
+
+### 最大似然估计
 
 ## 凸集/凸函数/凸优化
 
