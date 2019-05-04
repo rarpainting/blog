@@ -207,7 +207,29 @@ $|| y_k - \mathbf{w}^T \mathbf{x}_k || ^ 2 + \lambda ||\mathbf{w}||_1$
 
 ## 逻辑回归
 
+逻辑回归下的映射函数 -- Sigmoid:
 
+$y = \dfrac{1}{1 + e ^ {-z}} = \dfrac{1}{1 + e ^ {- (\mathbf{w} ^ T \mathbf{x})}}$
+
+![Sigmoid](img/d009b3de9c82d158dfb4e7218a0a19d8bc3e426f.jpg)
+
+### 与线性回归的关系
+
+认为: 对数几率函数的结果 $y$ 视为样本 $x$ 作为正例的可能性, $1-y$ 则为反例的可能性, 两者的比值 $0 < \dfrac{y}{1 -y} < +\infty$ 视为 几率(体现样本作为正例的相对可能性), 则对几率函数取对数:
+
+$\ln \dfrac{y}{1 -y} = \mathbf{w} ^ T \mathbf{x} + b$
+
+即当使用逻辑回归解决分类问题时, **线性回归的结果正是以对数几率的形式出现**
+
+如果逻辑回归模型由条件概率分布表示:
+
+$p(y = 1 | \mathbf{x} ) = \dfrac{e ^ {\mathbf{w} ^ T \mathbf{x} + b}}{1 + e ^ {\mathbf{w} ^ T \mathbf{x} + b}}$
+
+$p(y = 0 | \mathbf{x} ) = \dfrac{1}{1 + e ^ {\mathbf{w} ^ T \mathbf{x} + b}}$
+
+对于给定的实例，逻辑回归模型比较两个条件概率值的大小，并将实例划分到概率较大的分类之中
+
+学习时，逻辑回归模型在给定的训练数据集上应用最大似然估计法确定模型的参数
 
 ## 凸集/凸函数/凸优化
 
