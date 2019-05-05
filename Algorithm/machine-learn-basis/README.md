@@ -207,9 +207,12 @@ $|| y_k - \mathbf{w}^T \mathbf{x}_k || ^ 2 + \lambda ||\mathbf{w}||_1$
 
 ## 逻辑回归
 
-逻辑回归下的映射函数 -- Sigmoid:
+逻辑回归下的映射函数(可归一化 y 值) -- Sigmoid:
 
-$y = \dfrac{1}{1 + e ^ {-z}} = \dfrac{1}{1 + e ^ {- (\mathbf{w} ^ T \mathbf{x})}}$
+$y = g(z) = \dfrac{1}{1 + e ^ {-z}} = \dfrac{1}{1 + e ^ {- (\mathbf{w} ^ T \mathbf{x})}}$
+
+特性:
+- $g'(z) = g(z)(1-g(z))$
 
 ![Sigmoid](img/d009b3de9c82d158dfb4e7218a0a19d8bc3e426f.jpg)
 
@@ -223,9 +226,13 @@ $\ln \dfrac{y}{1 -y} = \mathbf{w} ^ T \mathbf{x} + b$
 
 如果逻辑回归模型由条件概率分布表示:
 
-$p(y = 1 | \mathbf{x} ) = \dfrac{e ^ {\mathbf{w} ^ T \mathbf{x} + b}}{1 + e ^ {\mathbf{w} ^ T \mathbf{x} + b}}$
+$p(y = 1 | \mathbf{x} ) = h(x) = \dfrac{e ^ {\mathbf{w} ^ T \mathbf{x} + b}}{1 + e ^ {\mathbf{w} ^ T \mathbf{x} + b}}$
 
 $p(y = 0 | \mathbf{x} ) = \dfrac{1}{1 + e ^ {\mathbf{w} ^ T \mathbf{x} + b}}$
+
+合并上面两式:
+
+$p(y | \mathbf{x};\mathbf{} ) = h(x) * (1 - h(x))$
 
 对于给定的实例，逻辑回归模型比较两个条件概率值的大小，并将实例划分到概率较大的分类之中
 
