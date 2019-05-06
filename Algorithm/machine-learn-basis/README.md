@@ -220,7 +220,7 @@ $y = g(z) = \dfrac{1}{1 + e ^ {-z}} = \dfrac{1}{1 + e ^ {- (\mathbf{w} ^ T \math
 
 认为: 对数几率函数的结果 $y$ 视为样本 $x$ 作为正例的可能性, $1-y$ 则为反例的可能性, 两者的比值 $0 < \dfrac{y}{1 -y} < +\infty$ 视为 几率(体现样本作为正例的相对可能性), 则对几率函数取对数:
 
-$\ln \dfrac{y}{1 -y} = \mathbf{w} ^ T \mathbf{x} + b$
+$\ln \dfrac{y}{1 - y} = \mathbf{w} ^ T \mathbf{x} + b$
 
 即当使用逻辑回归解决分类问题时, **线性回归的结果正是以对数几率的形式出现**
 
@@ -234,9 +234,53 @@ $p(y = 0 | \mathbf{x} ) = \dfrac{1}{1 + e ^ {\mathbf{w} ^ T \mathbf{x} + b}}$
 
 $p(y | \mathbf{x};\mathbf{} ) = h(x) * (1 - h(x))$
 
+![单事件的概率](img/equation-logic.svg)
+
 对于给定的实例，逻辑回归模型比较两个条件概率值的大小，并将实例划分到概率较大的分类之中
 
 学习时，逻辑回归模型在给定的训练数据集上应用最大似然估计法确定模型的参数
+
+假设采集到了一组数据:
+
+$\{(\bm{x}_1,y_1),(\bm{x}_2,y_2),(\bm{x}_3,y_3)...(\bm{x}_N,y_N)\}$
+
+它们的合事件的总概率:
+
+![P_{总} 多事件的概率](img/equation-logic-mutli.svg)
+
+![F(w) 多事件概率的对数表示](img/equation-logic-mutli-log.svg)
+
+其中:
+
+![](img/equation-logic-p.svg)
+
+对数形式的多事件概率 $F(\bm{w})$ 是该模型(逻辑回归?)的损失函数
+
+### 求梯度
+
+求 $F(\bm{w})$ 的梯度 $\nabla F(\bm{w})$
+
+首先, 求 p 关于 权值 w 的导数的过程:
+
+![](img/equation-logic-nabla.svg)
+
+即 $p' = p(1-p)\bm{x}$
+
+对 $F(\bm{w})$ 对 $w$ 的偏导:
+
+![](img/equation-logic-nabla2.svg)
+
+![](img/equation-logic-nabla3.svg)
+
+### 求最值
+
+从信息论角度:**对数似然函数的最大化 可以等效为 待求模型与最大熵模型之间 KL 散度的最小化**
+
+由于 sigmoid 是一个 凸函数 , 因此可以使用 梯度下降法(GD) 或者 拟牛顿法(QNM) 求解
+
+### 与朴素贝叶斯分类器
+
+### 多分类模型
 
 ## 凸集/凸函数/凸优化
 
