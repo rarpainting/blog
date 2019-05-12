@@ -334,7 +334,7 @@ $$
 
 #### ID3
 
-由 增熵(Entrophy)原理, 使用 信息增益 来决定作为父节点的分类器; 一般而言, 熵越大, 分类效果越好
+由 增熵(Entrophy) 原理, 使用 信息增益 来决定作为父节点的分类器; 一般而言, 熵越大, 分类效果越好
 
 #### C4.5
 
@@ -345,6 +345,87 @@ $$
 分类回归树(Classification and Regression Tree)
 
 采用基尼系数取代熵模型
+
+## 支持向量机
+
+支持向量机是一种二分类算法, 通过在高维空间中构造超平面实现对样本的分类
+
+下：
+
+d = \frac{|\boldsymbol{\omega}^T\boldsymbol{x}+\gamma|}{||\boldsymbol{\omega}||} (2.6)
+
+这里:
+- $||\boldsymbol{\omega}||$ 是向量 $\boldsymbol{\omega}$ 的模, 表示在空间中向量的长度
+- $\boldsymbol{x}=[x_1,x_2]^T$ 就是支持向量样本点的坐标
+- $\boldsymbol{\omega}, \gamma$ 就是决策面方程的参数
+
+### 线性可分支持向量机
+
+目标: **在给定训练数据集的条件下, 根据间隔最大化学习最优的划分超平面的过程**
+
+在已有超平面的前提下, 特征空间中的样本点 $\mathbf{x}_i$ 到超平面的距离(几何间隔):
+
+$r = \dfrac{\mathbf{w}^T \cdot \mathbf{x} + b}{|| \mathbf{w} ||}$
+
+为了使每个点到最优划分超平面的距离都不小于 -1, 则需要满足约束的 函数间隔:
+- $\mathbf{w}^T \cdot \mathbf{x}_i + b \ge 1, y_i = +1$
+- $\mathbf{w}^T \cdot \mathbf{x}_i + b \le -1, y_i = -1$
+
+目标: $\dfrac{1}{2} || \mathbf{w} || ^ 2$ 的最小值
+
+线性可分支持向量机 是 **使硬间隔最大化** 的算法
+
+### 线性支持向量机
+
+目标: **使原始(线性可分支持向量机)的硬间隔转变为软间隔最大化**
+
+依据: 在线性不可分的训练集中, 认为导致不可分的只是少量异常点; "排除" 这部分异常点后, 余下的大部分样本点依然满足线性可分
+
+于是, 在上文的函数间隔下添加 $\xi$ 参数 ($\xi \ge 0$):
+- $\mathbf{w}^T \mathbf{x}_i + b \ge 1 - \xi_i, y_i = +1$
+- $\mathbf{w}^T \mathbf{x}_i + b \le 1 - \xi_i, y_i = -1$
+
+目标: $\dfrac{1}{2} || \mathbf{w} || ^ 2 + C\sum\limits_{i = 1}^N \xi_i$ 的最小化
+
+其中:
+- 松弛变量($\xi \ge 0$): 以一定的代价, 允许错误的分类
+- 惩罚参数($C \g 0$): 表示对误分类($\xi$)的惩罚力度
+
+### 核函数
+
+由于无论是线性可分向量机还是线性支持向量机, 都只能处理线性问题, 对于非线性问题则无能为力;
+因此需要将原始低维空间上的非线性问题转化为新的高维空间上的线性问题
+
+假设:
+
+原始空间是 **低维欧几里得空间 $\mathcal{X}$** , 新空间是 **高维希尔伯特空间 $\mathcal{H}$** , $\mathcal{X}$ 和 $\mathcal{H}$ 的映射可以通过函数
+
+$\phi (x) : \mathcal{X} \rightarrow \mathcal{H}$
+
+表示, 核函数可以表示成映射函数内积的形式:
+
+$K(x, z) = \phi (x) \cdot \phi (z)$
+
+**一般的核函数都是正定核函数**
+
+支持向量机的学习是个凸二次规划问题, 可以用 **SMO 算法(Sequential Minimal Optimization, 序列最小最优化)** 快速求解
+
+#### 常见核函数
+
+- 线性核:
+  - $K(\mathbf{X}, \mathbf{Y}) = \mathbf{X} ^ T \mathbf{Y}$
+- 多项式核:
+  - $K(\mathbf{X}, \mathbf{Y}) = (\mathbf{X} ^ T \mathbf{Y} + c) ^ d$
+  - $c$ 为常数, $d \ge 1$ : 多项式次数
+- 高斯核:
+  - $K(\mathbf{X}, \mathbf{Y}) = \exp (-\dfrac{|| \mathbf{X} - \mathbf{Y} || ^ 2}{2\sigma ^ 2})$
+  - $\sigma > 0$ : 高斯带宽
+- 拉普拉斯核:
+  - $K(\mathbf{X}, \mathbf{Y}) = \exp (-\dfrac{|| \mathbf{X} - \mathbf{Y} ||}{\sigma})$
+  - $\sigma > 0$ : 高斯带宽
+- Sigmoid 核:
+  - $K(\mathbf{X}, \mathbf{Y}) = \tanh (\beta \mathbf{X} ^ T \mathbf{Y} + \theta)$
+  - $\beta > 0, \theta < 0$
 
 ## 集成学习
 
