@@ -8,7 +8,7 @@
 		- [DML(Data Manipulation Language) -- 数据操作语言](#dmldata-manipulation-language----数据操作语言)
 		- [DCL(Data Control Language) -- 数据控制语句](#dcldata-control-language----数据控制语句)
 		- [TCL(Transaction Control Language) 事务控制语言](#tcltransaction-control-language-事务控制语言)
-	- [MariaDB SSL 开启](#mariadb-ssl-开启)
+	- [MariaDB - SSL 认证](#mariadb---ssl-认证)
 	- [配置文件](#配置文件)
 		- [General Log](#general-log)
 		- [Slow Query Log](#slow-query-log)
@@ -243,7 +243,7 @@ Insert/Delete/Update
 - Rollback
 - set Transaction
 
-## MariaDB SSL 开启
+## MariaDB - SSL 认证
 
 ```sql
 GRANT ALL PRIVILEGES ON *.* TO 'user'@'host' IDENTIFIED BY 'password' REQUIRE SSL;
@@ -264,7 +264,7 @@ general_log             = 1 # 最大文件数?
 ```conf
 slow_query_log # 开启慢查询日志
 long_query_time     = 2 # 限定查询时间 2s , 界限这么宽 ?
-log-queries-not-using-indexes
+log-queries-not-using-indexes # 额外记录未使用索引的查询语句
 ```
 
 ### Binlog
@@ -278,7 +278,7 @@ sync_binlog = 0 # 事务提交后, 仅把 binlog_cache 中的数据写入 binlog
 ### SQL 语句分析
 
 ```sql
-EXPLAIN SELECT * FROM table;
+EXPLAIN [extended] SELECT * FROM table;
 ```
 
 获得该此 sql 语句的执行信息:
@@ -312,7 +312,7 @@ EXPLAIN SELECT * FROM table;
   - `using where`: 列数据是从仅仅使用了索引中的信息而没有读取实际的行动的表返回的, 这发生在对表的全部的请求列都是同一个索引的部分的时候, 表示 mysql 服务器将在存储引擎检索行后再进行过滤
   - `using temporary`: 表示 MySQL 需要使用临时表来存储结果集, 常见于排序和分组查询
   - `using filesort`: MySQL 中无法利用索引完成的排序操作称为 **文件排序**
-  - `using join buffer`: 改值强调了在获取连接条件时没有使用索引, 并且需要连接缓冲区来存储中间结果. 如果出现了这个值, 那应该注意, 根据查询的具体情况可能需要添加索引来改进能
+  - `using join buffer`: 改值强调了在获取连接条件时没有使用索引, 并且需要连接缓冲区来存储中间结果. 如果出现了这个值, 那应该注意, 根据查询的具体情况可能需要添加索引来改进性能
   - `impossible where`: 这个值强调了 where 语句会导致没有符合条件的行
   - `select tables optimized away`: 这个值意味着仅通过使用索引, 优化器可能仅从聚合函数结果中返回一行
 
