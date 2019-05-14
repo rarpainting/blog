@@ -24,7 +24,7 @@
 			- [统计扩展(Extended Statistics)](#统计扩展extended-statistics)
 		- [Bin Log](#bin-log)
 			- [复制时安全清除二进制文件](#复制时安全清除二进制文件)
-			- [选择性的记录](#选择性的记录)
+			- [选择性的记录 ！慎用！](#选择性的记录-慎用)
 			- [二进制日志格式](#二进制日志格式)
 				- [STATEMENT](#statement)
 				- [ROW](#row)
@@ -338,9 +338,9 @@ EXPLAIN [extended] SELECT * FROM table;
 
 - `PURGE {BINARY|MASTER} LOGS {TO 'log_name' | BEFORE datatime_expr}`
   - 删除指定日志文件名或者日期之前的 **二进制** 文件
-  - **注意**: 如果从站处于活跃状态且 **未从** 将删除的文件中读取内容, 则文件删除后, 从站将无法继续复制
+  - **注意**: 如果从站处于活跃状态且 **未从** 即将删除的文件中读取内容, 则文件删除后, 从站将无法继续复制
   - `RESET MASTER` -- 删除所有日志文件; `FLUSH LOGS` -- 写入记录到磁盘
-  - 所记录的二进制文件将在 **expire_logs_days/binlog_expire_logs_seconds** 后自动删除; 0 -- 关闭自动删除
+  - 所记录的二进制文件将在 **expire_logs_days** OR **binlog_expire_logs_seconds** 后自动删除; 0 -- 关闭自动删除
 
 - `RESET reset_option[, reset_option]` -- 用于清除各种服务器操作的状态, **重置** 服务器状态到初始状态
 
@@ -401,63 +401,63 @@ generated column(>=5.7):
 <h2 id="permission">MYSQL/MARIADB 权限</h2>
 
 - Global Privileges
-  - CREATE USER
-  - FILE
-  - GRANT OPTION -- 授予(当前用户拥有的)全局权限
-  - PROCESS -- 运行 SHOW PROCESSLIST 或者 显示与活动进程相关的信息
-  - RELOAD -- 运行 FLUSH , 相当于 mysqladmin 命令
-  - REPLICATION CLIENT
-  - REPLICATION SLAVE -- 从服务器使用的账号登录在主服务器上时需要, 用于在主服务器上进行更新
-  - SHOW DATABASES
-  - SHUTDOWN
-  - SUPER -- super-user
-    - 语句: CREATE MASTER TO, KILL, PURGE LOGS, SET global system variables, mysqladmin debug 命令
+  - `CREATE USER`j
+  - `FILE`
+  - `GRANT OPTION` -- 授予(当前用户拥有的)全局权限
+  - `PROCESS` -- 运行 SHOW PROCESSLIST 或者 显示与活动进程相关的信息
+  - `RELOAD` -- 运行 FLUSH , 相当于 mysqladmin 命令
+  - `REPLICATION CLIENT`
+  - `REPLICATION SLAVE` -- 从服务器使用的账号登录在主服务器上时需要, 用于在主服务器上进行更新
+  - `SHOW DATABASES`
+  - `SHUTDOWN`
+  - `SUPER` -- super-user
+    - 语句: `CREATE MASTER TO, KILL, PURGE LOGS, SET global system variables, mysqladmin debug` 命令
     - 同时该权限允许用户: 写入数据即使设置了 **read_only**, 启用/禁用日志记录, 启用/禁用从站上的复制, 为支持该子句的语句指定 DEFINER , 到达 MAX_CONNECTIONS 后启动一次连接
     - 如果服务器已经为 初始连接 指定了一个 *mysqld option*, 那么该命令(?)将不会在 SUPER 连接时执行
 
 - Database Privileges
-  - CREATE
-  - CREATE ROUTINE -- 通过 CREATE PROCEDURE/CREATE FUNCTION 创建存储过程
-  - CREATE TEMPORARY TABLES -- 通过 CREATE TEMPORARY TABLE 创建临时表
-  - DROP
-  - EVENT
-  - GRANT OPTION -- 授予(当前用户拥有的)数据库权限
-  - LOCK TABLES -- 使用 LOCK TABLES 语句获得显式锁; 需要同时拥有 SELECT 目标表的权限, 用于锁定该表
+  - `CREATE`
+  - `CREATE ROUTINE` -- 通过 `CREATE PROCEDURE/CREATE FUNCTION` 创建存储过程
+  - `CREATE TEMPORARY TABLES` -- 通过 `CREATE TEMPORARY TABLE` 创建临时表
+  - `DROP`
+  - `EVENT`
+  - `GRANT OPTION` -- 授予(当前用户拥有的)数据库权限
+  - `LOCK TABLES` -- 使用 `LOCK TABLES` 语句获得显式锁; 需要同时拥有 `SELECT` 目标表的权限, 用于锁定该表
 
 - Table Privileges
-  - ALTER
-  - CREATE
-  - CREATE VIEW
-  - DELETE
-  - DELETE HISTORY
-  - DROP
-  - GRANT OPTION
-  - INDEX
-  - INSERT
-  - REFERENCES
-  - SELECT
-  - SHOW VIEW
-  - TRIGGER
-  - UPDATE -- 更新表中的现有行, 需要同时具备 SELECT 该表的权限 或者 适用于 WHERE 子句的列
+  - `ALTER`
+  - `CREATE`
+  - `CREATE VIEW`
+  - `DELETE`
+  - `DELETE HISTORY`
+  - `DROP`
+  - `GRANT OPTION`
+  - `INDEX`
+  - `INSERT`
+  - `REFERENCES`
+  - `SELECT`
+  - `SHOW VIEW`
+  - `TRIGGER`
+  - `UPDATE` -- 更新表中的现有行, 需要同时具备 SELECT 该表的权限 或者 适用于 WHERE 子句的列
 
 - Columns Privileges
-  - INSERT
-  - REFERENCES
-  - SELECT
-  - UPDATE
+  - `INSERT`
+  - `REFERENCES`
+  - `SELECT`
+  - `UPDATE`
 
 - Function Privileges
-  - ALTER ROUTINE -- 通过 ALTER FUNCTION 更改存储函数的特征
-  - EXECUTE -- 执行存储函数
-  - GRANT OPTION
+  - `ALTER ROUTINE` -- 通过 ALTER FUNCTION 更改存储函数的特征
+  - `EXECUTE` -- 执行存储函数
+  - `GRANT OPTION`
 
 - Procedure Privileges
-  - ALTER ROUTINE
-  - EXECUTE
-  - GRANT OPTION
+  - `ALTER ROUTINE`
+  - `EXECUTE`
+  - `GRANT OPTION`
 
 - Proxy Privileges
-  - PROXY -- 允许一个用户成为另一个用户的代理
+  - `PROXY` -- 允许一个用户成为另一个用户的代理
 
 - 账户的资源限制
   - `MAX_QUERIES_PER_HOUR`
@@ -467,13 +467,13 @@ generated column(>=5.7):
   - `MAX_STATEMENT_TIME`
 
 - 账户的 SSL/TLS 选项
-  - REQUIRE 只使用一次, 通过 AND 分隔各个选项
-  - REQUIRE NONE -- 不需要 TLS
-  - REQUIRE SSL
-  - REQUIRE X509 -- 启用 TLS, 有效的 X509 证书
-  - REQUIRE ISSUER 'issuer' -- TLS, 有效的 X509 证书; 同时必须通过证书颁发机构 'issuer'
-  - REQUIRE SUBJECT 'subject' -- TLS, 有效的 X509 证书; 同时证书的主题必须是 'subject'
-  - REQUIRE CIPHER 'cipher' -- -- TLS, 有效的 X509 证书; 同时用于连接的加密必须使用字符串指定的 'cipher'
+  - `REQUIRE` 只使用一次, 通过 AND 分隔各个选项
+  - `REQUIRE NONE` -- 不需要 TLS
+  - `REQUIRE SSL`
+  - `REQUIRE X509` -- 启用 TLS, 有效的 X509 证书
+  - `REQUIRE ISSUER 'issuer'` -- TLS, 有效的 X509 证书; 同时必须通过证书颁发机构 'issuer'
+  - `REQUIRE SUBJECT 'subject'` -- TLS, 有效的 X509 证书; 同时证书的主题必须是 'subject'
+  - `REQUIRE CIPHER 'cipher'` -- TLS, 有效的 X509 证书; 同时用于连接的加密必须使用字符串指定的 'cipher'
 
 
 ## MariaDB 日志
@@ -492,7 +492,7 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 长时间的 **SQL 查询** 记录
 
 - `slow_query_log = 1`
-- 慢查询设置(`log_query_time`)时间级别是 微秒级
+- 慢查询设置(`log_query_time`)时间级别是 微秒级(us)
 - 写入文件到 `slow_query_log_file`, 写入表到 mysql.slow_log
 - `log_queries_not_using_indexes` -- 执行 不使用索引或者不限制行数 的查询都会被记录
 - `log_slow_admin_statements` -- 设置存储缓慢的管理查询, 包括 ALTER TABLE / ANALYZE TABLE / CHECK TABLE / CREATE INDEX / DROP INDEX / OPTIMIZE TABLE / REPAIR TABLE
@@ -511,7 +511,7 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 包含数据库 **所有** 更改(CREATE ALTER INSERT UPDATE DELETE)的记录(即使该记录对数据不影响)
 是 **复制** 所必备的, 可用于备份后还原数据
 
-- `sql_log_bin` = 1 -- 开启 二进制日志
+- `sql_log_bin = 1` -- 开启 二进制日志
 - `max_binlog_size` -- 单日志文件限制尺寸
 - 写入文件到 `log_bin_basename`, 通过 SHOW BINARY LOGS; 查询二进制日志文件列表
 
@@ -524,9 +524,9 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 - 通过 `SHOW BINARY LOGS` 获取主服务器上的二进制日志文件列表
 - 到从服务器上通过 `SHOW SLAVE STATUS` 检查每个从属服务器正在读取的二进制日志文件
 - **找到从站正在读取的 最早 的日志文件, 删除在这之前的所有日志文件**
-- 如果需要的话, 在删除日志文件之前, 备份日志文件
+- 如果可以的话, 在删除日志文件之前, 备份日志文件
 
-#### 选择性的记录
+#### 选择性的记录 ！慎用！
 
 `binlog_do_db`/`binlog_ignore_db` -- 特意记录的数据库和需要忽略的数据库
 
