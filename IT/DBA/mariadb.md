@@ -46,7 +46,7 @@
 		- [async](#async)
 		- [semi-sync: 只要有一个 slave 响应成功, master 就 commit](#semi-sync-只要有一个-slave-响应成功-master-就-commit)
 		- [sync](#sync)
-	- [<<极客时间: MySQL 实战>>](#极客时间-mysql-实战)
+	- [《极客时间: MySQL 实战》](#极客时间-mysql-实战)
 		- [一次查询运行流程](#一次查询运行流程)
 			- [连接器](#连接器)
 			- [查询缓存](#查询缓存)
@@ -68,12 +68,13 @@
 		- [Order by 工作原理](#order-by-工作原理)
 			- [全字段排序](#全字段排序)
 			- [rowid 排序](#rowid-排序)
-			- [相关全局变量](#相关全局变量)
+			- [相关全局参数](#相关全局参数)
+				- [`max_length_for_sort_data`](#max_length_for_sort_data)
 				- [`sort_buffer_size`](#sort_buffer_size)
 				- [max_length_for_sort_data](#max_length_for_sort_data)
 			- [通过索引优化](#通过索引优化)
 				- [为 (city, name) 建立联合索引](#为-city-name-建立联合索引)
-				- [为 (city, name, age) 建立联合索引, 以使用 覆盖索引](#为-city-name-age-建立联合索引-以使用-覆盖索引)
+				- [为 (city, name, age) 建立联合索引, 以使用 *覆盖索引*](#为-city-name-age-建立联合索引-以使用-覆盖索引)
 			- [结论](#结论)
 		- [随机获取行](#随机获取行)
 			- [内存临时表](#内存临时表)
@@ -551,7 +552,7 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 
 ##### MIXED
 
-默认基于 **语句** 复制, 当确定语句对于 基于语句的复制可能不安全时, 将启用基于 **行** 的格式:
+默认基于 **语句** 复制, 当确定语句对于 基于语句 的复制可能不安全时, 将启用基于 **行** 的格式:
 
 - INSERT-DELEYED
 - 更新具有 **ATUO_INCREMENT 列** 的表并启用 **触发器(trigger)** 或者 **存储函数(stored function)**
@@ -566,7 +567,7 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 
 **注意**:
 
-- 直接编辑 mysql 数据库, 则根据 binlog_format 执行日志记录
+- 直接编辑 mysql 数据库, 则根据 `binlog_format` 执行日志记录
 - 间接编辑 mysql 数据库, 则统一通过 **语句日志** 记录
 
 ### Redo Log: 重做日志
@@ -581,7 +582,7 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 
 #### 崩溃恢复
 
-- 如果 redo log 里面的事务时完整的, 即已经有了 commit 标识, 则直接提交
+- 如果 redo log 里面的事务时完整的, 即已经有了 binlog 的 commit 标识, 则直接提交
 - 如果 redo log 里面的事务只有完整的 prepare 标识, 则判断对应的事务 binlog 是否存在并完整
   - 事务 binlog 完整, 则提交事务
   - 否则 回滚事务
@@ -606,8 +607,8 @@ server-id = 1 # 无论 主服务器还是从服务器 都需要设置 唯一 的
 log-basename = master1 # mariadb 独有
 ```
 
-- skip-networking = 1 -- 仅允许于本地通信; 禁止远程连接
-- bind-address = x.x.x.x
+- `skip-networking = 1` -- 仅允许于本地通信; 禁止远程连接
+- `bind-address = x.x.x.x`
 
 #### 锁定 Master 表
 
@@ -629,7 +630,6 @@ log-basename = master1 # mariadb 独有
 - thread_handling = one-thread-per-connection # 一连接一线程
 
 ### 线程池功能
-
 
 在 MariaDB 5.5 后, 线程池目标:
 
@@ -656,15 +656,15 @@ log-basename = master1 # mariadb 独有
 在主库安装 semisync_master 插件：
 
 ```shell
-mysql> INSTALL PLUGIN rpl_semi_sync_master SONAME 'semisync_master.so'; //linux
-mysql> INSTALL PLUGIN rpl_semi_sync_master SONAME 'semisync_master.dll'; //windows
+mysql> INSTALL PLUGIN rpl_semi_sync_master SONAME 'semisync_master.so'; # linux
+mysql> INSTALL PLUGIN rpl_semi_sync_master SONAME 'semisync_master.dll'; # windows
 ```
 
 在备库安装 semisync_slave 插件:
 
 ```shell
-mysql> INSTALL PLUGIN rpl_semi_sync_slave SONAME 'semisync_slave.so'; //linux
-mysql> INSTALL PLUGIN rpl_semi_sync_slave SONAME 'semisync_slave.so';//windows
+mysql> INSTALL PLUGIN rpl_semi_sync_slave SONAME 'semisync_slave.so'; # linux
+mysql> INSTALL PLUGIN rpl_semi_sync_slave SONAME 'semisync_slave.so'; # windows
 ```
 
 ```conf
@@ -674,7 +674,9 @@ rpl_semi_sync_master_timeout=1000
 
 ### sync
 
-## <<极客时间: MySQL 实战>>
+## 《极客时间: MySQL 实战》
+
+[课程地址](https://time.geekbang.org/column/intro/139)
 
 ![MySQL 的逻辑架构图](0d2070e8f84c4801adbfa03bda1f98d9.png)
 
@@ -686,10 +688,10 @@ rpl_semi_sync_master_timeout=1000
 
 #### 查询缓存
 
-- 查询缓存会因为一次 插入/更新/删除 操作而失效, 因此一般建议关闭 **查询缓存(query_cache_type=DEMAND)**
+- 查询缓存会因为一次 插入/更新/删除 操作而失效, 因此一般建议关闭 **查询缓存(query_cache_type=OFF)**, (该参数在 > mysql 8.0 已丢弃)
 - 一般建议在需要使用查询缓存的地方设置 **SQL_CACHE**, 例如:
   - `SELECT SQL_CACHE * FROM T WHERE ID=10;`
-- **注**: MySQL 8.0 将删除查询缓存功能; Mariadb 呢?
+- **注**: MySQL 8.0 删除查询缓存功能; Mariadb 依然有该变量
 
 #### 分析器
 
@@ -703,39 +705,38 @@ rpl_semi_sync_master_timeout=1000
 MySQL 对 ast 执行树的优化
 
 `optimizer_switch`: 优化器策略
-// TODO:
-- index_merge=on
-- index_merge_union=on
-- index_merge_sort_union=on
-- index_merge_intersection=on
-- index_merge_sort_intersection=off
-- engine_condition_pushdown=off
-- index_condition_pushdown=on
-- derived_merge=on
-- derived_with_keys=on
-- firstmatch=on
-- loosescan=on
-- materialization=on
-- in_to_exists=on
-- semijoin=on
-- partial_match_rowid_merge=on
-- partial_match_table_scan=on
-- subquery_cache=on
-- mrr=off
-- mrr_cost_based=off
-- mrr_sort_keys=off
-- outer_join_with_cache=on
-- semijoin_with_cache=on
-- join_cache_incremental=on
-- join_cache_hashed=on
-- join_cache_bka=on
-- optimize_join_buffer_size=off
-- table_elimination=on
-- extended_keys=on
-- exists_to_in=on
-- orderby_uses_equalities=on
-- condition_pushdown_for_derived=on
-- split_materialized=on
+- `index_merge=on`
+- `index_merge_union=on`
+- `index_merge_sort_union=on`
+- `index_merge_intersection=on`
+- `index_merge_sort_intersection=off`
+- `engine_condition_pushdown=off`
+- `index_condition_pushdown=on`
+- `derived_merge=on`
+- `derived_with_keys=on`
+- `firstmatch=on`
+- `loosescan=on`
+- `materialization=on`
+- `in_to_exists=on`
+- `semijoin=on`
+- `partial_match_rowid_merge=on`
+- `partial_match_table_scan=on`
+- `subquery_cache=on`
+- `mrr=off`
+- `mrr_cost_based=off`
+- `mrr_sort_keys=off`
+- `outer_join_with_cache=on`
+- `semijoin_with_cache=on`
+- `join_cache_incremental=on`
+- `join_cache_hashed=on`
+- `join_cache_bka=on`
+- `optimize_join_buffer_size=off`
+- `table_elimination=on`
+- `extended_keys=on`
+- `exists_to_in=on`
+- `orderby_uses_equalities=on`
+- `condition_pushdown_for_derived=on`
+- `split_materialized=on`
 
 #### 执行器
 
@@ -744,7 +745,7 @@ MySQL 对 ast 执行树的优化
 1. 权限验证
   - 命中查询缓存: 在查询缓存 **返回结果** 时, 做权限验证
   - 查询: 在优化器之前调用 `precheck` 验证权限
-  - **注**: 由于 MySQL 的验证存在 存储过程 等需要在运行中才能确定的权限申请, 因此只能在执行其中
+  - **注**: 由于 MySQL 的验证存在 存储过程/多表联合 等需要在 运行中/语法分析 中才能确定的权限申请, 因此只能在执行器中
 2. 查询
   - 调用 InnoDB 引擎接口取第一行, 判断 `ID` 是否符合, 是则保存在结果集中, 否则跳过该条
 
@@ -758,7 +759,7 @@ MySQL 对 ast 执行树的优化
 - `checkpoint` 是擦除的位置
 - `write pos` 是当前记录的位置
 
-如果 `checkpoint` - `write pos` 过小, 则表示 redo log 将满, 此时 server 会选择 取消 wirte(?)
+如果 (`checkpoint` - `write pos`) 过小, 即 `write pos` 逼近 `checkpoint`, 则表示 redo log 将满, 此时 server 会选择 取消 write(?)
 
 redo log 与 binlog 差异:
 - redo log 是 InnoDB 特有的; binlog 是 MySQL 的 Server 层实现的, 对所有引擎开放
@@ -780,16 +781,15 @@ WAL 得益于两方面:
 #### update 的实际执行流程:
 
 - 先获取 `ID=2` 这一行
-- 执行器拿到引擎的行数据, 在值之上 +1, 再通过引擎接口写入新数据
+- 执行器(server 层)拿到引擎的行数据, 在值之上 +1, 再通过引擎接口写入新数据
 - 引擎将该数据更新到 内存 中, 同时记录到 `redo log` 中, 此时 `redo log` 处于 `prepare` 状态; 状态设置后告知 执行器 可以随时提交事务
 - 执行器生成这个操作的 `binlog`, 并把 `binlog` 写入到 磁盘
 - 执行器 调用 引擎 的提交事务接口, 引擎把 `redo log` 改成 `提交(commit)` 状态, 更新完成
 
 #### 两阶段提交与事务
 
-用于保证提交都是成功的
+用于保证提交都是成功的(双 1 策略)
 
-`redo log`:
 - `innodb_flush_log_at_trx_commit`: 每次事务的 `redo log` 都直接持久化到磁盘
 - `sync_binlog`: 每次事务的 `binlog` 都直接持久化到磁盘
 
@@ -902,7 +902,8 @@ CHECKSUM TABLE table;
 ```sql
 OPTIMIZE TABLE table;
 ```
-> 碎片整理, 等价于 `recreate` + `analyze`
+> 碎片整理, 仅用于 MyISAM 引擎中;
+> InnoDB 等引擎使用 `recreate` + `analyze`
 
 用于碎片整理的还有:
 
@@ -913,11 +914,11 @@ ALTER TABLE table ENGINE=innodb[,ALGORITHM=copy]; # 不仅复制了原表, 还�
 > 以上两者执行中都需要创建 tmp_table
 
 ```sql
-CHECK TABLE table;
+CHECK TABLE table [option];
 ```
 > 数据库错误检查
 
-部分可选项:
+部分可选项(option):
 - `UPGRADE`: 测试更早版本的表是否与当前版本兼容
 - `QUICK`: 速度最快的选项, 检查时, 不会检查 链接(`link`) 的正确与否
 - `FAST`: 只检查表时候正确关闭
@@ -926,11 +927,11 @@ CHECK TABLE table;
 - `EXTENDED`: 最慢的选项, 会执行全面的检查
 
 ```sql
-RAPAIR TABLE table;
+RAPAIR TABLE table [option];
 ```
 > 修复表(只对 MyISAM 和 ARCHIVE 有效), 及其索引
 
-部分可选项:
+部分可选项(option):
 - `QUICK`: 最快的选项, 只修复索引树
 - `EXTENDED`: 最慢的选项, 需要逐行重建索引
 - `USE_FRM`: 只有当 MYI 文件丢失时才使用这个选项, 全面重建整个索引
@@ -956,7 +957,7 @@ RAPAIR TABLE table;
 #### `innodb_flush_neighbors`
 
 该参数在
-- mysql<8.0 / mariadb<10.3.9/?? 时默认为 1, 在 flush 脏页时会把相邻的脏页同时 flush , 可能会出现连锁反应, 适用于 SATA 等 IOPS 较低的设备
+- mysql<8.0 / mariadb<10.3.9/?? 时默认为 1, 在 flush 脏页时会把相邻的脏页同时 flush , *可能会出现连锁反应* , 适用于 SATA 等 IOPS 较低的设备
 - mysql>=8.0 / mariadb>=10.3.9/?? 时默认为 0, 在 flush 脏页时只 flush 当前脏页然后返回, 适用于 SSD 等 IOPS 较高的设备, 减少 SQL 语句响应时间
 
 ### Order by 工作原理
@@ -985,33 +986,39 @@ select city,name,age from t where city='杭州' order by name limit 1000;
 
 #### 全字段排序
 
-- 初始化 sort_buffer, 确定放入 name, city, age 三个字段
-- 从索引 city 找到第一个满足 `city='杭州'` 条件的主键 id, 也就是图中的 ID_X
-- 从主键 id 索引取出整行, 取 name, city, age 三个字段的值, 存入 sort_buffer 中
-- 重复步骤 3/4 直到 city 的值不满足查询条件为止, 对应的主键 id 也就是图中 ID_Y
-- 对 sort_buffer 中的数据按照字段 name 做快速排序
-- 按照排序结果取前 1000 行返回给客户端
+1. 初始化 sort_buffer, 确定放入 **name, city, age** 三个字段
+2. 从索引 city 找到第一个满足 `city='杭州'` 条件的主键 id, 也就是图中的 ID_X
+3. 从主键 id 索引取出整行, 取 name, city, age 三个字段的值, 存入 sort_buffer 中
+4. 重复步骤 3/4 直到 city 的值不满足查询条件为止, 对应的主键 id 也就是图中 ID_Y
+5. 对 sort_buffer 中的数据按照字段 name 做快速排序(该操作由 `sort_buffer_size` 控制是否使用临时文件排序)
+6. 按照排序结果取前 1000 行返回给客户端
 
 ![全字段排序](6c821828cddf46670f9d56e126e3e772.jpg)
 
 #### rowid 排序
 
-- 初始化 sort_buffer, 确定放入两个字段 -- 用于索引的 name 和 id
-- 从索引 city 找到第一个满足 `city='杭州'` 条件的主键 id, 即图中的 ID_X
-- 到主键 id 索引取出整行, 取 name, id 字段, 存入 sort_buffer
-- 重复步骤 3/4 直到不满足 `city='杭州'` 条件为止, 即图中的 ID_Y
-- 对 sort_buffer 中的数据按照字段 name 进行排序
-- 遍历排序结果, 取前 1000 行, 并按照 id 的值回到元表中取出 city, name 和 age 三个字段并返回到客户端
+1. 初始化 sort_buffer, 确定放入两个字段 -- 用于索引的 **name 和 id**
+2. 从索引 city 找到第一个满足 `city='杭州'` 条件的主键 id, 即图中的 ID_X
+3. 到主键 id 索引取出整行, 取 name, id 字段, 存入 sort_buffer
+4. 重复步骤 3/4 直到不满足 `city='杭州'` 条件为止, 即图中的 ID_Y
+5. 对 sort_buffer 中的数据按照字段 name 进行排序(该操作由 `sort_buffer_size` 控制是否使用临时文件排序)
+6. (这步的回表操作是导致性能阻塞的所在, )遍历排序结果, 取前 1000 行, 并按照 id 的值回到元表中取出 city, name 和 age 三个字段并返回到客户端
 
 ![rowid 排序](dc92b67721171206a302eb679c83e86d.jpg)
 
-#### 相关全局变量
+#### 相关全局参数
+
+##### `max_length_for_sort_data`
+
+控制用于排序的行数据长度
+- <= `max_length_for_sort_data`: 全字段排序
+- > `max_length_for_sort_data`: rowid 排序
 
 ##### `sort_buffer_size`
 
 mysql 为排序设置的 sort_buffer 大小
 
-如果需要排序的数据下雨 `sort_buffer_size`, 排序会在内存中完成
+如果需要排序的数据小于 `sort_buffer_size`, 排序会在内存中完成
 
 如果排序数据量太大, 内存不够用, 就不得不利用磁盘临时文件辅助排序
 
@@ -1055,25 +1062,25 @@ alter table t add index city_user(city, name);
 ```
 
 步骤:
-- 从索引 (city, name) 找到第一个满足 `city='杭州'` 条件的主键 id
-- 到主键 id 索引取出整行, 取 (name, city, age) 三个字段的值, 作为结果集的一部分直接返回
-- 从索引 (city, name) 取下一个记录主键 id
-- 重复步骤 2/3 , 直到查到第 1000 条记录, 或者是不满足 `city='杭州'` 条件时循环结束
+1. 从索引 (city, name) 找到第一个满足 `city='杭州'` 条件的主键 id
+2. 到主键 id 索引取出整行, 取 (name, city, age) 三个字段的值, 作为结果集的一部分直接返回
+3. 从索引 (city, name) 取下一个记录主键 id
+4. 重复步骤 2/3 , 直到查到第 1000 条记录, 或者是不满足 `city='杭州'` 条件时循环结束
 
 ![city 和 name 的联合索引示意图](f980201372b676893647fb17fac4e2bf.png)
 
 ![(city, name) 联合索引后, 查询执行计划](3f590c3a14f9236f2d8e1e2cb9686692.jpg)
 
-##### 为 (city, name, age) 建立联合索引, 以使用 覆盖索引
+##### 为 (city, name, age) 建立联合索引, 以使用 *覆盖索引*
 
 ```sql
 alter table t add index city_user(city, name, age);
 ```
 
 步骤:
-- 从索引 (city, name, age) 找到第一个满足 `city='杭州'` 条件的记录, 取出其中 city, name 和 age 这三个字段的值, 作为结果集的一部分直接返回
-- 从索引 (city, name, age) 取出下一个记录, 如果满足条件, 则同样取出三个字段的值, 直接返回到结果集
-- 重复步骤 2 , 直到满足 `limit` 或者 不满足 `city='杭州'` 条件时循环结束
+1. 从索引 (city, name, age) 找到第一个满足 `city='杭州'` 条件的记录, 取出其中 city, name 和 age 这三个字段的值, 作为结果集的一部分直接返回
+2. 从索引 (city, name, age) 取出下一个记录, 如果满足条件, 则同样取出三个字段的值, 直接返回到结果集
+3. 重复步骤 2 , 直到满足 `limit` 或者 不满足 `city='杭州'` 条件时循环结束
 
 ![(city, name, age) 联合索引后, 查询执行计划](df4b8e445a59c53df1f2e0f115f02cd6.jpg)
 
@@ -1113,13 +1120,13 @@ select word from words order by rand() limit 3;
 ```
 
 内部流程:
-- 创建一个临时表; 这个临时表使用的是 memory 引擎, 表里有两个字段, 第一个字段是 *double* 类型(R), 第二个字段是 *varchar(64)* 类型(W); 且该表没有索引
-- 从 `words` 表中, 按主键顺序取出所有的 word 值, 对于每一个 word 值, 调用 rand() 生成一个大于 0 小于 1 的随机小数, 并把这个 随机小数 和 word 分别存入临时表的 R 和 W 字段中, 到此, 扫描行数是 10000
-- 目前临时表中有 10000 行数据, 接下来需要在没有索引的内存临时表中, 按照字段 R 排序
-- 初始化 sort_buffer, sort_buffer 中有两个字段, double 和 整数
-- 从 内存临时表 中一行一行的取出 R 和位置信息, 分别存入 sort_buffer 中的两个字段中; 这个过程要对内存临时表作全表扫描, 此时扫描行数增加 10000, 成了 20000
-- 在 sort_buffer 中根据 R 的值进行排序, 注意: 这个过程没有涉及到表操作, 所以不会增加扫描行数
-- 扫描完成后, 取出前三个结果的位置信息, 依次到内存临时表中取出 word 值, 返回给客户端; 该过程访问了表的三行数据, 扫描总行数变成 20003
+1. 创建一个临时表(为了多出的 rand() 字段); 这个临时表使用的是 memory 引擎, 表里有两个字段, 第一个字段是 *double* 类型(R), 第二个字段是 *varchar(64)* 类型(W); 且该表没有索引
+2. 从 `words` 表中, 按主键顺序取出所有的 word 值, 对于每一个 word 值, 调用 rand() 生成一个大于 0 小于 1 的随机小数(double), 并把这个 随机小数(double) 和 word(varchar) 分别存入临时表的 R 和 W 字段中, 到此, 扫描行数是 10000
+3. 目前临时表中有 10000 行数据, 接下来需要在没有索引的内存临时表中, 按照字段 R(double) 排序
+4. 初始化 sort_buffer, sort_buffer 中有两个字段, double 和 整数
+5. 从 内存临时表 中一行一行的取出 R 和位置信息(数组下标 ?), 分别存入 sort_buffer 中的两个字段中; 这个过程要对内存临时表作全表扫描, 此时扫描行数增加 10000, 总共 20000 行
+6. 在 sort_buffer 中根据 R 的值进行排序, 注意: 这个过程没有涉及到表操作, 所以不会增加扫描行数
+7. 扫描完成后, 取出前三个结果的位置信息, 依次到内存临时表中取出 word 值, 返回给客户端; 该过程访问了表的三行数据, 扫描总行数变成 20003
 
 ![随机排序完整流程图](2abe849faa7dcad0189b61238b849ffc.png)
 
@@ -1129,7 +1136,7 @@ select word from words order by rand() limit 3;
 - 引擎用于唯一定位一行数据的信息
 - 对于有主键的 InnoDB 表来说, 这个 rowid 就是主键 ID
 - 对于没有主键的 InnoDB 表来说, 这个 rowid 就是由 **InnoDB** 生成的长度为 6 字节的 rowid
-- memory 引擎不是索引组织表, 在这个例子里面, 你可以认为它就是一个数组, 这个 rowid 其实就是数组的下标
+- memory 引擎不是索引组织表, 在这个例子里面, 你可以认为它就是一个数组, 这个 rowid 其实就是数组的下标(尽管 memory 并没有 rowid)
 - rowid 是对 **InnoDB** 生效, 对 MySQL 透明的, 所以 **优化器** 不能利用 rowid 作为主键优化
 
 即 **order by rand() 使用了内存临时表, 内存临时表排序的时候使用了 rowid 排序方法**
@@ -1146,7 +1153,7 @@ select word from words order by rand() limit 3;
 - 如果启用了 `OPTIMIZER_TRACE`, `information_schema`.`OPTIMIZER_TRACE`.`filesort_priority_queue_optimiaztion`.`chosen` 为 `true`, 则确定启动排序的 优先队列算法
 - 如果需要存储的临时表内存 size 大于 `innodb_sort_buffer_size`, 仍然会启用 归并排序算法
 
-相对而言, 严格随机的方法
+相对而言, 严格随机的方法: 先计算出 rand(), 直接通过 `limit` 得到随机行
 
 ```sql
 select count(*) into @C from t;
@@ -1168,7 +1175,7 @@ DEALLOCATE prepare stmt;
 
 #### 隐式类型转换
 
-- 字符串和数字作比较, 是将 字符串 转换到 **数字**(对字符串做数字转换方法), 再做比较
+- 字符串和数字作比较, 是将 字符串 转换到 **数字** (对字符串做数字转换方法), 再做比较
 
 #### 隐式字符编码转换
 
@@ -1177,7 +1184,7 @@ DEALLOCATE prepare stmt;
 ### 事务与查询与锁
 
 - 查询(select) 的时候使用 `lock in share mode` 或者 `for update` 会导致该查询放弃该事务的视图, 而转用最新的视图, 如果使用了行锁, 则分别是添加 S 锁 或者 X 锁; 破坏了读可重复性, 但是由于不需要回滚 MVCC 版本, 查询效率更高(尤其是该查询的目标表已经进行了大量的更改)
-- 间隙锁, 锁的是查询到数据的间隙; 间隙锁之间不冲突; 间隙锁是 前开后开 区间
+- 间隙锁, 锁的是查询到数据的间隙; **间隙锁之间不冲突**; 间隙锁是 前开后开 区间
 
 ### MySQL 加锁规则
 
@@ -1188,9 +1195,9 @@ DEALLOCATE prepare stmt;
   1. 索引上的 **等值查询** , 给 唯一索引 加锁的时候, next-key lock 退化为 **行锁**
   2. 索引上的 **等值查询**, **向右遍历** 时且 (在一个 next-key lock 区间)最后一个值 **不等于** 等值条件 的时候, next-key lock 退化为 **间隙锁**
 - BUG:
-  1. (唯一?)索引上的范围查询会访问到不满足条件的第一个值为止
+  1. (唯一?)索引上的范围查询会访问到不满足条件的第一个值为止(, 并为该索引上锁)
 
-- 锁是加载索引上的
+- 锁是加在索引上的
 - 如果目的是通过 `lock in share mode` 加 S 锁并且要求防止数据更新, 则需要同时考虑避开 覆盖索引 的优化(可能直接 `for update` 加 X 锁更好 ?)
 - 由于索引都需要查询到不满足的条件, 所以建议尽量使用 **limit** , 访问安全且减小了加锁的范围
 - **读提交(Read-Commit) 没有间隙锁(或者说间隙锁更小), 因此 debug 分析时逻辑更为清晰**
@@ -1201,37 +1208,46 @@ DEALLOCATE prepare stmt;
 
 ![binlog 写盘状态](9ed86644d5f39efb0efec595abb92e3e.png)
 
-- **write**: 把日志写入到文件系统的 page cache, 没有持久化数据到磁盘, 速度较块
+- **write**: 把日志写入到 **文件系统的 page cache** , 没有持久化数据到磁盘, 速度较块
 - **fsync**: 数据持久化操作; 主要占用 IOPS 的操作
 
 `sync_binlog` 变量:
 - `sync_binlog=0`: 每次提交事务都只 write, 不 fsync
 - `sync_binlog=1`: 每次提交事务都执行 fsync
-- `sync_binlog=N(N>1)`: 每次提交事务都 write, 在积累 N 个事务后 sync, 推荐 N 在 (100, 1000) 这个范围, 但是故障重启后会丢失最近 N 个事务的 binlog
+- `sync_binlog=N(N>1)`: 每次提交事务都 write, 在积累 N 个事务后 sync, 推荐 N 在 (100, 1000) 这个范围, 但是故障重启后可能会丢失最近 N 个事务的 binlog
 
 ![MySQL redo log 存储状态](9d057f61d3962407f413deebc80526d4.png)
 
 redo log 的三种状态:
-- 存在 redo log buffer 种, 物理上是在 MySQL 进程内存中, 即图中的红色部分
+- 存在 redo log buffer , 物理上是在 MySQL 进程内存中, 即图中的红色部分
 - 写到磁盘(write), 但是没有持久化(fsync), 物理上是在文件系统的 page cache 里, 即黄色部分
 - 持久化到磁盘, 对应 hard disk, 即绿色部分
 
-已经提交的事务, `innodb_flush_log_trx_commit` 会控制 redo log 的写入策略:
-- 0: 表示每次事务提交时, 都只是把 redo log 留在 redo log buffer
-- 1: 每次事务提交后, 都将 redo log 持久化到 磁盘
+**已经提交的事务**, `innodb_flush_log_trx_commit` 会控制 redo log 的写入策略:
+- 0: 每次事务提交后, 都只是把 redo log 留在 redo log buffer
+- 1: 每次事务提交后, 都将 redo log 写到 page cache 并持久化到 磁盘
 - 2: 每次事务提交后, 都只是把 redo log 写到 page cache
 
-**没有提交的事务 redo log** 在以下情况写入到磁盘:
+**没有提交的事务**, redo log 在以下情况写入到磁盘:
 - InnoDB 每秒 1 次的写磁盘操作
 - redo log buffer 占用的空间即将达到 **innodb_buffer_size** 一半的时候, 后台进程会主动写盘
 - 并行的事务提交的时候, 顺带将这个事务的 redo log buffer 持久化到磁盘
 
+redo log 写盘的 具体调用(function call):
+- master 线程每秒的 idle/active 操作
+  - `srv_master_do_idle_tasks.srv_sync_log_buffer_in_background.log_buffer_sync_in_background`
+  - `srv_master_do_idle_tasks.log_checkpoint`
+- page clean
+  - `buf_flush_page.buf_flush_write_block_low`
+- innodb shutdown(?)
+- redo log 不足(?)
+
 > 双 1 配置:
 > `sync_binlog` 和 `innodb_flush_log_at_trx_commit` 都为 1:
-> 一个事务完整提交的同时需要 redo log (prepare 阶段) 和 binlog 两次写盘
+> 一个事务完整提交的同时需要经历 redo log (prepare 阶段) 和 binlog 两次写盘
 
 组提交机制:
-- LSN(日志逻辑序列号): 单调递增, 对应 redo log 的 **写入点**; 每次写入 length 的 redo log, LSN 的值就加上 LSN
+- LSN(日志逻辑序列号): 单调递增, 对应 redo log 的 **写入点**; 每次写入 length 的 redo log, LSN 的值就加上 length
 - 并发事务在 perpare 阶段, 写完 redo log buffer , 准备持久化到磁盘; 该组的 leader (一般是第一个写盘的事务)以该组的 LSN 总和的方式写盘
 
 ![redo log 组提交](933fdc052c6339de2aa3bf3f65b188cc.png)
