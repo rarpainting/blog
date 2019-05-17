@@ -1633,9 +1633,9 @@ return:
 
 #### select 1
 
-`innodb_thread_concurrency`: InnoDB  **并发查询** 的并发线程上限
+不足: 如果 **并发线程数** 已经到上限了, 那么 `select 1` 能够返回成功, 但是 SQL 语句依然会被阻塞
 
-不足: 如果 并发线程数 已经到上限了, 那么 `select 1` 能够返回成功, 但是 SQL 语句依然会被阻塞
+`innodb_thread_concurrency`: InnoDB  **并发查询** 的并发线程上限
 
 **在线程进入锁等待之后, 并发线程的计数会减一**, 即等 行锁/间隙锁 的线程不算在 `innodb_thread_concurrency` 之内
 
@@ -1647,7 +1647,7 @@ return:
 select * from mysql.health_check;
 ```
 
-不足: 这种情况可以判断查询, 不能判断事务更新
+不足: 这种情况可以判断查询, 不能判断事务 **更新**
 
 #### 更新判断
 
@@ -1657,7 +1657,7 @@ UPDATE mysql.health_check SET t_modified=now();
 
 放一个 timestamp 字段, 更新最后一次执行检测的时间
 
-但是如果是 双 M 结构, 则需要考虑可能出现 行冲突 , 导致同步停止的情况; 此时可以在该更新行上添加上 `server_id` .
+但是如果是 双 M 结构, 则需要考虑可能出现 行冲突 , 导致同步停止的情况; 此时可以在该更新行上添加上 `server_id` (同时需要两行).
 
 ```sql
 CREATE TABLE `health_check` (
@@ -1667,7 +1667,7 @@ CREATE TABLE `health_check` (
 ) ENGINE=InnoDB;
 
 /* 检测命令 */
-insert into mysql.health_check(id, t_modified) values
+insert into mysql.health_check (id, t_modified) values
   (@@server_id, now()) on duplicate key update t_modified=now();
 ```
 
@@ -1675,8 +1675,8 @@ insert into mysql.health_check(id, t_modified) values
 
 #### 内部统计 -- `performance_schema`
 
-- `performance`.`file_summary_by_event_name`: 统计各个类型, 每次 IO 请求的各种时间结果(平均, 最大最小)
-- `performance`.`setup_instruments`: 各个统计数据类型的开关
+- `performance.file_summary_by_event_name`: 统计各个类型, 每次 IO 请求的各种时间结果(平均, 最大最小)
+- `performance.setup_instruments`: 各个统计数据类型的开关
 
 其中:
 - `wait/io/file/innodb/innodb_log_file` -- 关于 redo log 的统计
@@ -1685,7 +1685,7 @@ insert into mysql.health_check(id, t_modified) values
 使能监控:
 
 ```sql
-update setup_instruments set `ENABLED`='YES', `TIMED`='YES' where name like '?';
+update `performance`.`setup_instruments` set `ENABLED`='YES', `TIMED`='YES' where name like '?';
 ```
 
 例如:
@@ -1722,7 +1722,7 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 
 1. 取最近一次全量备份
 2. 通过备份恢复出一个临时库
-3. 从日志备份里面, 取出备份后的日志(通过 start-position/stop-position / GTID 定位)
+3. 从日志备份里面, 取出备份后的日志(通过 start-position / stop-position / GTID 定位)
 4. 除了 误操作的语句外 , 应用到临时库
 
 ![误删库时, 数据恢复流程](2fafd0b75286e0163f432f85428ff8db.png)
@@ -1730,7 +1730,7 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 如果误删表:
 1. 上述 2 之后, 将临时实例设置为线上的备库的从库
 2. 在 `start slave` 之前, 先通过执行 `change replication filter replicate_do_table=(tbl_name)`, 就可以让临时库只同步误操作的表(???)
-- 也可以用上并行复制, 加速数据恢复过程
+3. 也可以用上并行复制, 加速数据恢复过程
 
 ![误删表时, 数据恢复流程](65bb04929b8235fb677c7a78b5bd67f1.png)
 
@@ -1754,7 +1754,7 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 #### 预防删除库/表
 
 预防措施:
-1. 账号分离, 具体业务 只有 DML 权限, DDL 要求通过开发管理系统获得支持
+1. **账号分离**, 具体业务 只有 DML 权限, DDL 要求通过开发管理系统获得支持
 2. 要删除数据表前, 先对目标表做改名操作(固定前后缀 , 如 `_to_be_deleted`); 观察一段时间, 确保对业务无影响后再删除表; 改表名的操作要通过管理系统执行, 并且要对表名有检查(如 必须是前面的 固定前后缀)
 
 #### rm 删除数据
