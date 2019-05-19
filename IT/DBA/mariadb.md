@@ -1247,7 +1247,7 @@ redo log 写盘的 具体调用(function call):
 > 一个事务完整提交的同时需要经历 redo log (prepare 阶段) 和 binlog 两次写盘
 
 组提交机制:
-- LSN(日志逻辑序列号): 单调递增, 对应 redo log 的 **写入点**; 每次写入 length 的 redo log, LSN 的值就加上 length
+- LSN(log sequence number / 日志逻辑序列号): 单调递增, 对应 redo log 的 **写入点** ; 每次写入 length 的 redo log, LSN 的值就加上 length
 - 并发事务在 perpare 阶段, 写完 redo log buffer , 准备持久化到磁盘; 该组的 leader (一般是第一个写盘的事务)以该组的 LSN 总和的方式写盘
 
 ![redo log 组提交](933fdc052c6339de2aa3bf3f65b188cc.png)
@@ -1262,8 +1262,8 @@ binlog 的 fsync 变量(mysql/mariadb):
 
 #### 为什么 binlog cache 是每个线程独立维护, 而 redo log buffer 是全局共用
 
-- binlog 不能被打断: 一个事务的 binlog 必须连续写, 因此要整个事务完成后, 再一起写到文件
-- redo log 为了减少写盘次数, 会携带并发时的其他事务一起写盘
+- binlog 不能被打断: **一个事务的 binlog 必须连续写** , 因此要整个事务完成后, 再一起写到文件
+- redo log 为了减少写盘次数, 会携带并发时的其他事务一起写盘(LSN 机制)
 
 #### binlog 已写盘 , redo log 也 commit 了, 但是因为网络原因, 客户端接受不到响应, 此时仍然是正常情况
 
@@ -1283,6 +1283,7 @@ binlog 的 fsync 变量(mysql/mariadb):
 ![主备流程图](a66c154c1bc51e071dd2cc8c1d6ca6a3.png)
 
 一个事务日志同步的完整流程:
+- 在备库执行 `stop slave`, 避免设置主库时出错
 - 在备库 B 上通过 `change master` 命令, 设置主库 A 的 IP, 端口, 用户名, 密码, 以及要从呢个位置开始请求 binlog, 这个位置包含 文件名和日志偏移量
 - 在备库 B 上执行 `start slave` 命令, 这时候备库会启动两个线程 -- `io_thread`/`sql_thread`; 其中 io_thread 负责与主库建立连接
 - 主库 A 验证完(用户名, 密码)后, 开始按照备库 B 传来的位置, 从本地读取 binlog , 发给 B
@@ -1321,11 +1322,11 @@ MySQL 是在 binlog 中记录该命令的 server id, 以解决复制循环的问
 按照上面逻辑, 如果我们设置了双 M 结构, 日志的执行流程应该是:
 - 从节点 A 更新的事务, binlog 里面记的都是 A 的 server id
 - 传到节点 B 执行一次以后, 节点 B 生成的 binlog 的 server id 也是 A 的 server id
-- 再传回给节点 A , A 判断到这个 server id 与自己的相同, 就不会再处理这个日志, 所以, 死循环再这里断掉
+- 再传回给节点 A , A 判断到这个 server id 与自己的相同, 就不会再处理这个日志, 所以, 死循环在这里断掉
 
 ##### 数据库迁移导致的循环复制
 
-数据库迁移途中如果由双 M 结构, 可能会导致 循环复制, 建议做法
+数据库迁移途中如果有双 M 结构, 可能会导致 循环复制 , 建议做法
 
 ```sql
 stop slave;
@@ -1351,9 +1352,14 @@ start slave;
 2. 之后传给备库 B , 我们把备库 B 接收这个 binlog 的时刻记为 T2
 3. 备库 B 执行完成这个事务, 我们把这个时刻记为 T3
 
-主备延迟(`seconds_behind_master`): 同一个事务, 在备库执行完成的时间 和 主库执行完成的时间差 , 即 T3 - T1, mysql 的计算方式:
+主备延迟(`seconds_behind_master`): 同一个事务, 在备库执行完成的时间(T3) 和 主库执行完成(T1) 的时间差 , 即 **T3 - T1** , mysql 的计算方式:
 - 每个事务的 binlog 里面有一个时间字段, 用于记录主库上写入的时间
 - 备库取出当前正在执行的事务的时间字段的值, 计算它与当前系统时间的差值, 即 `seconds_behind_master`
+
+主备延迟的来源:
+1. 主备库之间的软硬件差距导致的性能差距
+2. 备库压力大
+3. 大事务同步: 一次性操作大量数据 OR 大表 DDL
 
 #### 主备切换策略
 
@@ -1361,12 +1367,12 @@ start slave;
 
 ##### 可靠性优先策略
 
-在 双 M 结构 下, 从状态 1 到状态 2 切换:
-- 判断备库 B 现在的 `seconds_behind_master`(SBM), 如果小于某个值, 继续下一步, 否则持续重试这一步
-- 把主库 A 改成 只读 状态, 即把 readonly 设置为 true
-- 判断备库 B 的 `seconds_behind_master` 的值, 直到这个值变成 0 位置
-- 把备库改成 可读写 状态, 即把 readonly 设置为 false
-- 把业务请求切换到备库 B
+在 双 M 结构 下, 可靠性优先 的主备切换:
+1. 判断备库 B 现在的 `seconds_behind_master`(SBM), 如果小于某个值, 继续下一步, 否则持续重试这一步
+2. 把主库 A 改成 只读 状态, 即把 readonly 设置为 true
+3. 判断备库 B 的 `seconds_behind_master` 的值, 直到这个值变成 0 位置
+4. 把备库改成 可读写 状态, 即把 readonly 设置为 false
+5. 把业务请求切换到备库 B
 
 ![MySQL 可靠性优先主备切换流程](54f4c7c31e6f0f807c2ab77f78c8844a.png)
 
@@ -1378,7 +1384,7 @@ start slave;
 
 ### 备库并行复制
 
-`slave_parallel_workers`: 用于控制 work 线程数量, 一般取 8-16(32 核物理机)
+`slave_parallel_workers`: 用于控制 work 线程数量, 一般取 8-16 (32 核物理机)
 
 ![多线程模型](bcf75aa3b0f496699fd7885426bc6245.png)
 
@@ -1402,9 +1408,14 @@ start slave;
 
 **必须为 row 格式**
 
-按行分发 还需要考虑 唯一键 的 顺序问题, 即 hash 应为 "库名+表名+索引 a 的名字 + a 的值"
+按行分发 还需要考虑 唯一键 的 顺序问题, 即 hash 应为 " 库名 + 表名 + 索引 a 的名字 + a 的值" / `{database}_{table}_{index}_{value}`
 
 相比于按表并行分发策略, 按行并行策略在决定线程分发的时候, 需要消耗更多的计算资源
+
+同时有约束条件:
+- 需要从表中解析表名, 主键值和唯一索引, 因此必须是 `ROW` 格式
+- 表必须有主键
+- **不能有外键** , 表上如果有外键, 级联更新的行不记录到 binlog 中, 这样冲突检测就不准确了
 
 #### MySQL 5.6 版本的并行复制策略
 
@@ -1421,19 +1432,33 @@ start slave;
 - 主库上可以并行执行的事务, 备库上一定是可以并行执行的
 
 于是, 实现上:
-- 在一组里面一起提交的事务, 有一个相同的 commit_id, 下一个组就是 commit_id+1
-- commit_id 直接写在 binlog 里面
-- 传到备库应用的时候, 相同 commit_id 的事务分发到多个 worker 执行
-- 这一组全部执行完成后, coordinator 再去取下一批
+1. 在一组里面一起提交的事务, 有一个相同的 commit_id, 下一个组就是 commit_id+1
+2. commit_id 直接写在 binlog 里面
+3. 传到备库应用的时候, 相同 commit_id 的事务分发到多个 worker 执行
+4. 这一组全部执行完成后, coordinator 再去取下一批
+
+限制:
+- 吞吐量不足, 不同组之间的事务是串行的
+- 会被大事务拖累
 
 #### MySQL 5.7 的并行复制策略
 
 `slave-parallel-type`: 控制并行复制策略:
-- `DATABASE`: 使用 5.6 的按库并行策略
+- `DATABASE`(default): 使用 5.6 的按库并行策略
 - `LOGICAL_CLOCK`: 再两阶段提交中, 只要能达到 redo log perpare 阶段, 就表示事务已经通过锁冲突的检验
-  - 同时处于 prepare 状态的事务, 再备库执行时时可以并行的
-  - 处于 prepare 状态的事务, 与处于 commit 状态的事务之间, 在备库执行时也是可以并行的
+  - 同时处于 **prepare** 状态的事务, 再备库执行时是可以并行的
+  - 处于 prepare 状态的事务, 与处于 commit 状态的事务之间, 在备库执行时也是可以并行的(? 如果修改同一行, 也可以吗 ?)
   - 那么通过组提交的策略, 通过控制 `binlog_group_commit_sync_delay` 和 `binlog_group_commit_sync_no_delay_count`, 提高备库复制的并行度
+
+```conf
+# 完整的组提交并行复制
+# slave
+slave-parallel-type       = LOGICAL_CLOCK
+slave-parallel-workers    = 16
+master_info_repository    = TABLE
+relay_log_info_repository = TABLE
+relay_log_recovery        = ON
+```
 
 #### MySQL 5.7.22 的并行复制策略
 
@@ -1445,7 +1470,7 @@ start slave;
 - `WRITESET_SESSION`: 在 `WRITESET` 之上, 在主库上 同一个线程(**线程约束**) 先后执行的两个事务, 在备库执行的时候, 要保证相同的先后顺序
 
 相比 丁奇版 的 优势:
-- **writeset** 是在主库生成后直接写入到 binlog 里; 那么在备库执行时, 不需要解析 binlog 内容(event 里的数据行) , 节省解析时的计算量
+- **writeset** 是在主库生成后 **直接写入到 binlog 里**; 那么在备库执行时, 不需要解析 binlog 内容(event 里的数据行) , 节省解析时的计算量
 - 不需要把整个事务的 binlog 都扫一遍, 才能决定分发到哪个 worker
 - 由于备库分发策略不依赖 binlog 内容, 即使 binlog 格式是 statement 也没问题, 通用性更强
 
@@ -1456,7 +1481,7 @@ start slave;
 - `sql_slave_skip_counter`: 跳过指定数量的事务
 - `sql_skip_errors`: 跳过指定错误
 
-**注: 该方案要求错误停止后关闭以上连个参数, 以免掩盖后续的错误, 导致数据不一致**
+**注: 该方案要求主备切换后关闭以上连个参数, 以免掩盖后续的错误, 导致数据不一致**
 
 #### GTID(Global Transaction Identifier)
 
@@ -1472,13 +1497,14 @@ start slave;
 GTID 生成方式:
 - `gtid_next`: session 变量/当前会话变量
   - `automatic`: 默认值
-    -  记录 binlog 的时候, 先记录一行: `set @@SESSION.GTID_NEXT='server_uuid:gno'`
+    - 记录 binlog 的时候, 先记录一行: `set @@SESSION.GTID_NEXT='server_uuid:gno'`
     - 把这个 GTID 假如本实例的 GTID 集合
   - `current_gtid`: 私自指定的一个 GTID 值
     - 如果 `current_gtid` 存在, 则该事务会被系统 **直接忽略**
     - 如果 `current_gtid` 不存在, 则将该 GTID 分配到接下来要执行的事务; 此时系统不生成新的 GTID, gno 值也不会 +1
 
 使用 GTID 后原主库的从库设置为新主库的从库语句:
+
 ```sql
 CHANGE MASTER TO
 MASTER_HOST=$host_name
@@ -1495,10 +1521,10 @@ master_auto_position=1
 #### 课后问题
 
 在需要创建主从关系时由于 binlog 不充足, 导致主从关系建立失败, 可从以下方面考虑:
-1. 如果业务允许主从不一致的情况那么可以在主上先 show global variables like 'gtid_purged', 得到 `gtid_purged1`; 然后在从上执行 set global gtid_purged ='gtid_purged1' . 指定从库从哪个 gtid 开始同步; 此时 binlog 缺失那一部分数据在从库上会丢失, 会造成主从不一致
+1. 如果业务允许主从不一致的情况那么可以在主上先 `show global variables like 'gtid_purged'`, 得到 `gtid_purged1`; 然后在从上执行 `set global gtid_purged ='gtid_purged1'` . 指定从库从哪个 gtid 开始同步; 此时 binlog 缺失那一部分数据在从库上会丢失, 会造成主从不一致
 2. 需要主从数据一致的话, 最好还是通过重新搭建从库来做
-3. 如果有其它的从库保留有全量的 binlog 的话，可以把从库指定为保留了全量 binlog 的从库为主库(级联复制)
-4. 如果 binlog 有备份的情况,可以先在从库上应用缺失的 binlog,然后在 start slave
+3. 如果有其它的从库保留有全量的 binlog 的话, 可以把从库指定为保留了全量 binlog 的从库为主库(级联复制)
+4. 如果 binlog 有备份的情况, 可以先在从库上应用缺失的 binlog, 然后在 start slave
 
 ### 读写分离
 
@@ -1516,6 +1542,8 @@ master_auto_position=1
 
 这种 "在从库上会读到系统的一个过期状态" 的现象, 暂且称之为 "过期读"
 
+解决过期读的方案:
+
 ##### 强制走主库
 
 对实时性要求高的查询, 直接查询主库
@@ -1526,9 +1554,11 @@ master_auto_position=1
 
 ##### 判读主备无延迟
 
+`show slave status`:
+
 ![show slave status](00110923007513e865d7f43a124887c1.png)
 
-- 每次读从库先读取 `seconds_behind_master` , 直到该值为 0 再读取
+- 每次读从库先读取 `seconds_behind_master` , 直到该值为 0(或者小于某阈值) 再读取
 - 对比位点确保主备无延迟
   - `Master_Log_File` 和 `Read_Master_Log_Pos` 表示的是读到的主库的最新位置
   - `Relay_Master_Log_File` 和 `Exec_Master_Log_Pos` 表示的是备库执行到的最新位置
@@ -1542,9 +1572,9 @@ master_auto_position=1
 ##### 配合 semi-sync
 
 semi-sync 的设计:
-- 事务提交的时候, 主库把 binlog 发给从库
-- 从库收到 binlog 后, 发回给从库一个 ack , 表示收到了
-- 主库收到这个 (多个从库中随意一个) ask , 才给客户端返回 "事务完成" 的确认
+1. 事务提交的时候, 主库把 binlog 发给从库
+2. 从库收到 binlog 后, 发回给从库一个 ack , 表示收到了
+3. 主库收到这个 (多个从库中随意一个) ask , 才给客户端返回 "事务完成" 的确认
 
 但是 semi-sync 仍然会有以下问题:
 - 一主多从时, 从库执行查询请求可能仍然有过期读
@@ -1559,18 +1589,17 @@ select master_pos_wait(file, pos[, timeout]);
 ```
 
 return:
-- NULL: 执行期间, 备库同步线程发生 **异常**
-- -1: 等待时间超过 timeout
-- 0: 刚开始执行, 就发现已经执行过这个位置
-- >0: 从命令开始执行, 到从库执行完 file 和 pos 表示的 binlog 位置, 执行了多少事务
+- `NULL`: 执行期间, 备库同步线程发生 **异常**
+- `-1`: timeout
+- `0`: 刚开始执行, 就发现已经执行过这个位置
+- `>0`: 从命令开始执行, 到从库执行完 file 和 pos 表示的 binlog 位置, 执行了多少事务
 
 从以上信息, 如果只要求获得查询语句要求的最新数据:
-- 目标事务执行完, 马上执行 `show master status` 得到当前主库执行到的 file 和 pos
-- 选定一个从库准备执行查询语句
-- 先在从库执行 `select master_pos_wait(File, Position, 1)`
-- 返回 >=0 , 则在该从库执行查询语句
-- 否则, 在主库执行查询语句(退化机制)
-
+1. 目标事务执行完, 马上执行 `show master status` 得到当前主库执行到的 file 和 pos
+2. 选定一个从库准备执行查询语句
+3. 先在从库执行 `select master_pos_wait(File, Position, 1)`
+4. 返回 >=0 , 则在该从库执行查询语句
+5. 否则, 在主库执行查询语句(退化机制)
 
 ##### 等 GTID
 
@@ -1580,7 +1609,7 @@ select wait_for_executed_gtid_set(gtid_set, 1);
 
 return:
 - 等待, 直到该(从)库执行的事务中包含传入的 gtid_set , 返回 0
--  超时返回 1
+- 超时返回 1
 
 `session_track_gtids`=`OWN_GTID`: 开启事务执行后返回 GTID , 在 C 中需要调用 `mysql_session_track_get_first` , GO 有这东西吗 ?
 
@@ -1590,7 +1619,7 @@ return:
 
 大表做 DDL 的时候可能导致 **主从延迟** , 导致 等 GTID 的方案可能导致这个时间段的流量全部流到主库, 或者全部超时
 
-如果流量太大, 则需要避免该请况, 可以考虑先在从库做 DDL , 主备切换后, 主库再做 DDL
+如果流量太大, 则需要避免该请况, 可以考虑先在备库做 DDL , 主备切换后, 主库再做 DDL
 - 在各个从库先 `SET sql_log_bin=OFF` , 做 DDL , 所有从库及备库做完后, 做主从换, 最后在原来的主库用同样的方式做 DDL
 - 在从库执行 DDL; 将从库上执行 DDL 产生的 GTID 在主库上利用生成一个空事务 GTID 的方式将这个 GTID 在主库上生成出来
 
@@ -1604,9 +1633,9 @@ return:
 
 #### select 1
 
-`innodb_thread_concurrency`: InnoDB  **并发查询** 的并发线程上限
+不足: 如果 **并发线程数** 已经到上限了, 那么 `select 1` 能够返回成功, 但是 SQL 语句依然会被阻塞
 
-不足: 如果 并发线程数 已经到上限了, 那么 `select 1` 能够返回成功, 但是 SQL 语句依然会被阻塞
+`innodb_thread_concurrency`: InnoDB  **并发查询** 的并发线程上限
 
 **在线程进入锁等待之后, 并发线程的计数会减一**, 即等 行锁/间隙锁 的线程不算在 `innodb_thread_concurrency` 之内
 
@@ -1618,7 +1647,7 @@ return:
 select * from mysql.health_check;
 ```
 
-不足: 这种情况可以判断查询, 不能判断事务更新
+不足: 这种情况可以判断查询, 不能判断事务 **更新**
 
 #### 更新判断
 
@@ -1628,7 +1657,7 @@ UPDATE mysql.health_check SET t_modified=now();
 
 放一个 timestamp 字段, 更新最后一次执行检测的时间
 
-但是如果是 双 M 结构, 则需要考虑可能出现 行冲突 , 导致同步停止的情况; 此时可以在该更新行上添加上 `server_id` .
+但是如果是 双 M 结构, 则需要考虑可能出现 行冲突 , 导致同步停止的情况; 此时可以在该更新行上添加上 `server_id` (同时需要两行).
 
 ```sql
 CREATE TABLE `health_check` (
@@ -1638,7 +1667,7 @@ CREATE TABLE `health_check` (
 ) ENGINE=InnoDB;
 
 /* 检测命令 */
-insert into mysql.health_check(id, t_modified) values
+insert into mysql.health_check (id, t_modified) values
   (@@server_id, now()) on duplicate key update t_modified=now();
 ```
 
@@ -1646,8 +1675,8 @@ insert into mysql.health_check(id, t_modified) values
 
 #### 内部统计 -- `performance_schema`
 
-- `performance`.`file_summary_by_event_name`: 统计各个类型, 每次 IO 请求的各种时间结果(平均, 最大最小)
-- `performance`.`setup_instruments`: 各个统计数据类型的开关
+- `performance.file_summary_by_event_name`: 统计各个类型, 每次 IO 请求的各种时间结果(平均, 最大最小)
+- `performance.setup_instruments`: 各个统计数据类型的开关
 
 其中:
 - `wait/io/file/innodb/innodb_log_file` -- 关于 redo log 的统计
@@ -1656,7 +1685,7 @@ insert into mysql.health_check(id, t_modified) values
 使能监控:
 
 ```sql
-update setup_instruments set `ENABLED`='YES', `TIMED`='YES' where name like '?';
+update `performance`.`setup_instruments` set `ENABLED`='YES', `TIMED`='YES' where name like '?';
 ```
 
 例如:
@@ -1693,7 +1722,7 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 
 1. 取最近一次全量备份
 2. 通过备份恢复出一个临时库
-3. 从日志备份里面, 取出备份后的日志(通过 start-position/stop-position / GTID 定位)
+3. 从日志备份里面, 取出备份后的日志(通过 start-position / stop-position / GTID 定位)
 4. 除了 误操作的语句外 , 应用到临时库
 
 ![误删库时, 数据恢复流程](2fafd0b75286e0163f432f85428ff8db.png)
@@ -1701,7 +1730,7 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 如果误删表:
 1. 上述 2 之后, 将临时实例设置为线上的备库的从库
 2. 在 `start slave` 之前, 先通过执行 `change replication filter replicate_do_table=(tbl_name)`, 就可以让临时库只同步误操作的表(???)
-- 也可以用上并行复制, 加速数据恢复过程
+3. 也可以用上并行复制, 加速数据恢复过程
 
 ![误删表时, 数据恢复流程](65bb04929b8235fb677c7a78b5bd67f1.png)
 
@@ -1725,7 +1754,7 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 #### 预防删除库/表
 
 预防措施:
-1. 账号分离, 具体业务 只有 DML 权限, DDL 要求通过开发管理系统获得支持
+1. **账号分离**, 具体业务 只有 DML 权限, DDL 要求通过开发管理系统获得支持
 2. 要删除数据表前, 先对目标表做改名操作(固定前后缀 , 如 `_to_be_deleted`); 观察一段时间, 确保对业务无影响后再删除表; 改表名的操作要通过管理系统执行, 并且要对表名有检查(如 必须是前面的 固定前后缀)
 
 #### rm 删除数据
