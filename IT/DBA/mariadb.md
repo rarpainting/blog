@@ -1778,8 +1778,8 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 ### kill
 
 当收到 `kill query thread_id` 时, mysql 处理 kill 命令的线程做了两件事
-- 把 session 的运行状态(变量 killed)改成 `THD::KILL_QUERY`
-- 对 session 的执行线程发一个信号, 让该 session 退出等待
+- 把 session 的运行状态(变量 `killed`)改成 `THD::KILL_QUERY`
+- 对 session 的执行线程发一个信号, 让该 session 退出(查询)等待
 
 当收到 `kill thread_id` 时, mysql 处理 kill 命令的线程做了两件事
 - 把 session 的运行状态(变量 killed)改成 `THD::KILL_CONNECTION`
@@ -1796,7 +1796,7 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 select sleep(100) from t;
 ```
 
-`sleep` 的等待逻辑不同于 等待行锁(`pthread_cond_timewait`), 该逻辑没有唤醒点
+`sleep` 的等待逻辑不同于 等待行锁(`pthread_cond_timewait`), **该逻辑没有唤醒点**
 
 ##### 终止逻辑耗时较长
 
@@ -1808,6 +1808,7 @@ select sleep(100) from t;
 
 - 本地缓存(默认 -- `mysql_store_result`), 向服务器请求结果, 并在客户端本地缓存结果
 - 不存储(`-quick` -- `mysql_use_result`), 读一行处理一行
+  - golang 的 `github.com/go-sql-driver/mysql` 的 `textRows` 和 `binaryRows` 的 `Next()` 操作, 本身需要用到 `mysql.Conn`
 
 #### 课后问题: 长时间回滚大事务, 应该是重启还是等待完成
 
@@ -1848,8 +1849,8 @@ InnoDB 的 LRU 完整流程:
 1. 状态 1 , 访问数据页 P3 , 由于 P3 在 young 区域, 因此和优化前的 LRU 算法一样, 将其移到链表头部, 即状态 2
 2. 访问新的不存在于 LRU 链表的数据页, 这时候依然是淘汰数据页 Pm, 但是新插入的数据页 Px, 是在 LRU_old
 3. 处于 old 区域的数据页, 每次被访问都需要基于 `innodb_old_blocks_time`(LRU 链表的 old 区域中判断的时间阈值 -- 默认 1000ms) 做以下判断
-  - 如果这个数据页在 LRU 链表中存在的时间 **超过 innodb_old_blocks_time**, 就把它移动到链表头部
-  - 如果这个数据页在 LRU 链表中存在的时间 **短于 innodb_old_blocks_time**, 位置保持不变
+  - 如果这个数据页在 LRU 链表中存在的时间 **超过(>) innodb_old_blocks_time**, (认为该数据是常规的热数据, )就把它移动到链表头部
+  - 如果这个数据页在 LRU 链表中存在的时间 **短于(<) innodb_old_blocks_time**, 位置保持不变
 
 ## 课后问题
 
