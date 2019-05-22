@@ -1896,7 +1896,7 @@ MySQL 无索引优化
 如果被驱动表是一张 **大表** , 且是一个 **冷数据库**, 查询中会对 MySQL 服务器产生什么影响
 
 如果 驱动表 太大导致分段, 那么 被驱动表 就会被多次读取:
-- 如果大表的大小 M 页比 old 区域 N 小(M<N), 循环读取间隔很可能超过 `innodb_old_blocks_time` 的时间, 那么该数据会被迁移到 **young** 区域, 把部分 **热点数据被淘汰**, 导致 "Buffer pool hit rate" 命中率极低; 热点数据的清求需要读磁盘, 因此响应慢, 请求被阻塞等
+- 如果大表的大小 M 页比 old 区域 N 小(M<N), 循环读取间隔很可能超过 `innodb_old_blocks_time` 的时间, 那么该数据会被迁移到 **young** 区域, 把部分 **热点数据被淘汰**, 导致 "Buffer pool hit rate" 命中率极低; 热点数据的请求需要读磁盘, 因此响应慢, 请求被阻塞等
 - 如果大表的大小 M 页比 old 区域 N 页大(M>N), 则使得读取一次(M 页)大表后再读, 都需要从头开始读取大表(从第 1 页开始), 影响 缓存(buffer pool) 区域的作用
 
 #### MRR(Multi-Range Read) 优化
@@ -1924,7 +1924,7 @@ set optimizer_switch="mrr=on,mrr_cost_based=off";
 -- mysql
 set optimizer_switch="mrr=on,mrr_cost_based=off,batched_key_access=on";
 
--- mariadb
+-- mariadb TODO
 set optimizer_switch="";
 ```
 
