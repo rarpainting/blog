@@ -144,7 +144,7 @@
 		- [全表扫描](#全表扫描)
 			- [全表扫描时, server 层的影响:](#全表扫描时-server-层的影响)
 			- [全表扫描时, InnoDB 层的影响](#全表扫描时-innodb-层的影响)
-	- [课后问题](#课后问题-2)
+			- [课后问题](#课后问题-2)
 		- [JOIN](#join)
 			- [NLJ(Index Nested-Loop Join)](#nljindex-nested-loop-join)
 			- [Simple Nested-Loop Join](#simple-nested-loop-join)
@@ -680,6 +680,8 @@ rpl_semi_sync_master_timeout=1000
 
 ![MySQL 的逻辑架构图](0d2070e8f84c4801adbfa03bda1f98d9.png)
 
+---
+
 ### 一次查询运行流程
 
 #### 连接器
@@ -752,6 +754,8 @@ MySQL 对 ast 执行树的优化
 慢查询日志 -- `rows_examined`
 - 引擎扫描行数和 `rows_examined` 并不完全相同 ??
 
+---
+
 ### 一次更新运行流程(WAL: Write-Ahead Logging)
 
 ![redo log](b075250cad8d9f6c791a52b6a600f69c.jpg)
@@ -810,6 +814,8 @@ MySQL 的事务视图(snapshot) 是在 **事务开始后的第一条语句** 才
 ```sql
 start transaction with consistent snapshot;
 ```
+
+---
 
 ### 索引
 
@@ -882,6 +888,8 @@ select count(distinct col)/count(*) as dist from table;
   - 从 CPU 计算复杂度: 一个是 `reverse`, 一个是 `hashEncoding`
   - 从查询效率看: 比起使用的依然是 前缀索引 方式的倒序索引, Hash 一般更为稳定
 
+---
+
 ### 优化器
 
 - 优化器只有在大量(万以上)查询中, 才会游离在使用索引与否中(?)
@@ -940,6 +948,8 @@ RAPAIR TABLE table [option];
 > 在重建表的过程中, 页会按照 90% 的比例重新整理页数据(10% 留给 UPDATE 使用)
 > 因此如果该表在重建前利用率已经超过 90% , 重建后反而会导致文件更大
 
+---
+
 ### 脏页及其控制处理
 
 #### `innodb_io_capacity`: innodb 一次刷新到磁盘的脏页数
@@ -959,6 +969,8 @@ RAPAIR TABLE table [option];
 该参数在
 - mysql<8.0 / mariadb<10.3.9/?? 时默认为 1, 在 flush 脏页时会把相邻的脏页同时 flush , *可能会出现连锁反应* , 适用于 SATA 等 IOPS 较低的设备
 - mysql>=8.0 / mariadb>=10.3.9/?? 时默认为 0, 在 flush 脏页时只 flush 当前脏页然后返回, 适用于 SSD 等 IOPS 较高的设备, 减少 SQL 语句响应时间
+
+---
 
 ### Order by 工作原理
 
@@ -1091,6 +1103,8 @@ alter table t add index city_user(city, name, age);
 - 对于 **InnoDB 表** 来说, 执行 **全字段排序** 会减少磁盘访问, 因此会被优先选择
 - 对于 **内存表** 来说, 回表过程只是简单的根据数据行的位置, **直接访问内存** 得到数据, 根本不会导致多访问磁盘, 此时 **rowid** 会被优先考虑
 
+---
+
 ### 随机获取行
 
 ```sql
@@ -1164,6 +1178,8 @@ execute stmt;
 DEALLOCATE prepare stmt;
 ```
 
+---
+
 ### 函数与索引
 
 - sql 语句的索引一般观察的是 **被驱动表** 的索引(select l from table)
@@ -1181,10 +1197,14 @@ DEALLOCATE prepare stmt;
 
 - 字符串默认以"按数据长度增加的方向"进行转换, 而转换的过程动用函数
 
+---
+
 ### 事务与查询与锁
 
 - 查询(select) 的时候使用 `lock in share mode` 或者 `for update` 会导致该查询放弃该事务的视图, 而转用最新的视图, 如果使用了行锁, 则分别是添加 S 锁 或者 X 锁; 破坏了读可重复性, 但是由于不需要回滚 MVCC 版本, 查询效率更高(尤其是该查询的目标表已经进行了大量的更改)
 - 间隙锁, 锁的是查询到数据的间隙; **间隙锁之间不冲突**; 间隙锁是 前开后开 区间
+
+---
 
 ### MySQL 加锁规则
 
@@ -1203,6 +1223,8 @@ DEALLOCATE prepare stmt;
 - **读提交(Read-Commit) 没有间隙锁(或者说间隙锁更小), 因此 debug 分析时逻辑更为清晰**
 - `desc` 语句导致优化器倒序搜索满足条件的值, 那么上面 **优化 2** 的 **向右遍历** , 就变成 **向左遍历**
 - **间隙**, 是由 **这个间隙右边的那个记录** 定义的
+
+---
 
 ### binlog 写入规则
 
@@ -1258,6 +1280,8 @@ binlog 的 fsync 变量(mysql/mariadb):
 - `binlog_group_commit_sync_delay` / `binlog_commit_wait_usec`: 等待时间
 - `binlog_group_commit_sync_no_delay_count` / `binlog_commit_wait_count`: 等待累计数
 
+---
+
 ### MySQL 设计问答
 
 #### 为什么 binlog cache 是每个线程独立维护, 而 redo log buffer 是全局共用
@@ -1271,6 +1295,8 @@ binlog 的 fsync 变量(mysql/mariadb):
 - 如果客户端收到事务成功的消息, 事务就一定持久化了
 - 如果客户端收到事务失败(主键冲突, 回滚等)的消息, 事务就一定失败了
 - 如果客户端收到 "执行异常" 的消息, 应用需要重连后通过查询当前状态来继续后续的逻辑; 此时数据库只保证内部(数据和日志/主库和备库之间)一致
+
+---
 
 ### 主备一致
 
@@ -1342,6 +1368,7 @@ CHANGE MASTER TO IGNORE_SERVER_IDS=();
 start slave;
 ```
 
+---
 
 ### 高可用
 
@@ -1474,6 +1501,8 @@ relay_log_recovery        = ON
 - 不需要把整个事务的 binlog 都扫一遍, 才能决定分发到哪个 worker
 - 由于备库分发策略不依赖 binlog 内容, 即使 binlog 格式是 statement 也没问题, 通用性更强
 
+---
+
 ### 主备故障排除
 
 当在主库 A 发生故障停机, 主备切换时, 可能在备库 A' 和 从库 B 之间发生不一致的情况; 在无官方方案时, 可选用:
@@ -1525,6 +1554,8 @@ master_auto_position=1
 2. 需要主从数据一致的话, 最好还是通过重新搭建从库来做
 3. 如果有其它的从库保留有全量的 binlog 的话, 可以把从库指定为保留了全量 binlog 的从库为主库(级联复制)
 4. 如果 binlog 有备份的情况, 可以先在从库上应用缺失的 binlog, 然后在 start slave
+
+---
 
 ### 读写分离
 
@@ -1629,6 +1660,8 @@ return:
 - 创建/删除索引
 - 新增最后一列, 删除最后一列
 
+---
+
 ### 如何判断数据库是否出问题
 
 #### select 1
@@ -1711,6 +1744,8 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 
 对空表加锁, 锁的范围是 next-key lock (-∞, supermum]
 
+---
+
 ### 误删数据
 
 - `sql_safe_updates`: `delete` 或者 `update` 没有 `where` 条件或者 `where` 条件里面没有包含索引字段, 那么就会报错
@@ -1775,6 +1810,8 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 小 tip:
 **chattr +i**: (无论什么权限)不能 添加/修改/删除/重命名 文件
 
+---
+
 ### kill
 
 当收到 `kill query thread_id` 时, mysql 处理 kill 命令的线程做了两件事
@@ -1815,6 +1852,8 @@ select sleep(100) from t;
 - 重启其实还是会继续回滚, 因为 redo log 此时还未提交(Commit); 如果系统资源充足, 更建议继续回滚
 - 如果系统资源紧缺(尤其是 IO) , 那么关闭 -> 切换到备库执行回滚 -> 主备切换 -> 同步 , 是个不错的选择
 
+---
+
 ### 全表扫描
 
 `net_buffer_length`: 默认 16 k, 网络发送包的一次发送的最大长度
@@ -1852,13 +1891,15 @@ InnoDB 的 LRU 完整流程:
   - 如果这个数据页在 LRU 链表中存在的时间 **超过(>) innodb_old_blocks_time**, (认为该数据是常规的热数据, )就把它移动到链表头部
   - 如果这个数据页在 LRU 链表中存在的时间 **短于(<) innodb_old_blocks_time**, 位置保持不变
 
-## 课后问题
+#### 课后问题
 
 如果客户端压力过大, **长时间不接收数据**, 会对服务端产生什么影响?
 
 - 会造成 长事务
 - 如果该事务有更新, 会锁住目标的行锁/间隙锁, 会导致其他语句的更新被锁住
 - 导致 undo log 不能被回收, 导致回滚段空间膨胀
+
+---
 
 ### JOIN
 
@@ -1952,14 +1993,16 @@ select * from t1 join t2 on(t1.a=t2.a) join t3 on (t2.b=t3.b) where t1.c>=X and 
 分析:
 - @Mr.Strive.Z.H.L, 使用 `join`:
   - (调用 innodb 接口,)从 t1 取一行数据, 返回到 server
-  - 从 t2 取满足条件的数据
-  - 从 t3 取满足条件的数据
-- 如果采用 BKA 进行优化(只有 BKA 可以?), 是直接的嵌套查询; 且每多一个 `join` 部分，就多一个 join_buffer
+  - 从 t2 取满足条件的数据, 获得中间结果
+  - 从 t3 取满足条件的数据, 和中间结果对比, 并且构成最终结果
+- 如果采用 BKA 进行优化(只有 BKA 可以?), 会提取范围内的数据, 且直接的嵌套查询; 且每多一个 `join` 部分，就多一个 join_buffer
 - 如果没有 `straight_join` , 那么第一个驱动表 MySQL 会在经过 `where t1.c>=X and t2.c>=Y and t3.c>=Z` 过滤后, 以数据最少的表(在 t1/t2/t3 中选), 作为第一个驱动表, 此时可能出现以下情况:
   - 如果驱动表是 t1, 则连接顺序是 t1->t2->t3, 则需要在(被驱动表) t2.a 和 t3.b 上创建索引
   - 如果驱动表是 t3, 连接顺序: t3->t2->t1, 则需要在 t2.b 和 t1.a 上创建索引
-  - 如果驱动表是 t2, 则考虑另外拎个条件的过滤效果
+  - 如果驱动表是 t2, 则考虑另外两个条件的过滤效果
   - 同时需要在 第一个驱动表 的 c 上创建索引
+
+---
 
 ### 临时表
 
@@ -1973,13 +2016,15 @@ select * from t1 join t2 on(t1.a=t2.a) join t3 on (t2.b=t3.b) where t1.c>=X and 
 - 关于 `InnoDB` 引擎的临时表:
   - 表结构: 会生成一个放置在 临时文件夹 , ".frm" 后缀, "#sql{进程 id}_{线程 id}_序列号" 的文件
   - 表中数据的 存放方式 和版本相关:
-    - <=5.6: 在临时文件目录下创建一个相同前缀, 以 ".idb" 为后缀的文件
-    - >=5.7: MySQL 引入了 临时文件表空间 , 专门用于存放临时文件的数据
-- 关于数据表在 内存 中的区分命名 -- `table_def_key`
+    - `<=5.6`: 在临时文件目录下创建一个相同前缀, 以 ".idb" 为后缀的文件
+    - `>=5.7`: MySQL 引入了 临时文件表空间 , 专门用于存放临时文件的数据
+- 关于数据表在 程序内存 中的区分命名 -- `table_def_key`
   - 普通表: `table_def_key` 的值是由 "库名+表名"
   - 临时表: `table_def_key` 的值是由 "库名+表名", 又加上 "{`server_id`}+{`thread_id`}"
 
 #### 注:
+
+在主从同步时
 
 如果设置了 `binlog_format={ statement | mixed }`
 
@@ -2006,20 +2051,22 @@ alter table temp_t rename to temp_t2; ------ [1]
 rename table temp_t2 to temp_t3; -------- [2]
 ```
 
-[1]: `alter table` 操作的是 `table_def_key`
-[2]: `rename table` 是通过到 MySQL 的 database 目录下修改该数据库的表("库名/表名.frm"); 但是临时表是放置在 tmpdir 目录下, 而且文件命名规则是 "#sql{process_id}_{thread_id}_no.frm"
+- [1]: `alter table` 操作的是 `table_def_key`
+- [2]: `rename table` 是通过到 MySQL 的 database 目录下修改该数据库的表("库名/表名.frm"); 但是临时表是放置在 tmpdir 目录下, 而且文件命名规则是 "#sql{process_id}_{thread_id}_no.frm"
+
+---
 
 ### 内部临时表
 
 #### UNION
 
 `UNION`:
-- 如果只有一列数据, 那么该列作为 主键(PRIMARY) , 享受唯一性约束
+- 如果作为联合表的第一张表提取出来的数据只有一列数据, 那么该列作为 主键(PRIMARY) , 享受 **唯一性约束**
 - 如果有两列或以上数据, 那么不存在 主键 , 无论实际开始 union 的数据列是否有主键
-- 在表上使用上了临时表, 而且该表依然满足各种约束规则
+- 在表上使用上了临时表, 而且该表依然满足各种约束规则(??)
 
 `UNION ALL`:
-- 对 联合 的语句依次执行子查询, 得到的结果直接作为结果集的一部分, 发给客户端; 即不需要 临时表
+- 对 联合 的语句依次执行子查询, 得到的结果直接作为结果集的一部分, 发给客户端; 即**不构建 临时表**
 
 #### GROUP BY
 
@@ -2032,7 +2079,7 @@ select id%10 as m, count(*) as c from t1 group by m;
 2. 扫描表 t1 的索引 a , 依次取出叶子节点上的 id 值, 计算 id%10 的结果, 记为 x
   - 如果 临时表 中 没有 主键为 x 的行, 就插入一个记录 (x, 1)
   - 如果表中 有 主键为 x 的行, 就将 x 的行的 c 值 +1
-3. 遍历完后, 再根据字段 m 作排序, 得到的结果返回给客户端
+3. 遍历完后, 再根据字段 m 作排序(`order by m`), 得到的结果返回给客户端
 
 注意事项:
 - 如果使用 `order by null`, 则对结果不排序
@@ -2045,16 +2092,28 @@ select id%10 as m, count(*) as c from t1 group by m;
 
 ##### group by 优化 -- 直接排序
 
-`SQL_BIG_RESULT`: 要求直接使用 磁盘临时表 , 放弃内存临时表的使用
+`SQL_BIG_RESULT`: 要求直接使用 **磁盘临时表** , 放弃内存临时表的使用
+
+例如:
+
+```sql
+select SQL_BIG_RESULT id%100 as m, count(*) as c from t1 group by m;
+```
 
 #### 课后作业
+
+![内存临时表](036634e53276eaf8535c3442805dfaeb.png)
 
 ```sql
 set tmp_table_size=1024;
 select id%100 as m, count(*) as c from t1 group by m order by null limit 10;
 ```
 
-如果该过程数据量太大而启用了 磁盘临时表, 磁盘临时表默认是 innodb 的索引结构表(内存临时表则是默认 memory), 本身按主键(m)有序存储, 因此尽管是 `order by null` , 本身还是对 m 有序
+![磁盘临时表](a76381d0f3c947292cc28198901f9e6e.png)
+
+如果该过程数据量太大而启用了 磁盘临时表, 磁盘临时表默认是 innodb 的索引结构表(内存临时表则是默认 memory), 本身按主键(m / 第一列)有序存储, 因此尽管是 `order by null` , 本身还是对 m 有序
+
+---
 
 ### Memory 引擎
 
@@ -2077,9 +2136,11 @@ Memory 引擎只有表锁, 锁颗粒更大
 Memory 引擎中的数据在 server 停止后会丢失, 为了保证 主备一致 , MySQL 在数据库重启后, 往 binlog 中写入一条 `DELETE FROM t`
 
 因此, Memory 一般用于临时表的场景:
-- 临时表不会被其他线程访问, 无并发性问题
+- 临时表不会被其他 线程 访问, 无并发性问题
 - 临时表连接断开后自动删除, 本身没有持久化的需要
 - 备库的临时表不会影响主库的用户线程(?)
+
+---
 
 ### 自增主键
 
@@ -2134,6 +2195,8 @@ insert into t2(c,d) select c,d from t;
 这个语句会在 `t` 表上加 next_keylock:
 - 保证 binlog 的顺序上是安全
 
+---
+
 ### insert 语句
 
 insert 语句的执行在 (RR 级别 && **binlog_format=statement**) 下, 为了数据一致性, 会有更多锁行为
@@ -2177,6 +2240,8 @@ insert into t values(11,10,10) on duplicate key update d=100;
 - 试图插入一行语句, 如果碰到唯一键冲突, 就执行后面的更新语句, 且给相关的索引( 上面这行是 (5, 10] )加上 **写锁(X next-keylock)**
 - 如果有多个列违反了唯一性约束, 就会按照索引的顺序, 修改第一个索引冲突的行
 - 如果更新成功, `affected rows` 会增加为 2 , 那是因为 insert 和 update 操作都认为自己成功了
+
+---
 
 ### 复制表
 
@@ -2262,6 +2327,8 @@ mysqldump -h$host -P$port -u$user ---single-transaction  --set-gtid-purged=OFF d
 - 执行 `import tablespace` 时, (为了让文件中的表空间 id 和数据字典中的一致), 会修改 r.idb 的表空间 id , 而这个表空间 id 存在于每一个数据页中; 但是比起逻辑导入时, 完整数据文件生成的流程, 还是相当快的
 - 由于操作的是二进制数据文件, 无法进行筛选; 而且需要 源表 和 目标表 都使用 **InnoDB**
 
+---
+
 ### Grant
 
 用户权限的匹对是通过从权限表加载到内存中的数组判断的, 如果内存数组中的权限和表中的不一致(如直接操作权限表而不是通过 grant 命令控制), 就需要以下命令强制刷新内存数组
@@ -2316,12 +2383,13 @@ grant all privileges on db1.* to 'ua'@'%' with grant option;
 
 权限修改后会刷新相关的 数据表和内存 hash
 
+---
+
 ### 分区表
 
 对于 Server 层, 分区表是无感知的
 
 #### 分区策略
-
 
 - MyISAM: 通用分区策略(<8.0)
 - InnoDB: 本地分区策略
@@ -2365,6 +2433,8 @@ PARTITION BY RANGE (YEAR(ftime))
 - 可以利用 前缀索引
 - 如果使用 InnoDB 引擎, InnoDB 要求至少有一个索引, 因此需要一个自增的 `id`
 
+---
+
 ### 答疑(3)
 
 #### Join 的写法
@@ -2394,6 +2464,8 @@ select field from t group by field order by null;
 ```sql
 SET INSERT_ID=CURRENT_ID;
 ```
+
+---
 
 ### 自增主键用完
 
@@ -2452,6 +2524,8 @@ do {
   new_id = thread_id_counter++;
 } while (!thread_ids.insert_unique(new_id).second);
 ```
+
+---
 
 ## 附: 杂记
 
