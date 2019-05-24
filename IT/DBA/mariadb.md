@@ -181,7 +181,7 @@
 			- [mysqldump](#mysqldump)
 				- [特点:](#特点)
 			- [导出 CSV 文件](#导出-csv-文件)
-				- [特点:](#特点-1)
+				- [`load data` 特点:](#load-data-特点)
 			- [物理拷贝](#物理拷贝)
 		- [Grant](#grant)
 			- [全局权限](#全局权限)
@@ -2135,7 +2135,7 @@ Memory 引擎只有表锁, 锁颗粒更大
 
 Memory 引擎中的数据在 server 停止后会丢失, 为了保证 主备一致 , MySQL 在数据库重启后, 往 binlog 中写入一条 `DELETE FROM t`
 
-因此, Memory 一般用于临时表的场景:
+因此, Memory 一般用于临时表的场景的优点:
 - 临时表不会被其他 线程 访问, 无并发性问题
 - 临时表连接断开后自动删除, 本身没有持久化的需要
 - 备库的临时表不会影响主库的用户线程(?)
@@ -2149,15 +2149,15 @@ Memory 引擎中的数据在 server 停止后会丢失, 为了保证 主备一�
 - **表结构是定义在后缀名为 .frm 的文件中, 但是并不会保存自增值**
 - MyISAM: 数据文件中
 - InnoDB:
-  - <=5.7: 保存在内存中; server 重启后, 第一次打开表时, 都会去找自增值的最大值 max(id) , 再将 max(id) + 1 作为当前自增值
-  - >=8.0: 保存在 redo log 中; 重启时依靠 redo log 恢复自增值为重启前的值
+  - `<=5.7`: 保存在内存中; server 重启后, 第一次打开表时, 都会去找自增值的最大值 max(id) , 再将 max(id) + 1 作为当前自增值
+  - `>=8.0`: 保存在 redo log 中; 重启时依靠 redo log 恢复自增值为重启前的值
 
 #### 自增值修改机制
 
 - 如果插入数据时 id (自增字段) 指定为 { 0 | null | 未指定 } 那么就把这个表当前的 AUTO_INCREMENT 值填到自增字段
-- 如果插入的数据指定了具体的值(X), 就直接用语句中的值执行操作, 同时可能需要修改 自增值(Y)
-  - 如果 X < Y , 那么自增值(Y) 不变
-  - 如果 X >= Y, 那么自增值则为 (X) -- 算法: 从 `auto_increment_offset` 开始, 以 `auto_increment_increment` 为步长, 持续叠加, 直到找到第一个大于 X 的值, 作为新的自增值
+- 如果插入的数据指定了具体的值(X, 且 X!=0), 就直接用语句中的值执行操作, 同时可能需要修改 自增值(Y)
+  - 如果 X < Y , 那么自增值 (Y) 不变
+  - 如果 X >= Y, 那么自增值 > (X) -- 算法: 从 `auto_increment_offset` 开始, 以 `auto_increment_increment` 为步长, 持续叠加, 直到找到第一个大于 X 的值, 作为新的自增值
 - 自增值变化是在操作完成(binlog 写入)前; 因此, **唯一键冲突/事务回滚/下文的 MySQL 自增键申请策略** 导致插入失败, 都会使自增键不连续
 - 自增锁只增不减, 且分配到执行语句中的自增值 **不会因任何原因** 导致自增值回退
 
@@ -2169,8 +2169,8 @@ Memory 引擎中的数据在 server 停止后会丢失, 为了保证 主备一�
 - 0(<=5.0): 语句执行后才释放锁
 - 1(default):
   - insert 插入: 无论是 VALUE 还是 VALUES , MySQL 都可以在执行前知道需要插入多少行; 因此, 在执行前就申请确定的自增键数, 申请后马上释放
-  - { insert...select | replace...select | load data } 批量插入: 因为 MySQL 无法在执行语句前知道需要申请多少个自增键, 因此, 语句结束后才释放
-- 2(Ver>=8.0.2 && `binlog_format=row`--default): 所有申请动作都是申请后马上释放
+  - { insert...select | replace...select | load data } 批量插入: 因为 MySQL 无法在执行语句前知道需要申请多少个自增键, 因此, 语句需要结束后才释放自增键锁
+- 2(Ver>=8.0.2 && `binlog_format=row`): 所有申请动作都是申请后马上释放
 
 **由于自增键批量插入的特殊性, 为了性能和安全的考量, 设置:**
 ```conf
@@ -2185,6 +2185,7 @@ binlog_format=row
 - 1 个用完后, 该语句第二次申请 id , 会分配 2 个
 - 2 个用完后, 该语句第三次申请 id , 会分配 4 个
 - 依次类推, 同一语句申请自增 id , 每次申请到 自增 id 数都是上一次的两倍
+- 该语句使用后的剩余自增 id , 不会回退给自增键对象
 
 #### 课后问题
 
@@ -2193,7 +2194,7 @@ insert into t2(c,d) select c,d from t;
 ```
 
 这个语句会在 `t` 表上加 next_keylock:
-- 保证 binlog 的顺序上是安全
+- 保证 binlog 在顺序上是安全
 
 ---
 
@@ -2207,7 +2208,7 @@ insert 语句的执行在 (RR 级别 && **binlog_format=statement**) 下, 为了
 insert into t2(c,d) select c,d from t;
 ```
 
-该语句会在 `t` 表上添加所需的行的 next-keylock
+该语句会在 `t` 表上添加满足条件的行的 next-keylock
 
 #### 原表的 insert 循环写入
 
@@ -2216,16 +2217,17 @@ insert into t(c,d) select c,d from t force index(c) order by c desc limit 1;
 ```
 
 流程如下:
-1. 创建临时表, 表中连个字段(c, d)
-2. 以索引 c 扫描表 t , 依次(desc)取全部的行(N)并回表(注意此时的子查询并不是只读取一行, 而且对 t 表读到的部分加了 next-keylock), 读到临时表, 这时, Rows_examined=N
-3. 由于语义中有 limit 1 , 所以只取了临时表的第一行, 再插入到表 t 中; 这时, Rows_examined 值 +1 , 变成 N+1
+1. 创建临时表, 表中共有两个字段(c, d)
+2. (BUG)以索引 c 扫描表 t , 依次(desc)取全部的行(N)并回表(注意此时的子查询并不是只读取一行, 而且对 t 表读到的部分加了 next-keylock), 读到临时表, 这时, (slow-log 中的) `Rows_examined`=N
+3. 由于语义中有 limit 1 , 所以只取了临时表的第一行, 再插入到表 t 中; 这时, `Rows_examined` 值 +1 , 变成 N+1
 4. (MySQL>8.0): 修改了(2)的不合理情况, 子查询的行数已经是正确的查询行数
 
 #### insert 唯一键冲突
 
 当发生 **唯一键** 冲突, 不仅返回了错误, 还为起冲突的索引上(试图)添加 **读锁(S next-keylock)**
 
-与优化器优化的不同, 为冲突的索引加上的 next-keylock 不会退化为行锁
+- `<8.0.16`: 与优化器优化的不同, 为冲突的索引加上的 next-keylock 不会退化为行锁
+- `>=8.0.16`: 为冲突的唯一索引添加的 next-keylock 会退化为 行锁
 
 ![唯一键冲突--死锁](63658eb26e7a03b49f123fceed94cd2d.png)
 
@@ -2238,8 +2240,9 @@ insert into t values(11,10,10) on duplicate key update d=100;
 ```
 
 - 试图插入一行语句, 如果碰到唯一键冲突, 就执行后面的更新语句, 且给相关的索引( 上面这行是 (5, 10] )加上 **写锁(X next-keylock)**
-- 如果有多个列违反了唯一性约束, 就会按照索引的顺序, 修改第一个索引冲突的行
-- 如果更新成功, `affected rows` 会增加为 2 , 那是因为 insert 和 update 操作都认为自己成功了
+- 如果有多个列违反了唯一性约束, 就会按照 **索引的顺序** , 修改第一个索引冲突的行
+- 如果将要更新的值与原来相同, 则(执行语句返回的) `affected rows` 为 0 , 并返回
+- 如果更新成功, `affected rows` 会增加 2 (因为 insert 和 update 操作都认为自己成功了)
 
 ---
 
@@ -2247,11 +2250,14 @@ insert into t values(11,10,10) on duplicate key update d=100;
 
 #### mysqldump
 
-```sql
+```shell
 mysqldump -h$host -P$port -u$user --add-locks=0 --no-create-info --single-transaction --{set-gtid-purged|gtid}=OFF db1 t --where=$where --result-file=/client_path/result.sql
 ```
 
 - `--single-transaction`: 导出数据时不对目标表加锁, 而是通过 `START TRANSACTION WITH CONSISTENT SNAPSHOT;` 复制视图
+  - `WITH CONSISTENT SNAPSHOT`: 生成独立视图
+  - `READ WRITE`: 可读写
+  - `READ ONLY`: 只读
 - `--add-locks=0`: 在输出的文件结果里, 不增加 `lock TABLES t WRITE;`
 - `--no-create-info`: 不需要导出表结构
 - `--{set-gtid-pureged(mysql)|gtid(mariadb)}=OFF`: 不输出跟 GTID 相关的信息
@@ -2274,7 +2280,7 @@ source /client_path/to/result.sql
 select * from db1.t where a>900 into outfile '/server_path/t.csv';
 ```
 
-- 该语句结果在 server 端
+- 该语句生成的结果在 server 端
 - `secure_file_priv`: `into outfile` 的文件生成位置规定:
   - `empty`: 不限制文件生成的位置
   - 表示路径的字符串: 则要求生成文件必须在该目录下
@@ -2297,19 +2303,19 @@ load data infile '/server_path/t.csv' into table db2.t;
 
 ![load data 的同步流程](3a6790bc933af5ac45a75deba0f52cfd.jpg)
 
-关于 load data 的 **local**, 会出现两种情况:
+关于 load data 后的 **local**, 会出现两种情况:
 - 不加 local: 负责执行的 server 会读取该 server 的文件, 该文件满足 **secure_file_priv** 规定
 - 加 local: 读取 client 的文件, 只需要 client 能访问读取该文件即可; 文件内容将从 client 读取到 server 端, 再执行 load data 流程
 
-由于该方法导出的 csv 没有表结构, 如果需要导出表结构, 可以通过 mysqldump:
+由于该方法导出的 csv **没有表结构**, 如果需要同时导出表结构和表数据, 可以通过 mysqldump:
 
-```sql
+```shell
 mysqldump -h$host -P$port -u$user ---single-transaction  --set-gtid-purged=OFF db1 t --where=$where --tab=$secure_file_priv
 ```
 
--- `--tab`: 在该目录下, 创建一个 t.sql 文件保存 建表语句 , 同时创建 t.txt 文件保存 csv 数据
+`--tab`: 在该目录下, 创建一个 t.sql 文件保存 建表语句 , 同时创建 t.txt 文件保存 csv 数据
 
-##### 特点:
+##### `load data` 特点:
 
 - 支持所有的 SQL 语法
 - 每次只能导出一张表的数据, 而且表结构需要另外的语句单独备份
