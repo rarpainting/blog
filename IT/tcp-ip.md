@@ -85,6 +85,12 @@ TOS：服务类型，8 bits，用于携带提供服务质量特征信息的字�
 
 `Data`：数据，不定长度，为上层协议封装好的数据
 
+### Golang-TCPConn 相关设置
+
+设置后的相关错误返回:
+- SetDeadline                     -- io time out
+- SetKeepAlive/SetKeepAlivePeriod -- read: connection timed out
+
 ## UDP
 
 ![udp](b2de9c82d158ccbf4049fb531bd8bc3eb03541e5.jpg)
