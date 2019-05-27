@@ -2310,7 +2310,7 @@ load data infile '/server_path/t.csv' into table db2.t;
 由于该方法导出的 csv **没有表结构**, 如果需要同时导出表结构和表数据, 可以通过 mysqldump:
 
 ```shell
-mysqldump -h$host -P$port -u$user ---single-transaction  --set-gtid-purged=OFF db1 t --where=$where --tab=$secure_file_priv
+mysqldump -h$host -P$port -u$user --single-transaction --set-gtid-purged=OFF db1 t --where=$where --tab=$secure_file_priv
 ```
 
 `--tab`: 在该目录下, 创建一个 t.sql 文件保存 建表语句 , 同时创建 t.txt 文件保存 csv 数据
@@ -2324,14 +2324,14 @@ mysqldump -h$host -P$port -u$user ---single-transaction  --set-gtid-purged=OFF d
 
 一个 InnoDB 表, 除了 .frm 和 .idb 两个物理文件外, 还需要在数据字典中注册; 因此直接拷贝文件是不能被识别的
 
-可传输表空间(transportable tablespace)(>=5.6)
+可传输表空间(transportable tablespace)(>= mysql 5.6)
 
 ![物理拷贝表](ba1ced43eed4a55d49435c062fee21a7.jpg)
 
 注意:
 - 执行完 `flush table t` , db1.t 整个表处于只读状态, 直到执行 `unlock tables` 后才释放 读锁
 - 执行 `import tablespace` 时, (为了让文件中的表空间 id 和数据字典中的一致), 会修改 r.idb 的表空间 id , 而这个表空间 id 存在于每一个数据页中; 但是比起逻辑导入时, 完整数据文件生成的流程, 还是相当快的
-- 由于操作的是二进制数据文件, 无法进行筛选; 而且需要 源表 和 目标表 都使用 **InnoDB**
+- 由于操作的是二进制数据文件, **无法进行筛选** ; 而且需要 源表 和 目标表 都使用 **InnoDB**
 
 ---
 
