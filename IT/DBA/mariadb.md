@@ -181,7 +181,6 @@
 			- [mysqldump](#mysqldump)
 				- [特点:](#特点)
 			- [导出 CSV 文件](#导出-csv-文件)
-				- [`load data` 特点:](#load-data-特点)
 			- [物理拷贝](#物理拷贝)
 		- [Grant](#grant)
 			- [全局权限](#全局权限)
@@ -195,15 +194,17 @@
 				- [(ftime, id)](#ftime-id)
 		- [答疑(3)](#答疑3)
 			- [Join 的写法](#join-的写法)
-			- [distinct 和 group by 的性能](#distinct-和-group-by-的性能)
+			- [Simple Nested Loop Join 的性能问题](#simple-nested-loop-join-的性能问题)
+			- [distinct 和 group by 的异同](#distinct-和-group-by-的异同)
 			- [备库自增主键](#备库自增主键)
 		- [自增主键用完](#自增主键用完)
 			- [表定义自增键](#表定义自增键)
 			- [InnoDB 系统自增 row_id](#innodb-系统自增-row_id)
-			- [XID](#xid)
+			- [Server XID](#server-xid)
 			- [InnoDB trx_id](#innodb-trx_id)
 			- [thread_id](#thread_id)
 	- [附: 杂记](#附-杂记)
+		- [NULL](#null)
 		- [为什么 `add column` 不指定位置](#为什么-add-column-不指定位置)
 		- [主从复制方案](#主从复制方案)
 			- [异步复制](#异步复制)
@@ -2149,7 +2150,7 @@ Memory 引擎中的数据在 server 停止后会丢失, 为了保证 主备一�
 - **表结构是定义在后缀名为 .frm 的文件中, 但是并不会保存自增值**
 - MyISAM: 数据文件中
 - InnoDB:
-  - `<=5.7`: 保存在内存中; server 重启后, 第一次打开表时, 都会去找自增值的最大值 max(id) , 再将 max(id) + 1 作为当前自增值
+  - `<=5.7`: 保存在内存中; server 重启后, 第一次打开表时, 都会去找自增值的最大值 max(id) , 再将 (max(id) + `auto_increment_increment`) 作为当前自增值
   - `>=8.0`: 保存在 redo log 中; 重启时依靠 redo log 恢复自增值为重启前的值
 
 #### 自增值修改机制
@@ -2282,8 +2283,8 @@ select * from db1.t where a>900 into outfile '/server_path/t.csv';
 
 - 该语句生成的结果在 server 端
 - `secure_file_priv`: `into outfile` 的文件生成位置规定:
-  - `empty`: 不限制文件生成的位置
-  - 表示路径的字符串: 则要求生成文件必须在该目录下
+  - `empty`: 不限制文件生成的位置(!危险!)
+  - 表示路径的字符串: 则要求生成文件必须在该目录( Dir )下
   - `NULL`: **禁止** 在该 MySQL 实例上执行 `select...into outfile` 操作
 - 生成的文件必须是不存在的, 否则语句报错
 
@@ -2304,7 +2305,7 @@ load data infile '/server_path/t.csv' into table db2.t;
 ![load data 的同步流程](3a6790bc933af5ac45a75deba0f52cfd.jpg)
 
 关于 load data 后的 **local**, 会出现两种情况:
-- 不加 local: 负责执行的 server 会读取该 server 的文件, 该文件满足 **secure_file_priv** 规定
+- 不加 local: 负责执行的 server 会读取该 server 的文件, 该文件必须满足 **secure_file_priv** 规定
 - 加 local: 读取 client 的文件, 只需要 client 能访问读取该文件即可; 文件内容将从 client 读取到 server 端, 再执行 load data 流程
 
 由于该方法导出的 csv **没有表结构**, 如果需要同时导出表结构和表数据, 可以通过 mysqldump:
@@ -2315,7 +2316,7 @@ mysqldump -h$host -P$port -u$user --single-transaction --set-gtid-purged=OFF db1
 
 `--tab`: 在该目录下, 创建一个 t.sql 文件保存 建表语句 , 同时创建 t.txt 文件保存 csv 数据
 
-##### `load data` 特点:
+`load data` 特点:
 
 - 支持所有的 SQL 语法
 - 每次只能导出一张表的数据, 而且表结构需要另外的语句单独备份
@@ -2324,7 +2325,7 @@ mysqldump -h$host -P$port -u$user --single-transaction --set-gtid-purged=OFF db1
 
 一个 InnoDB 表, 除了 .frm 和 .idb 两个物理文件外, 还需要在数据字典中注册; 因此直接拷贝文件是不能被识别的
 
-可传输表空间(transportable tablespace)(>= mysql 5.6)
+可传输表空间(transportable tablespace)(>= mysql 5.6):
 
 ![物理拷贝表](ba1ced43eed4a55d49435c062fee21a7.jpg)
 
@@ -2358,8 +2359,8 @@ grant all privileges on *.* to 'ua'@'%' with grant option;
 - 内存中, 找到数组 acl_users 中该用户对应的对象, 将 access 值(权限位) 修改为 '1'
 
 即:
-- grant 命令同时更新了 磁盘 和 内存 , 命令完成后即时生效, 之后的新创建的连接中会使用新的权限
-- 对于一个已存在的连接, 该连接的全局权限不受 grant 命令影响
+- grant 命令 **同时更新** 了 磁盘 和 内存 , 命令完成后即时生效, 之后的新创建的连接中会使用新的权限
+- 对于一个已存在的连接, 该连接的全局权限的查询是在已构建的 "线程对象" 中, 而不再读取 `acl_users` OR `mysql.user` 表 , 因此不受 grant 命令影响
 
 回收权限:
 
@@ -2404,7 +2405,7 @@ grant all privileges on db1.* to 'ua'@'%' with grant option;
 
 - **注**: 第一次访问一个分区表时, MySQL 需要把所有分区都访问一遍; 分区过多可能会导致超过 `open_files_limit` 限制
   - 如果是 InnoDB 引擎, `innodb_open_files` 会控制实际打开的表数量, 超过该值会把之前的文件 close
-- 在 server 层, 认为这是同一张表, 因此所有分区共用 **同一个 MDL 锁**
+- 在 server 层, 认为 同一张表的所有分区 是同一张表, 因此所有分区共用 **同一个 MDL 锁**
 - 在引擎层, 认为这是不同的表, 因此 MDL 锁之后的执行过程, 会根据分区表规则, 只访问必要的分区
 
 #### 优点
@@ -2445,7 +2446,57 @@ PARTITION BY RANGE (YEAR(ftime))
 
 #### Join 的写法
 
-#### distinct 和 group by 的性能
+表结构:
+
+```sql
+create table a(f1 int, f2 int, index(f1))engine=innodb;
+create table b(f1 int, f2 int)engine=innodb;
+insert into a values(1,1),(2,2),(3,3),(4,4),(5,5),(6,6);
+insert into b values(3,3),(4,4),(5,5),(6,6),(7,7),(8,8);
+```
+
+执行语句:
+
+```sql
+select * from a left join b on(a.f1=b.f1) and (a.f2=b.f2); /*Q1*/
+select * from a left join b on(a.f1=b.f1) where (a.f2=b.f2);/*Q2*/
+```
+
+![两个 join 的执行结果](871f890532349781fdc4a4287e9f91bd.png)
+
+![语句 Q1](b7f27917ceb0be90ef7b201f2794c817.png)
+
+语句 Q1 `show warning`:
+
+```sql
+select `db1`.`a`.`f1` AS `f1`,`db1`.`a`.`f2` AS `f2`,`db1`.`b`.`f1` AS `f1`,`db1`.`b`.`f2` AS `f2` from `db1`.`a` left join `db1`.`b` on(`db1`.`b`.`f1` = `db1`.`a`.`f1` and `db1`.`b`.`f2` = `db1`.`a`.`f2`) where 1
+
+/* 即 */
+select * from a left join b on (b.f1=a.f1 and b.f2=a.f2) where 1;
+```
+
+- 驱动表是 a, 被驱动表是 b
+- 使用的是 BNL 算法(因为 被驱动表 b 表 的 f1 字段 没有索引)
+- 由于是 `left join` 语义, 所以 b 表缺失的部分由 `NULL` 补上
+
+![语句 Q2](f5712c56dc84d331990409a5c313ea9c.png)
+
+语句 Q2 `show warning`:
+
+```sql
+select `db1`.`a`.`f1` AS `f1`,`db1`.`a`.`f2` AS `f2`,`db1`.`b`.`f1` AS `f1`,`db1`.`b`.`f2` AS `f2` from `db1`.`a` join `db1`.`b` where `db1`.`a`.`f2` = `db1`.`b`.`f2` and `db1`.`a`.`f1` = `db1`.`b`.`f1`
+
+/* 即 */
+select * from a join b where a.f2=b.f2 and a.f1=b.f1;
+```
+
+- `left join` 优化为 `join`, 即驱动表是 b , 被驱动表为 a
+
+从以上来看, **如果需要 left join 的语义，就不能把被驱动表的字段放在 where 条件里面做等值判断或不等值判断, 必须都写在 on 里面**
+
+#### Simple Nested Loop Join 的性能问题
+
+#### distinct 和 group by 的异同
 
 如果是规则的 group by 语句:
 
@@ -2465,7 +2516,7 @@ select field from t group by field order by null;
 
 #### 备库自增主键
 
-为了保证 主备一致 , 对于自增主键, 每次获取到的主键都会先在 binlog 中写入(无论是 ROW/STATEMENT)
+为了保证 主备一致 , 对于自增主键, 每次获取到的主键都会先在(主备同步后的) binlog 中读入(无论是 ROW/STATEMENT)
 
 ```sql
 SET INSERT_ID=CURRENT_ID;
@@ -2479,17 +2530,25 @@ SET INSERT_ID=CURRENT_ID;
 
 范围: [0, 2^32-1]
 
-表定义的自增主键达到上限后, 再申请下一个 id 时, 得到的值保持不变
+重启后:
+- `<5.7`: 重启后寻找表中最大的 id (maxID), 然后以 (maxID + `auto_increment_increment`) 为当前自增值
+- `>=8.0`: 保存在 redo log 中, 重启读取恢复
+
+表定义的自增主键达到上限后, 再申请下一个 id 时, 得到的值保持不变(可能导致无法插入)
 
 #### InnoDB 系统自增 row_id
 
 范围: [0, 2^48-1]
 
+重启后: (???)
+
 在 row_id(2^48) 到达上限后, 会以 0 重新开始, 并且 **覆盖 row_id 相同的行**
 
-#### XID
+#### Server XID
 
 范围: [0, 2^64-1]
+
+重启后: 清零
 
 - MySQL 内部维护一个 全局变量 `global_query_id`, 每次执行语句则将其赋给 `Query_id` , 再 +1; 如果当前语句是事务的第一条语句, 则同时赋给 `XID`
 - `query_global_id` 重启后清零, 因此一个 MySQL 实例中不同的事务的 `Xid` 是可能相同的; 但是 MySQL 重启后会生成新的 binlog , 保证了 **同一个 binlog 中 XID 必然是唯一的**
@@ -2497,6 +2556,8 @@ SET INSERT_ID=CURRENT_ID;
 #### InnoDB trx_id
 
 范围: [0, 2^48-1]
+
+到 2^48-1 后从 0 重新开始生成
 
 生成规律:
 
@@ -2508,9 +2569,8 @@ SET INSERT_ID=CURRENT_ID;
 
 在只读事务中的 随机 "trx_id" 由系统临时计算出: 把当前事务的 trx 变量的指针地址转换为 整型 , 再加上 2^48 , 这种做法的优点:
 
-- 同一个只读事务中, 当前事务的 指针地址 是不变的
-- 多个并发的只读事务, 每个事务的 trx 变量天然不同
-- 加上 2^48 后数字大, 与 读写事务 的 id 做区分, 方便事后分析
+- 同一个只读事务中, 当前事务的 指针地址 是不变的, 因此对于多个并发的只读事务, 每个事务的 trx 变量天然不同
+- 加上 2^48 后数字大, 与 (读)写事务 的 id 做区分, 方便事后分析
 
 只读事务 不分配 `trx_id`:
 
@@ -2521,11 +2581,12 @@ SET INSERT_ID=CURRENT_ID;
 
 范围: [0, 2^32-1]
 
-`show processlist` 第一列
+- `show processlist` 第一列
+- 到 2^32-1 后从 0 重新开始生成
 
 自增分配逻辑:
 
-```sql
+```C
 do {
   new_id = thread_id_counter++;
 } while (!thread_ids.insert_unique(new_id).second);
@@ -2534,6 +2595,10 @@ do {
 ---
 
 ## 附: 杂记
+
+### NULL
+
+NULL 跟任何值执行等值判断和不等值判断的结果，都是 NULL
 
 ### 为什么 `add column` 不指定位置
 
