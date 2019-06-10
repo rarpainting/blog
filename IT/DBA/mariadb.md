@@ -1327,6 +1327,15 @@ binlog 的 fsync 变量(mysql/mariadb):
 - MIXED:
   - 在可能主备数据不一致的地方使用 ROW 格式, 否则使用 STATEMENT
 
+主从同步中设置从数据库:
+
+```conf
+server-id              = 2                   # 主数据库 id 默认为 1, 不能相同
+replicate_wild_do_table=[db_name | %].%      # 同步 db_name | 所有库 下的表
+relay_log              =mysqld-relay-bin     # 记录中继日志
+log-slave-updates      =YES                  # 从服务器同步后记录日志
+```
+
 #### 复制循环问题
 
 双 M 结构(互为主备)
