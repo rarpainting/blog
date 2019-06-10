@@ -110,3 +110,7 @@ func First(query string, replicas ...Search) Result {
 
 ### 使用指针接受方法
 
+## channel
+
+![channel](channel-tricks.png)
+
