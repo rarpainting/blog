@@ -114,3 +114,9 @@ func First(query string, replicas ...Search) Result {
 
 ![channel](channel-tricks.png)
 
+channel 的 happen before 规则:
+- 第 n 个 send 一定 happen before 第 n 个 receive 完成, 不管是 buffered channel 还是 unbuffered channel
+- 对于 capacity 为 m 的 channel, 第 n 个 receive 一定 happen before 第 (n+m) send 完成
+- m=0 unbuffered. 第 n 个 receive 一定 happen before 第 n 个 send 完成
+- channel 的 close 一定 happen before receive 端得到通知, 得到通知意味着 receive 收到一个因为 channel close 而收到的零值(或者 panic?)
+
