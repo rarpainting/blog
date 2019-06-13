@@ -1,5 +1,9 @@
 # MySQL Network Protocol
 
+[泮关森](http://www.godpan.me/2017/11/10/mysql-protocol.html)
+
+[胡桃夹子](http://hutaow.com/blog/2013/11/06/mysql-protocol-analysis/)
+
 ## String 编码
 
 - FixedLengthString(定长方式): 需先知道 String 的长度, MySQL 中的一个例子就是 ERR_Packet 包((后续会讲到)就使用了这种编码方式, 因为它的长度固定, 用 5 个字节存储所有数据
@@ -134,13 +138,13 @@
 
 错误返回
 
-| 相对包内容的位置 | 长度/byte | 名称     | 描述            k j k               |
+| 相对包内容的位置 | 长度/byte | 名称     | 描述                                |
 |               :- |        :- | :-       | :-                                  |
 |                0 |         1 | 包头标识 | 0xFF                                |
 |                1 |         2 | 错误代码 | 该错误的相应错误代码                |
 |                3 |         1 | 标识位   | SQL 执行状态标识位, 用 '#' 进行标识 |
-|                4 |         5 | 执行状态 | SQL 的具体执行状态                    |
-|                9 |   `msg_len` | 错误信息 | 具体的错误信息                      |
+|                4 |         5 | 执行状态 | SQL 的具体执行状态                  |
+|                9 | `msg_len` | 错误信息 | 具体的错误信息                      |
 
 ### EOF Packet
 
@@ -159,7 +163,7 @@
 ### Result Set
 
 
-| 相对包内容的位置  |                        |
+| 相对包内容的位置  | 含义                |
 | :-                | :-                     |
 | Result Set Header | 返回数据的列数量       |
 | Field             | 返回数据的列信息(多个) |
@@ -169,4 +173,116 @@
 
 #### Result Set Header
 
+| 长度      | 含义                                   |
+| :-        | :-                                     |
+| 1-9 bytes | 数据的列数量/LengthEncodedInteger 编码 |
+| 1-9 bytes | (可选)额外信息/LengthEncodedINteger 编码     |
 
+#### Field
+
+| 长度 | 含义                                                         |
+| :-   | :-                                                           |
+| n    | >=4.1 , 目录名称/"def"(Data Field)                           |
+| n    | 数据库名称(Data Field)                                       |
+| n    | 假如查询指定了表别名, 就是表别名(Data Field)                 |
+| n    | 原始的表名(Data Field)                                       |
+| n    | 假如查询指定了列别名, 就是列别名(Data Field)                 |
+| n    | 原始的列名(Data Field)                                       |
+| 1    | 标识位, 通常为 12, 表示接下去的 12 个字节是具体的 field 内容 |
+| 2    | field 列的编码                                               |
+| 4    | field 列的长度                                               |
+| 1    | field 列的类型(`/include/mysql_com.h` -- `FIELD_TYPE_*`) OR `/libbinlogevents/export/binary_log_types.h` -- `enum enum_field_types`) |
+| 2    | field 列的标识                                               |
+| 2    | field 值(如果是 数值 )的小数点精度                           |
+| 2    | 预留字节                                                     |
+| n    | 可选元素, 如果存在, 则表示该 field 的默认值                  |
+
+#### Row Data
+
+- 每个 Row Data 包含多个字段值, 且字段间没有间隔
+- 内部的字符串通过 LengthEncodedString 编码
+
+### PREPARE_OK packet
+
+当 Client 向 Server 发送 预处理 SQL 语句 , Server 正确回应时的包
+
+| 长度 | 含义                                                 |
+|   :- | :-                                                   |
+|    1 | 0x00 (标识是一个 OK 包)                              |
+|    4 | `statement_handler_id`(预处理语句 id)                |
+|    2 | number of columns in result set (结果集中列的数量)   |
+|    2 | number of parameters in query (查询语句中参数的数量) |
+|    1 | 0x00 (填充值)                                        |
+|    2 | 	警告数                                           |
+
+- 在执行(exec) prepare statement 时, 如果结果集(result set)的 columns 数和 parameters 数都大于 0 , 则会有额外的两个包传输以上两者信息:
+
+| 内容  | 含义            |
+| :-    | :-              |
+| Field | columns 信息    |
+| EOF   | columns 结束    |
+| Field | parameters 信息 |
+| EOF   | parameters 结束 |
+
+### Row Data Binary
+
+与 [Row Data](#Row Data) 的差异:
+- 用不同的方式定义 NULL
+- 根据数据类型的不同进行相应的编码
+
+| 相对包内容的位置        | 长度/byte           | 名称                                 | 描述                                                                                                                          |
+| :-                      | :-                  | :-                                   |                                                                                                                               |
+| 0                       | 1                   | 包头标识                             | 0x00                                                                                                                          |
+| 1                       | (`col_count`+7+2)/8 | Null Bit Map                         | 前两位为预留字节, 主要用于区别与其他的几种包(OK, ERROR, EOF), 在 MySQL 5 之后这两个字节都为 0X00, 其中 `col_count` 为列的数量 |
+| (`col_count`+7+2)/8 + 1 | n	column values  | 具体的列值, 重复多次, 根据值类型编码 |                                                                                                                               |
+
+#### Null Bit Map
+
+Row Data Binary 中 NULL 的定义((`col_count` +7)/8):
+- 参数个数: 1-8
+- 长度: 1 byte
+- 具体值范围: -1, 2^n 组合
+- 描述: 1=2^0 表示第一个参数为 NULL, 3=2^0+2^1 表示第一和第二个参数为 0
+- 以 8 个参数为一个周期(1 bytes)
+
+对于 string 之外的具体类型, 编码规则:
+- 基本数据类型: TINYINT -- 1 byte; FLOAT -- 4 bytes; DOUBLE -- 8 bytes
+- 时间类型(Date/Datetime/Timestamp): 如以下所示
+
+#### DATE/DATETIME/TIMESTAMP
+
+[Binary Protocol Resultset](https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_binary_resultset.html)
+
+| Type   | Name        | Description                                           |
+| int<1> | length      | number of bytes following (valid values: 0, 4, 7, 11) |
+| int<2> | year        | year                                                  |
+| int<1> | month       | month                                                 |
+| int<1> | day         | day                                                   |
+| int<1> | hour        | hour                                                  |
+| int<1> | minute      | minute                                                |
+| int<1> | second      | second                                                |
+| int<4> | microsecond | micro seconds                                         |
+
+Example:
+
+```shell
+0b da 07 0a 11 13 1b 1e 01 00 00 00 -- datetime 2010-10-17 19:27:30.000 001
+04 da 07 0a 11                      -- date = 2010-10-17
+0b da 07 0a 11 13 1b 1e 01 00 00 00 -- timestamp
+```
+
+### Execute packet
+
+Client 发给 Server, 用于执行 预处理语句
+
+|                长度 | 含义                                                         |
+|                  :- | :-                                                           |
+|                   1 | `COM_EXECUTE`(标识是一个 Execute 包)                         |
+|                   4 | 预处理语句 id                                                |
+|                   1 | 游标类型                                                     |
+|                   4 | 预留字节                                                     |
+|                   0 | 接下去的内容只有在有参数的情况下                             |
+| (`param_count`+7)/8 | `null_bit_map`(描述参数中 NULL 的情况)                       |
+|                   1 | 参数绑定情况                                                 |
+|                 n*2 | 参数类型(依次存储)                                           |
+|                   n | 参数具体值(非 NULL)(依次存储, 使用 Row Data Binary 方式编码) |
