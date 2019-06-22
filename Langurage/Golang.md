@@ -1,5 +1,101 @@
 # Golang
 
+## Happens Before
+
+**应该以通信作为手段来共享内存**
+
+如果要让一个对变量 v 的写操作 w 所产生的结果能够被对该变量的读操作 r 观察到, 那么需要同时满足如下两个条件
+
+- 读操作 r 未先于写操作 w 发生
+
+- 没有其他对此变量的写操作后于写操作 w 且 先于读操作 r 发生
+
+即在一轮读写操作中 其他写操作 / 本次写操作 w / 本次读操作 r
+顺序:
+
+其他写操作 -> 本次写操作 w -> 本次读操作 r
+
+## channel
+
+![channel](channel-tricks.png)
+
+channel 的 happen before 规则:
+- 第 n 个 send 一定 happen before 第 n 个 receive 完成, 不管是 buffered channel 还是 unbuffered channel
+- 对于 capacity 为 m 的 channel, 第 n 个 receive 一定 happen before 第 (n+m) send 完成
+- m=0 unbuffered. 第 n 个 receive 一定 happen before 第 n 个 send 完成
+- channel 的 close 一定 happen before receive 端得到通知, 得到通知意味着 receive 收到一个因为 channel close 而收到的零值(或者 panic?)
+
+
+## go runtime
+
+### 线程实现模型基础
+
+`[M:1]` 用户级线程模型
+
+- 线程的创建, 调度, 同步都由用户的进程户态的线程库处理
+- 避免了 户态 和 核态 的切换调度, 处理速度快
+- 线程空间仅对应一个内核调度实体, (线程阻塞时)无法调度到其他处理器, 无法通过优先级调度
+
+`[1:1]` 内核级线程模型
+
+- 用户线程对应各自的调度实体
+- 能依赖内核的调度能力
+- 对性能影响大
+
+`[M:N]` 两级线程模型
+
+- 拥有多个调度实体
+- 多个线程对应一个调度实体
+- 需要 核态 和 户态 同时参与调度, 设计复杂
+
+### go 线程实现模型
+
+| 中文名称              | 源码中的名称          | 作用域     | 需要说明                             |
+| :--:                  | :--:                  | :--:       | :--:                                 |
+| 全局 M 列表           | runtime.allm          | 运行时系统 | 能用于存放所有 M 的列表              |
+| 全局 P 列表           | runtime.allp          | 运行时系统 | 能用于存放所有 P 的列表              |
+| 全局 G 列表           | runtime.allg          | 运行时系统 | 能用于存放所有 G 的列表              |
+| 调度器的空闲 M 列表   | runtime ' sched.midle | 调度器     | 被用于存放空闲 M 的列表              |
+| 调度器的空闲 P 列表   | runtime ' sched.pidle | 调度器     | 被用于存放空闲 P 的列表              |
+| 调度器的可运行 G 队列 | runtime ' sched.runq  | 调度器     | 被用于存放可运行 G 的队列            |
+| 调度器的的自由 G 队列 | runtime ' sched.gfree | 调度器     | 被用于存放自由 G 的列表              |
+| P 的可运行 G 队列     | runq                  | 本地 P     | 被用于存放当前 P 中的可运行 G 的队列 |
+| P 的自由 G 列表       | gfree                 | 本地 P     | 被用于存放当前 P 中的自由 G 的列表   |
+
+### 调度器字段
+
+| 字段名称   | 数据类型 | 用途描述                                                 |
+| gcwaiting  | uint32   | 作为垃圾回收任务被执行期间的辅助标记, 停止计数和通知机制 |
+| stopwait   | int32    |                                                          |
+| stopnote   | Note     |                                                          |
+| sysmonwait | uint32   | 作为系统检测任务被执行期间的停止计数和通知机制           |
+| sysmonnote | Note     |                                                          |
+
+## Go Ast
+
+### ast.Ident
+
+词信息
+
+- .NamePost Token.Post -- 位置
+- .Name string -- 名字
+- .Obj *Object 具体内容
+
+### ast.Object
+
+- .Kind ObjKind 全局类型
+- .Name string 声明的名字
+- .Decl interface{} 对应以下字段:
+  - XssSpec
+  - FuncDecl
+  - LabeledStmt
+  - AssignStmt
+  - Scope
+  - nil
+- .Data interface{}
+  - 特殊对象数据 / nil
+- .Type interface{} --
+
 ## 陷阱
 
 ### 返回值
@@ -14,7 +110,7 @@ defer 语句能访问有名返回值
 ### defer
 
 defer 的 颗粒度 是 函数级 的, 即 defer 会在函数结束时调用, 而不在 代码块
-      
+
 ### http 响应
 
 resp, err := http.Get("https://api.ipify.io?format=content")
@@ -116,13 +212,8 @@ func First(query string, replicas ...Search) Result {
 
 但是 `range string` 的结果是 []rune 的结果
 
-## channel
+### math/rand
 
-![channel](channel-tricks.png)
-
-channel 的 happen before 规则:
-- 第 n 个 send 一定 happen before 第 n 个 receive 完成, 不管是 buffered channel 还是 unbuffered channel
-- 对于 capacity 为 m 的 channel, 第 n 个 receive 一定 happen before 第 (n+m) send 完成
-- m=0 unbuffered. 第 n 个 receive 一定 happen before 第 n 个 send 完成
-- channel 的 close 一定 happen before receive 端得到通知, 得到通知意味着 receive 收到一个因为 channel close 而收到的零值(或者 panic?)
-
+- 全局的 `rand.globalRand` 使用 `lockedSource` 为 source
+- 而自建的 `rand.NewSource` 使用 无锁的 `rngSource` 为 source
+- 因此, 在 多线程且无互斥需求 的情况下, 随机数生成器尽量使用 `NewSource`(即 `rngSource`)
