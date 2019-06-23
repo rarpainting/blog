@@ -134,6 +134,8 @@ if err != nil {
 
 失败的类型断言 返回断言声明中 **类型** 的 "零" 值
 
+其中, `interface{}`和 `slice` 的零值为 nil
+
 ### 阻塞的 goroutine 和资源泄漏
 
 例子:
@@ -217,3 +219,30 @@ func First(query string, replicas ...Search) Result {
 - 全局的 `rand.globalRand` 使用 `lockedSource` 为 source
 - 而自建的 `rand.NewSource` 使用 无锁的 `rngSource` 为 source
 - 因此, 在 多线程且无互斥需求 的情况下, 随机数生成器尽量使用 `NewSource`(即 `rngSource`)
+
+### MySQL
+
+MySQL 8.0 使用 `caching_sha2_password` 作为默认加密插件, `go-sql-driver/mysql` 本身不支持该插件
+
+因此需要在 MySQL 执行以下步骤, 修改 `'root'@'%'` 的加密方式:
+
+```sql
+ALTER USER `root`@`%` IDENTIFIED WITH mysql_native_password BY `password`;
+```
+
+同时修改 Golang-MySQL-URL , 添加 `allowNativePasswords=true` 参数(BUG? 在 go-sql-driver 的文档中, 该参数是默认开启的, 然而需要明文添加)
+
+可选: 修改 mysql config
+```config
+[mysqld]
+default-authentication-plugin = mysql_native_password
+```
+
+#### github issues
+
+- [Add support for sha256_password pluggable authentication #625](https://github.com/go-sql-driver/mysql/issues/625)
+- [Unable to connect to MySQL 8 #785](https://github.com/go-sql-driver/mysql/issues/785)
+
+### Decimal
+
+[Go如何精确计算小数](https://imhanjm.com/2017/08/27/go%E5%A6%82%E4%BD%95%E7%B2%BE%E7%A1%AE%E8%AE%A1%E7%AE%97%E5%B0%8F%E6%95%B0-decimal%E7%A0%94%E7%A9%B6/)

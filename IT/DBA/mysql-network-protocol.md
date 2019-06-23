@@ -6,11 +6,11 @@
 
 ## String 编码
 
-- FixedLengthString(定长方式): 需先知道 String 的长度, MySQL 中的一个例子就是 ERR_Packet 包((后续会讲到)就使用了这种编码方式, 因为它的长度固定, 用 5 个字节存储所有数据
-- NullTerminatedString(Null 结尾方式): 字符串以遇到 Null 作为结束标志, 相应的字节为 00
-- VariableLengthString(动态计算字符串长度方式): 字符串的长度取决于其他变量计算而定, 比如一个字符串由 Integer + Value 组成, 我们通过计算 Integer 的值来获取 Value 的具体的长度
-- LengthEncodedString(指定字符串长度方式): 与 VariableLengthString 原理相似, 是它的一种特殊情况, 具体例子就是我上条举的这个例子
-- RestOfPacketString(包末端字符串方式): 一个包末端的字符串, 可根据包的总长度金和当前位置得到字符串的长度, 实际中并不常用
+- `FixedLengthString`(定长方式): 需先知道 String 的长度, MySQL 中的一个例子就是 `ERR_Packet` 包((后续会讲到)就使用了这种编码方式, 因为它的长度固定, 用 5 个字节存储所有数据
+- `NullTerminatedString`(Null 结尾方式): 字符串以遇到 Null 作为结束标志, 相应的字节为 00
+- `VariableLengthString`(动态计算字符串长度方式): 字符串的长度取决于其他变量计算而定, 比如一个字符串由 `Integer` + `Value` 组成, 我们通过计算 Integer 的值来获取 Value 的具体的长度
+- `LengthEncodedString`(指定字符串长度方式): 与 `VariableLengthString` 原理相似, 是它的一种特殊情况, 具体例子就是我上条举的这个例子
+- `RestOfPacketString`(包末端字符串方式): 一个包末端的字符串, 可根据包的总长度金和当前位置得到字符串的长度, 实际中并不常用
 
 ## 基本数据包格式(LittleEndian)
 
@@ -254,6 +254,7 @@ Row Data Binary 中 NULL 的定义((`col_count` +7)/8):
 [Binary Protocol Resultset](https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_binary_resultset.html)
 
 | Type   | Name        | Description                                           |
+|:-      |:-           |:-                                                     |
 | int<1> | length      | number of bytes following (valid values: 0, 4, 7, 11) |
 | int<2> | year        | year                                                  |
 | int<1> | month       | month                                                 |
