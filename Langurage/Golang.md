@@ -227,7 +227,7 @@ MySQL 8.0 使用 `caching_sha2_password` 作为默认加密插件, `go-sql-drive
 因此需要在 MySQL 执行以下步骤, 修改 `'root'@'%'` 的加密方式:
 
 ```sql
-ALTER USER `root`@`%` IDENTIFIED WITH mysql_native_password BY `password`;
+ALTER USER `root`@`%` IDENTIFIED WITH mysql_native_password BY 'password';
 ```
 
 同时修改 Golang-MySQL-URL , 添加 `allowNativePasswords=true` 参数(BUG? 在 go-sql-driver 的文档中, 该参数是默认开启的, 然而需要明文添加)
