@@ -3,6 +3,7 @@
 <!-- TOC -->
 
 - [MariaDB](#mariadb)
+	- [ACID](#acid)
 	- [数据库语言](#数据库语言)
 		- [DDL(Data Definition Language) -- 数据定义语言](#ddldata-definition-language----数据定义语言)
 		- [DML(Data Manipulation Language) -- 数据操作语言](#dmldata-manipulation-language----数据操作语言)
@@ -17,12 +18,13 @@
 		- [SQL 语句分析](#sql-语句分析)
 		- [获取有关数据库和表的信息](#获取有关数据库和表的信息)
 	- [MYSQL 数据目录](#mysql-数据目录)
+	- [MYSQL/MARIADB 权限](#mysqlmariadb-权限)
 	- [MariaDB 日志](#mariadb-日志)
 		- [Error Log](#error-log)
 		- [General Log](#general-log-1)
 		- [Slow Log](#slow-log)
 			- [统计扩展(Extended Statistics)](#统计扩展extended-statistics)
-		- [Bin Log](#bin-log)
+		- [Binlog](#binlog-1)
 			- [复制时安全清除二进制文件](#复制时安全清除二进制文件)
 			- [选择性的记录 ！慎用！](#选择性的记录-慎用)
 			- [二进制日志格式](#二进制日志格式)
@@ -51,7 +53,35 @@
 			- [连接器](#连接器)
 			- [查询缓存](#查询缓存)
 			- [分析器](#分析器)
-			- [优化器](#优化器)
+			- [优化器策略](#优化器策略)
+				- [`index_merge=on`](#index_mergeon)
+				- [`engine_condition_pushdown=off`](#engine_condition_pushdownoff)
+				- [`index_condition_pushdown=on`](#index_condition_pushdownon)
+				- [`derived_merge=on`](#derived_mergeon)
+				- [`derived_with_keys=on`](#derived_with_keyson)
+				- [`firstmatch=on`](#firstmatchon)
+				- [`loosescan=on`](#loosescanon)
+				- [`materialization=on`](#materializationon)
+				- [`in_to_exists=on`](#in_to_existson)
+				- [`semijoin=on`](#semijoinon)
+				- [`partial_match_rowid_merge=on`](#partial_match_rowid_mergeon)
+				- [`partial_match_table_scan=on`](#partial_match_table_scanon)
+				- [`subquery_cache=on`](#subquery_cacheon)
+				- [`mrr=off`](#mrroff)
+				- [`mrr_cost_based=off`](#mrr_cost_basedoff)
+				- [`mrr_sort_keys=off`](#mrr_sort_keysoff)
+				- [`outer_join_with_cache=on`](#outer_join_with_cacheon)
+				- [`semijoin_with_cache=on`](#semijoin_with_cacheon)
+				- [`join_cache_incremental=on`](#join_cache_incrementalon)
+				- [`join_cache_hashed=on`](#join_cache_hashedon)
+				- [`join_cache_bka=on`](#join_cache_bkaon)
+				- [`optimize_join_buffer_size=off`](#optimize_join_buffer_sizeoff)
+				- [`table_elimination=on`](#table_eliminationon)
+				- [`extended_keys=on`](#extended_keyson)
+				- [`exists_to_in=on`](#exists_to_inon)
+				- [`orderby_uses_equalities=on`](#orderby_uses_equalitieson)
+				- [`condition_pushdown_for_derived=on`](#condition_pushdown_for_derivedon)
+				- [`split_materialized=on`](#split_materializedon)
 			- [执行器](#执行器)
 		- [一次更新运行流程(WAL: Write-Ahead Logging)](#一次更新运行流程wal-write-ahead-logging)
 			- [update 的实际执行流程:](#update-的实际执行流程)
@@ -60,7 +90,15 @@
 			- [注意事项](#注意事项)
 			- [索引优化](#索引优化)
 			- [字符串索引](#字符串索引)
-		- [优化器](#优化器-1)
+			- [索引失效案例及其起因](#索引失效案例及其起因)
+				- [索引低区分度的大表](#索引低区分度的大表)
+				- [null](#null)
+				- [OR](#or)
+				- [复合索引](#复合索引)
+				- [函数操作和运算操作](#函数操作和运算操作)
+				- [like 操作](#like-操作)
+				- [隐式类型转换](#隐式类型转换)
+		- [优化器](#优化器)
 			- [MySQL 优化指令](#mysql-优化指令)
 		- [脏页及其控制处理](#脏页及其控制处理)
 			- [`innodb_io_capacity`: innodb 一次刷新到磁盘的脏页数](#innodb_io_capacity-innodb-一次刷新到磁盘的脏页数)
@@ -71,10 +109,10 @@
 			- [相关全局参数](#相关全局参数)
 				- [`max_length_for_sort_data`](#max_length_for_sort_data)
 				- [`sort_buffer_size`](#sort_buffer_size)
-				- [max_length_for_sort_data](#max_length_for_sort_data)
 			- [通过索引优化](#通过索引优化)
 				- [为 (city, name) 建立联合索引](#为-city-name-建立联合索引)
 				- [为 (city, name, age) 建立联合索引, 以使用 *覆盖索引*](#为-city-name-age-建立联合索引-以使用-覆盖索引)
+			- [order by limit 的不稳定输出](#order-by-limit-的不稳定输出)
 			- [结论](#结论)
 		- [随机获取行](#随机获取行)
 			- [内存临时表](#内存临时表)
@@ -82,7 +120,7 @@
 			- [优先队列(最大/最小堆)算法](#优先队列最大最小堆算法)
 		- [函数与索引](#函数与索引)
 			- [条件字段的函数操作](#条件字段的函数操作)
-			- [隐式类型转换](#隐式类型转换)
+			- [隐式类型转换](#隐式类型转换-1)
 			- [隐式字符编码转换](#隐式字符编码转换)
 		- [事务与查询与锁](#事务与查询与锁)
 		- [MySQL 加锁规则](#mysql-加锁规则)
@@ -146,10 +184,11 @@
 			- [全表扫描时, InnoDB 层的影响](#全表扫描时-innodb-层的影响)
 			- [课后问题](#课后问题-2)
 		- [JOIN](#join)
-			- [NLJ(Index Nested-Loop Join)](#nljindex-nested-loop-join)
-			- [Simple Nested-Loop Join](#simple-nested-loop-join)
+			- [INLJ/Index Nested-Loop Join](#inljindex-nested-loop-join)
+			- [SNLJ(Simple Nested-Loop Join)](#snljsimple-nested-loop-join)
 			- [BNL(Block Nested-Loop Join)](#bnlblock-nested-loop-join)
-			- [课后问题 (BNL 的性能问题)](#课后问题-bnl-的性能问题)
+			- [HJ(Hash Join)](#hjhash-join)
+			- [课后问题(BNL 的性能问题)](#课后问题bnl-的性能问题)
 			- [MRR(Multi-Range Read) 优化](#mrrmulti-range-read-优化)
 			- [BKA(Batched Key Access)](#bkabatched-key-access)
 			- [课后问题](#课后问题-3)
@@ -179,7 +218,7 @@
 			- [insert into...on duplicate key update](#insert-intoon-duplicate-key-update)
 		- [复制表](#复制表)
 			- [mysqldump](#mysqldump)
-				- [特点:](#特点)
+				- [特点](#特点)
 			- [导出 CSV 文件](#导出-csv-文件)
 			- [物理拷贝](#物理拷贝)
 		- [Grant](#grant)
@@ -197,7 +236,7 @@
 			- [Simple Nested Loop Join 的性能问题](#simple-nested-loop-join-的性能问题)
 			- [distinct 和 group by 的异同](#distinct-和-group-by-的异同)
 			- [备库自增主键](#备库自增主键)
-		- [自增主键用完](#自增主键用完)
+		- [如果自增主键用完](#如果自增主键用完)
 			- [表定义自增键](#表定义自增键)
 			- [InnoDB 系统自增 row_id](#innodb-系统自增-row_id)
 			- [Server XID](#server-xid)
@@ -215,8 +254,37 @@
 		- [MySQL 配置](#mysql-配置)
 		- [go-sql-driver](#go-sql-driver)
 		- [`show processlist.state`](#show-processliststate)
+		- [Mini-transaction](#mini-transaction)
+			- [The FIX Rules](#the-fix-rules)
+			- [Write-Ahead Log](#write-ahead-log)
+			- [Force-log-at-commit](#force-log-at-commit)
+			- [源码](#源码)
+		- [一致性与隔离级别的关系](#一致性与隔离级别的关系)
+		- [JSON](#json)
+		- [触发器/存储过程](#触发器存储过程)
+		- [`sql_mode`](#sql_mode)
+			- [`ONLY_FULL_GROUP_BY`](#only_full_group_by)
+		- [MySQL 索引结构](#mysql-索引结构)
+		- [InnoDB 与 B+ Tree](#innodb-与-b-tree)
+		- [地理信息](#地理信息)
+			- [Geometry](#geometry)
+			- [R-Tree](#r-tree)
+		- [Group by 与索引扫描](#group-by-与索引扫描)
+			- [松散索引扫描(Loose Index Scan)](#松散索引扫描loose-index-scan)
+			- [Skip scan range](#skip-scan-range)
+			- [紧凑索引扫描(Tight Index Scan)](#紧凑索引扫描tight-index-scan)
+		- [Insert into ... select 加锁规则](#insert-into--select-加锁规则)
+	- [技巧](#技巧)
+		- [字符串优化](#字符串优化)
 
 <!-- /TOC -->
+
+## ACID
+
+- 原子性(Atomicity): undo log
+- 隔离性(Isolation): next-key lock 和 MVCC
+- 持久性(Durability): InnoDB 的 redo log 和 binlog 的 2PL 规则
+- 一致性(Consistency): 由以上三者保证
 
 ## 数据库语言
 
@@ -286,19 +354,19 @@ EXPLAIN [extended] SELECT * FROM table;
 获得该此 sql 语句的执行信息:
 - `id`: (该连接的?) SQL 执行顺序
 - `select_type`: 子查询中每个 select 子句的类型
-  - `SIMPLE`: (简单 SELECT, 不使用 UNION 或子查询等)
-  - `PRIMARY`: (查询中若包含任何复杂的子部分, 最外层的 select 被标记为 PRIMARY)
-  - `UNION`: (UNION 中的第二个或后面的 SELECT 语句)
-  - `DEPENDENT UNION`: (UNION 中的第二个或后面的 SELECT 语句, 取决于外面的查询)
-  - `UNION RESULT`: (UNION 的结果)
-  - `SUBQUERY`: (子查询中的第一个 SELECT)
-  - `DEPENDENT SUBQUERY`: (子查询中的第一个 SELECT, 取决于外面的查询)
-  - `DERIVED`: (派生表的 SELECT, FROM 子句的子查询)
+  - `SIMPLE`: 简单 SELECT, 不使用 UNION 或子查询等
+  - `PRIMARY`: 查询中若包含任何复杂的子部分, 最外层的 select 被标记为 PRIMARY
+  - `UNION`: UNION 中的第二个或后面的 SELECT 语句
+  - `DEPENDENT UNION`: UNION 中的第二个或后面的 SELECT 语句, 取决于外面的查询
+  - `UNION RESULT`: UNION 的结果
+  - `SUBQUERY`: 子查询中的第一个 SELECT
+  - `DEPENDENT SUBQUERY`: 子查询中的第一个 SELECT, 取决于外面的查询
+  - `DERIVED`: 派生表的 SELECT, FROM 子句的子查询
   - `UNCACHEABLE SUBQUERY`: (一个子查询的结果不能被缓存, 必须重新评估外链接的第一行)
 - `table`: 这一行的数据是属于那一个 table 的, 如果是临时表也会有临时表的表名称
 - `type`: mysql 在表中找到所需行的方式, 又称 **访问类型**
   - `ALL`: Full Table Scan, MySQL 将遍历全表以找到匹配的行
-  - `index`: Full Index Scan，index 与 ALL 区别为 index 类型只遍历索引树
+  - `index`: Full Index Scan, index 与 ALL 区别为 index 类型只遍历索引树
   - `range`: 只检索给定范围的行, 使用一个索引来选择行
   - `ref`: 表示上述表的连接匹配条件, 即哪些列或常量被用于查找索引列上的值
   - `eq_ref`: 类似 ref, 区别就在使用的索引是唯一索引, 对于每个索引键值, 表中只有一条记录匹配, 简单来说, 就是多表连接中使用 primary key 或者 unique key 作为关联条件
@@ -308,13 +376,13 @@ EXPLAIN [extended] SELECT * FROM table;
 - `key`: mysql 在当前查询中实际使用的索引
 - `key_len`: **索引** 中使用的字节数, 可通过该列计算查询中使用的索引的长度
   - 显示的值为索引字段的 **最大可能长度** , 并非实际使用长度, 即 `key_len` 是根据表定义计算而得, 不是通过表内检索出的
-- `ref`: 表示上述表的连接匹配条件，即哪些列或常量被用于查找索引列上的值
+- `ref`: 表示上述表的连接匹配条件, 即哪些列或常量被用于查找索引列上的值
 - `rows`: 表的行数 -- 根据表统计信息及索引选用情况, 估算(?)的找到所需的记录所需要读取的行数
 - `extra`: 用于表示 mysql 解决查询的详细信息
   - `using where`: 列数据是从仅仅使用了索引中的信息而没有读取实际的行动的表返回的, 这发生在对表的全部的请求列都是同一个索引的部分的时候, 表示 mysql 服务器将在存储引擎检索行后再进行过滤
-  - `using temporary`: 表示 MySQL 需要使用临时表来存储结果集, 常见于排序和分组查询
-  - `using filesort`: MySQL 中无法利用索引完成的排序操作称为 **文件排序**
-  - `using join buffer`: 改值强调了在获取连接条件时没有使用索引, 并且需要连接缓冲区来存储中间结果. 如果出现了这个值, 那应该注意, 根据查询的具体情况可能需要添加索引来改进性能
+  - `using temporary`: 表示 MySQL 需要使用临时表来存储结果集(`show global status like '%tmp%'`), 常见于排序和分组查询; 是否触发 `using temporary` 的关键是: 临时表大小 > `min(tmp_table_size, max_heap_table_size)` (default: 16M)
+  - `using filesort`: MySQL 中无法利用索引完成的排序操作都称为 **filesort**; 先在(`sort_buffer_size`/内存 filesort 的限制: default 16M; `max_length_for_sort_data`/内存结果集的字段总长度限制: default 1024/4096 {if 字段数量总和 < `max_length_for_sort_data` then `<sort_key, additional_fields>` else `<sort_key,rowid>`}); 评定是否合适: `sort_merge_passes`
+  - `using join buffer`: 该值强调了在获取连接条件(join)时没有使用索引, 并且需要连接缓冲区来存储中间结果. 如果出现了这个值, 那应该注意, 根据查询的具体情况可能需要添加索引来改进性能
   - `impossible where`: 这个值强调了 where 语句会导致没有符合条件的行
   - `select tables optimized away`: 这个值意味着仅通过使用索引, 优化器可能仅从聚合函数结果中返回一行
 
@@ -323,7 +391,7 @@ EXPLAIN [extended] SELECT * FROM table;
 - `EXPLAIN` 不考虑各种 Cache
 - `EXPLAIN` 不能显示 MySQL 在执行查询时所作的优化工作
 - 部分统计信息是估算的, 并非精确值
-- `EXPALIN` 只能解释 SELECT 操作，其他操作要重写为 SELECT 后查看执行计划
+- `EXPALIN` 只能解释 SELECT 操作, 其他操作要重写为 SELECT 后查看执行计划
 
 ### 获取有关数据库和表的信息
 
@@ -348,9 +416,9 @@ EXPLAIN [extended] SELECT * FROM table;
 
 - `SHOW ENGINE innodb status;` -- 最新一次记录的死锁日志(记录的是 **等待锁的 sql 语句** 记录, 而不是 完整事务 的 sql 记录)
   - 在死锁检查里面:
-    - lock_mode X waiting -- next-key lock
-    - lock_mode X locks rec but not gap -- 行锁
-    - locks gap before rec -- 间隙锁
+    - `lock_mode X waiting` -- next-key lock
+    - `lock_mode X locks rec but not gap` -- 行锁
+    - `locks gap before rec` -- 间隙锁
 
 - `SHOW BINARY LOGS;` -- 当前 Master 未过期的 binlog
 
@@ -372,19 +440,19 @@ generated column(>=5.7):
 
 - mysql: 系统数据库
   - `columns_stats`: 引擎无关的表统计信息, 基于直方图的统计功能
-  - `columns_priv`: **列** 级权限相关的信息 -- <a href="#permission">权限</a>
+  - `columns_priv`: **列** 级权限相关的信息 -- [权限](#mysqlmariadb-权限)
   - `db`: 与 **数据库** 权限相关的信息
   - `event`
   - `func`
   - `general_log` -- 常规日志(general log)内容
-  - `gitd_slave_pos` -- 用于从属服务器的复制
+  - `gtid_slave_pos` -- 用于从属服务器的复制
   - `help_category` -- HELP 命令使用的表, 用于地理信息相关, 其他的 help 信息相关的还有 help_keyword, help_relation, help_topic
   - `host` -- 主机及其权限的表, 将在 MariaDB_10.4 版本去除
   - `index_stats` -- 存储与引擎无关的表统计信息, 索引相关(?)
   - `innodb_index_stats` -- 与 InnoDB 持久统计相关的信息, 包含每个索引的多个行
   - `innodb_table_stats` -- 与 InnoDB 持久统计相关的信息, 每个表一行
   - `ndb_binlog_index` -- 兼容 MySQL Cluster , 将在 MariaDB_10.4 版本去除
-  - `plugin` -- 使用 INSTALL_SONAME, INSTALL_PLUGIN 或者 mysql_plugin 等插件列表; 不包含有关内置插件或使用 --plugin-load 选项加载的插件的信息
+  - `plugin` -- 使用 INSTALL_SONAME, INSTALL_PLUGIN 或者 mysql_plugin 等插件列表; 不包含有关内置插件或使用 `--plugin-load` 选项加载的插件的信息
   - `proc` -- 包含存储过程和存储函数的信息, 该信息与 INFORMATION_SCHEMA.ROUTINES 表中存储的信息相似
   - `procs_priv` -- 包含存储过程和存储函数 **权限** 的信息, 同时 INFORMATION_SCHEMA.ROUTINES 派生自 mysql.procs_priv
   - `roles_mapping` -- 包含与角色(roles)相关的信息
@@ -400,10 +468,10 @@ generated column(>=5.7):
   - `transaction_registry` -- **事务**精确版本控制
   - `user` -- 访问服务器上的用户的权限, 及其全局权限的信息
 
-<h2 id="permission">MYSQL/MARIADB 权限</h2>
+## MYSQL/MARIADB 权限
 
 - Global Privileges
-  - `CREATE USER`j
+  - `CREATE USER`
   - `FILE`
   - `GRANT OPTION` -- 授予(当前用户拥有的)全局权限
   - `PROCESS` -- 运行 SHOW PROCESSLIST 或者 显示与活动进程相关的信息
@@ -486,8 +554,7 @@ generated column(>=5.7):
 
 ### General Log
 
-mysql 接收到的每一个命令, 无论成功与否都记录下来
-需要相当高的系统开销, 一般用于 **调试** 阶段
+mysql 接收到的每一个命令, 无论成功与否都记录下来; 需要相当高的系统开销, 一般用于 **调试** 阶段
 
 ### Slow Log
 
@@ -495,7 +562,7 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 
 - `slow_query_log = 1`
 - 慢查询设置(`log_query_time`)时间级别是 微秒级(us)
-- 写入文件到 `slow_query_log_file`, 写入表到 mysql.slow_log
+- 写入文件到 `slow_query_log_file`, 写入表到 `mysql.slow_log`
 - `log_queries_not_using_indexes` -- 执行 不使用索引或者不限制行数 的查询都会被记录
 - `log_slow_admin_statements` -- 设置存储缓慢的管理查询, 包括 ALTER TABLE / ANALYZE TABLE / CHECK TABLE / CREATE INDEX / DROP INDEX / OPTIMIZE TABLE / REPAIR TABLE
 - `log_slow_disabled_statements` -- 禁止某些类型语句的记录(admin / call / slave / sp(存储过程))
@@ -508,14 +575,13 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 - `log_slow_filter` -- 通过 ',' 分割; 过滤器: 如果需要记录的查询同时 **匹配过滤器中的某类型** , 则将其记录到慢日志中:
   - `admin` / `filesort` / `filesort_on_disk` / `filesort_priority_queue`(>= MariaDB 10.3.1) / `full_join` / `full_scan` / `query_cache` / `query_cache_miss` / `tmp_table` / `tmp_table_on_disk`
 
-### Bin Log
+### Binlog
 
-包含数据库 **所有** 更改(CREATE ALTER INSERT UPDATE DELETE)的记录(即使该记录对数据不影响)
-是 **复制** 所必备的, 可用于备份后还原数据
+包含数据库 **所有** 更改(CREATE ALTER INSERT UPDATE DELETE)的记录(即使该记录对数据不影响), 是 **复制** 所必备的, 可用于备份后还原数据
 
-- `sql_log_bin = 1` -- 开启 二进制日志
+- `sql_log_bin = 1` -- 开启 binlog
 - `max_binlog_size` -- 单日志文件限制尺寸
-- 写入文件到 `log_bin_basename`, 通过 SHOW BINARY LOGS; 查询二进制日志文件列表
+- 写入文件到 `log_bin_basename`, 通过 SHOW BINARY LOGS; 查询 binlog 文件列表
 
 完整 Binlog 的标志:
 - statement 格式: 以 COMMIT 结尾
@@ -540,7 +606,7 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 
 ##### STATEMENT
 
-记录所有对表或结构进行更改的 SQL 语句
+记录所有对表或结构进行更改的 **SQL 语句**
 
 ##### ROW
 
@@ -549,7 +615,6 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 `binlog_row_image`: { MINIMAL | FULL }:
 - 默认为 FULL, 记录每一行的变更
 - MINIMAL : 只记录影响后的行 (注: 腾讯云)
-
 
 ##### MIXED
 
@@ -567,17 +632,16 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 - [MIXED](https://mariadb.com/kb/en/library/binary-log-formats/)
 
 **注意**:
-
 - 直接编辑 mysql 数据库, 则根据 `binlog_format` 执行日志记录
-- 间接编辑 mysql 数据库, 则统一通过 **语句日志** 记录
+- 间接编辑 mysql 数据库(主从复制 ?), 则统一通过 **语句日志** 记录
 
 ### Redo Log: 重做日志
 
-脏页记录, 确保事务的持久性
+InnoDB 的脏页记录, 确保事务的持久性
 
 ### Undo Log: 回滚日志
 
-保存事务前的 mysql-MVCC 版本(视图)
+InnoDB 保存事务前的 MySQL-MVCC 版本(视图)
 
 ### 附议
 
@@ -590,7 +654,7 @@ mysql 接收到的每一个命令, 无论成功与否都记录下来
 
 #### redo log 与 binlog 关联
 
-依靠 XID 关联, 崩溃恢复时, 按顺序扫描 redo log 并恢复
+依靠 XID(事务 ID) 关联, 崩溃恢复时, 按顺序扫描 redo log 并恢复
 
 ## 复制
 
@@ -627,8 +691,10 @@ log-basename = master1 # mariadb 独有
 
 ## 线程池
 
-- thread_handling = pool-of-threads # 开启线程池
-- thread_handling = one-thread-per-connection # 一连接一线程
+```conf
+# 开启线程池 | 一连接一线程
+thread_handling = { pool-of-threads | one-thread-per-connection }
+```
 
 ### 线程池功能
 
@@ -654,7 +720,7 @@ log-basename = master1 # mariadb 独有
 
 配置
 
-在主库安装 semisync_master 插件：
+在主库安装 semisync_master 插件:
 
 ```shell
 mysql> INSTALL PLUGIN rpl_semi_sync_master SONAME 'semisync_master.so'; # linux
@@ -687,14 +753,14 @@ rpl_semi_sync_master_timeout=1000
 
 #### 连接器
 
-- Mysql 在执行过程中临时使用的内存是管理在 **连接对象** 里面的, 该资源只有在断开才释放; 此时建议在执行 较大的操作/长时间的操作 后执行 **mysql_reset_connection** 重建连接, 该过程不执行重连和权限验证, 仅将 [连接恢复](https://mariadb.com/kb/en/library/mysql_reset_connection/)
+- MySQL 在执行过程中 临时内存 是管理在 **连接对象** 里面的, 该资源只有在断开才释放; 此时建议在执行 较大的操作/长时间的操作 后执行 **mysql_reset_connection** 重建连接, 该过程不执行重连和权限验证, 仅将 [连接恢复](https://mariadb.com/kb/en/library/mysql_reset_connection/)
 
 #### 查询缓存
 
-- 查询缓存会因为一次 插入/更新/删除 操作而失效, 因此一般建议关闭 **查询缓存(query_cache_type=OFF)**, (该参数在 > mysql 8.0 已丢弃)
+- 查询缓存会因为一次 插入/更新/删除 操作而失效, 因此一般建议关闭 查询缓存(`query_cache_type=OFF`), (该参数在 > mysql 8.0 已丢弃)
 - 一般建议在需要使用查询缓存的地方设置 **SQL_CACHE**, 例如:
   - `SELECT SQL_CACHE * FROM T WHERE ID=10;`
-- **注**: MySQL 8.0 删除查询缓存功能; Mariadb 依然有该变量
+- **注**: MySQL 8.0 删除查询缓存功能; MariaDB 依然有该变量
 
 #### 分析器
 
@@ -703,43 +769,83 @@ rpl_semi_sync_master_timeout=1000
   - 其中包括对字段是否正确的判断 -- 依据: 字段不同于表数据, 结构事先已经缓存在 server 中
 - 语义解析
 
-#### 优化器
+#### 优化器策略
 
-MySQL 对 ast 执行树的优化
+MySQL 对 AST 执行树的优化
 
-`optimizer_switch`: 优化器策略
-- `index_merge=on`
-- `index_merge_union=on`
-- `index_merge_sort_union=on`
-- `index_merge_intersection=on`
-- `index_merge_sort_intersection=off`
-- `engine_condition_pushdown=off`
-- `index_condition_pushdown=on`
-- `derived_merge=on`
-- `derived_with_keys=on`
-- `firstmatch=on`
-- `loosescan=on`
-- `materialization=on`
-- `in_to_exists=on`
-- `semijoin=on`
-- `partial_match_rowid_merge=on`
-- `partial_match_table_scan=on`
-- `subquery_cache=on`
-- `mrr=off`
-- `mrr_cost_based=off`
-- `mrr_sort_keys=off`
-- `outer_join_with_cache=on`
-- `semijoin_with_cache=on`
-- `join_cache_incremental=on`
-- `join_cache_hashed=on`
-- `join_cache_bka=on`
-- `optimize_join_buffer_size=off`
-- `table_elimination=on`
-- `extended_keys=on`
-- `exists_to_in=on`
-- `orderby_uses_equalities=on`
-- `condition_pushdown_for_derived=on`
-- `split_materialized=on`
+`optimizer_switch`: 优化器策略, 各策略如下
+
+##### `index_merge=on`
+
+多个索引交集/并集访问
+
+注意:
+- Version<5.6.7, 只要有 range 的部分, 那么就不会选择 index-merge
+- Version>=5.6.7
+
+部分参数:
+- `index_merge_union=on` 与 `index_merge_sort_union=on` 差异在于 `sort_union` 可能需要获得所有行, 然后排序
+- `index_merge_union=on` 与 `index_merge_intersection=on` 差异在于 前者是 并集索引合并, 后这是 交集索引合并(通过 复合索引 解决)
+- `index_merge_intersection=on` `index_merge_sort_intersection=off`
+
+##### `engine_condition_pushdown=off`
+
+目前只用在 NDB 下
+
+##### `index_condition_pushdown=on`
+
+- Version<5.6, 匹配第一个(where)查询的结果, 回表, 在 Server 层 完成剩下的匹配
+- **Version>=5.6, 索引下推技术(Debug)** ; MySQL 引擎层 会尽可能在一次非聚簇索引中完成对查询(例如 where)的匹配, 减少回表次数
+
+##### `derived_merge=on`
+
+##### `derived_with_keys=on`
+
+##### `firstmatch=on`
+
+##### `loosescan=on`
+
+##### `materialization=on`
+
+##### `in_to_exists=on`
+
+##### `semijoin=on`
+
+##### `partial_match_rowid_merge=on`
+
+##### `partial_match_table_scan=on`
+
+##### `subquery_cache=on`
+
+##### `mrr=off`
+
+##### `mrr_cost_based=off`
+
+##### `mrr_sort_keys=off`
+
+##### `outer_join_with_cache=on`
+
+##### `semijoin_with_cache=on`
+
+##### `join_cache_incremental=on`
+
+##### `join_cache_hashed=on`
+
+##### `join_cache_bka=on`
+
+##### `optimize_join_buffer_size=off`
+
+##### `table_elimination=on`
+
+##### `extended_keys=on`
+
+##### `exists_to_in=on`
+
+##### `orderby_uses_equalities=on`
+
+##### `condition_pushdown_for_derived=on`
+
+##### `split_materialized=on`
 
 #### 执行器
 
@@ -772,16 +878,15 @@ redo log 与 binlog 差异:
   - redo log 记录了 这个页 "做了什么改动"
   - binlog 有两种模式: `statement` 记录 `sql` 语句; `row` 格式记录 **更新前 和 更新后** 两条记录
 - `redo log` 是循环写的, 空间固定可能用完; `binlog` 可以追加, 即 写到在一定大小后, 会切换到下一份文件, 而不是覆盖以前的日志 -- 因此: `binlog` 的 **归档** 功能确定了目前它还是无法被 `redo log` 替代
-
-同时 redo log 和 binlog 通过 "事务 ID" 对应
+- redo log 和 binlog 通过 "XID/事务 ID" 关联
 
 ![update 语句执行流程](2e5bff4910ec189fe1ee6e2ecc7b4bbe.png)
 
 WAL 得益于两方面:
-- redo log 和 binlog 都是顺序写, 磁盘的顺序写比随机写速度快
+- redo log 和 binlog 都是顺序写, 基于机械硬盘的顺序写比随机写速度快
 - 组提交机制, 可以大幅度降低磁盘的 IOPS 消耗
 
-**WAL 机制只保证写完了 redo log 和 内存, 不保证写数据到磁盘**
+**WAL 机制只保证写完了 redo log 和 内存(write), 不保证写数据到磁盘(fsync)**
 
 #### update 的实际执行流程:
 
@@ -795,8 +900,8 @@ WAL 得益于两方面:
 
 用于保证提交都是成功的(双 1 策略)
 
-- `innodb_flush_log_at_trx_commit`: 每次事务的 `redo log` 都直接持久化到磁盘
-- `sync_binlog`: 每次事务的 `binlog` 都直接持久化到磁盘
+- `innodb_flush_log_at_trx_commit`: 每次事务的 `redo log` 都直接持久化(fsync)到磁盘
+- `sync_binlog`: 每次事务的 `binlog` 都直接持久化(fsync)到磁盘
 
 避免长事务对业务的影响
 
@@ -825,33 +930,33 @@ show index from table;
 ```
 
 - Table
-- Non_unique
-- Key_name: 索引名
-- Seq_in_index: 索引中的列序列号(begin by 1), 用于复数索引
-- Column_name: 列名
-- Collation: 列以什么方式存储在索引中 --  MySQL 中, 有值'A'(升序) 或 NULL(无分类)
-- Cardinality: 索引的散列程度 -- 索引中唯一值的数量的估计值, 通过 mysql 的 ANALYZE 操作可优化索引
-- Sub_part: 如果列只是被部分地编入索引, 则为被编入索引的字符的数目. 如果整列被编入索引, 则为 NULL
-- Packed: 指示关键字如何被压缩 -- 如果没有被压缩, 则为 NULL
-- Null: 该列是否含有 NULL(?, 不是应该意思是 [该列是否未被设置 NON-NULL]) -- 如果有, 则含有 YES. 如果没有, 则该列含有 NO
-- Index_type: 索引方法 -- BTREE, FULLTEXT, HASH, RTREE
-- Comment
-- Index_comment
-- Visible(>= mysql 8.0): 该索引是否可使用; (注: 插入/删除/更新 操作无视该变量, 而依然操作索引)
-- Expression(>= mysql 8.0): TODO:
+- `Non_unique`
+- `Key_name`: 索引名
+- `Seq_in_index`: 索引中的列序列号(begin by 1), 用于复数索引
+- `Column_name`: 列名
+- `Collation`: 列以什么方式存储在索引中 --  MySQL 中, 有值'A'(升序) 或 NULL(无分类)
+- `Cardinality`: 索引的散列程度 -- 索引中唯一值的数量的估计值, 通过 mysql 的 ANALYZE 操作可优化索引
+- `Sub_part`: 如果列只是被部分地编入索引, 则为被编入索引的字符的数目. 如果整列被编入索引, 则为 NULL
+- `Packed`: 指示关键字如何被压缩 -- 如果没有被压缩, 则为 NULL
+- `Null`: 该列是否含有 NULL(?, 不是应该意思是 [该列是否未被设置 NON-NULL]) -- 如果有, 则含有 YES. 如果没有, 则该列含有 NO
+- `Index_type`: 索引方法 -- BTREE, FULLTEXT, HASH, RTREE
+- `Comment`
+- `Index_comment`
+- `Visible(>= mysql 8.0)`: 该索引是否可使用; (注: 插入/删除/更新 操作无视该变量, 而依然操作索引)
+- `Expression(>= mysql 8.0)`: TODO:
 
 #### 注意事项
 
 - 主键
   - 主键索引的叶子节点存的是 **整行数据**
-  - 非主键索引的叶子节点存的是 **主键的值**, 即查询非主键索引比查询主键索引多了一次查询 B 树的次数(回表)
+  - 非主键索引的叶子节点存的是 **主键的值**(即 `<index, id>` 的结构), 即查询非主键索引比查询主键索引多了一次查询 B 树的次数(回表)
 - 尽量自增主键
-  - B 树为了维护索引 **有序性**, 在插入新值的时候需要做必要的维护(页分裂/页合并), 影响性能以及空间利用率
+  - B 树为了维护索引 **有序性**, 在 插入新值 的时候需要做必要的维护(页分裂/页合并), 影响性能以及空间利用率
   - 自增主键长度小, 普通索引的叶子节点就越小, 普通索引占用的空间也就越小
 - 使用 **业务字段(如身份证)** 作为主键的场景
   - 只有一个索引
   - 该索引必须是唯一索引
-- 回到主键索引树搜索的过程，称为回表
+- 回到主键索引树搜索的过程, 称为回表
 
 #### 索引优化
 
@@ -862,7 +967,14 @@ show index from table;
 3. 联合索引
   - 根据创建联合索引的顺序, 以最左原则进行 where 检索, 比如 (age, name) 以 `age=1` 或 `age=1 and name='张三'` (同时 `name='张三' and age=1` 由于 server 会优化顺序, 与前者结果相同) 可以使用索引; 单以 name=‘张三’ 不会使用索引, 考虑到存储空间的问题, 还请根据业务需求, 将查找频繁的数据进行 **靠左** 创建索引
 4. 索引下推
-  - like 'hello%’and age > 10 检索, MySQL 5.6 版本之前, 会对匹配的数据进行回表查询; 5.6 版本后, 会先过滤掉 age<10 的数据, 再进行回表查询, 减少回表率, 提升检索速度
+  - `like 'hello%'and age > 10` 检索, MySQL 5.6 版本之前, 会对匹配的数据进行回表查询; 5.6 版本后, 会先过滤掉 age<10 的数据, 再进行回表查询, 减少回表率, 提升检索速度
+5. `change buffer(merge tree)`:
+  - `innodb_change_buffer_max_size` -- change buffer 占 buffer pool 的百分比(最高 100)
+  - **更新数据页时**, (如果数据页在内存中就直接更新;) 还没有在内存中的话, 在不影响数据一致性的前提下, InnoDB 会将这些更新操作缓存在 change buffer 中, 而不直接持久化
+  - 下次需要访问 查询 这个数据页的时候, 将数据页读入内存, change buffer 中与这个页有关的内容执行 merge
+  - **唯一索引** 需要保证索引的唯一性, 所有的更新操作都需要检查 唯一性约束, 因此唯一索引的更新不能触发 change buffer 优化
+
+![change buffer](u45zwcoilv.jpg)
 
 #### 字符串索引
 
@@ -872,6 +984,7 @@ show index from table;
 select count(distinct col)/count(*) as dist from table;
 ```
 
+关键:
 - 直接建立完整索引, 占空间
 - 建立 前缀索引 重点关注 **区分度**, 要求在满足区分度的同时利用上 前缀索引 带来的优化
 - 前缀索引 不能同时利用上 覆盖索引 的优化(因为前缀索引必须回表, 以确定查询是否正确)
@@ -888,6 +1001,57 @@ select count(distinct col)/count(*) as dist from table;
   - 倒序依然是同样的索引, 但是 Hash 需要添加一个比对用的字段
   - 从 CPU 计算复杂度: 一个是 `reverse`, 一个是 `hashEncoding`
   - 从查询效率看: 比起使用的依然是 前缀索引 方式的倒序索引, Hash 一般更为稳定
+
+经验:
+- 使用 `str like "STR%"` 可以经过字符串前缀索引(, 其他形式 (`"%STR"`, `"S%TR"`) 无效)
+
+##### 部分参数
+
+- `innodb_large_prefix`:
+  - MySQL 索引长度有单列不超过 *767byte* 、总长度不超过 *3072byte* 的限制
+  - `innodb_large_prefix` 用于去除单列长度限制, 但总长度限制依然存在
+  - MySQL5.6 默认为 **OFF**, MySQL5.7 后默认为 **ON**
+
+#### 索引失效案例及其起因
+
+##### 索引低区分度的大表
+
+解析: 大表使用 **区分度低** 的索引会导致优化器放弃索引
+
+方案:
+- 取消该索引
+- 定期执行 `ANALYZE TABLE table;`
+
+##### null
+
+- 为 null 单列索引无法储 null 值, 复合索引无法存储全为 null 的值
+- 查询时, 采用 `is null` 条件时, 不能利用到索引, 只能全表扫描
+
+解析: null 值无法比较, 因此无法确定 null 在索引中的位置
+
+##### OR
+
+通过 OR 连接的查询列表里, 相关列必须 **都** 带有 索引 , 否则全表扫描
+
+解析: OR 是并集操作
+
+##### 复合索引
+
+使用复合索引时, 前面的索引要能用上, 后面的索引才有效
+
+解析: 复合索引以索引顺序从前往后有序
+
+##### 函数操作和运算操作
+
+解析: 函数和运算操作都有 可能 破坏索引的 **有序性**
+
+##### like 操作
+
+解析: 字符串索引是 **顺序** 的复合索引(MySQL 8.0 似乎添加了 DESC-Index), 能否索引 "%any" 这类?
+
+##### 隐式类型转换
+
+解析: 隐式类型转换类似于 函数操作 , 可能破坏索引的 **有序性**
 
 ---
 
@@ -946,7 +1110,7 @@ RAPAIR TABLE table [option];
 - `USE_FRM`: 只有当 MYI 文件丢失时才使用这个选项, 全面重建整个索引
 
 > 注意:
-> 在重建表的过程中, 页会按照 90% 的比例重新整理页数据(10% 留给 UPDATE 使用)
+> 在重建表的过程中, 页会按照 90% 的比例重新整理页数据(10% 留给 UPDATE 使用);
 > 因此如果该表在重建前利用率已经超过 90% , 重建后反而会导致文件更大
 
 ---
@@ -1002,9 +1166,9 @@ select city,name,age from t where city='杭州' order by name limit 1000;
 1. 初始化 sort_buffer, 确定放入 **name, city, age** 三个字段
 2. 从索引 city 找到第一个满足 `city='杭州'` 条件的主键 id, 也就是图中的 ID_X
 3. 从主键 id 索引取出整行, 取 name, city, age 三个字段的值, 存入 sort_buffer 中
-4. 重复步骤 3/4 直到 city 的值不满足查询条件为止, 对应的主键 id 也就是图中 ID_Y
+4. 重复步骤 3、4 直到 city 的值不满足查询条件为止, 对应的主键 id 也就是图中 ID_Y
 5. 对 sort_buffer 中的数据按照字段 name 做快速排序(该操作由 `sort_buffer_size` 控制是否使用临时文件排序)
-6. 按照排序结果取前 1000 行返回给客户端
+6. 按照排序结果取前 1000 行返回给客户端(解析: 因为 name 无序, 在获得全部满足 where 条件的行之前不能确定 name 的排序结果)
 
 ![全字段排序](6c821828cddf46670f9d56e126e3e772.jpg)
 
@@ -1013,7 +1177,7 @@ select city,name,age from t where city='杭州' order by name limit 1000;
 1. 初始化 sort_buffer, 确定放入两个字段 -- 用于索引的 **name 和 id**
 2. 从索引 city 找到第一个满足 `city='杭州'` 条件的主键 id, 即图中的 ID_X
 3. 到主键 id 索引取出整行, 取 name, id 字段, 存入 sort_buffer
-4. 重复步骤 3/4 直到不满足 `city='杭州'` 条件为止, 即图中的 ID_Y
+4. 重复步骤 3、4 直到不满足 `city='杭州'` 条件为止, 即图中的 ID_Y
 5. 对 sort_buffer 中的数据按照字段 name 进行排序(该操作由 `sort_buffer_size` 控制是否使用临时文件排序)
 6. (这步的回表操作是导致性能阻塞的所在, )遍历排序结果, 取前 1000 行, 并按照 id 的值回到元表中取出 city, name 和 age 三个字段并返回到客户端
 
@@ -1023,11 +1187,17 @@ select city,name,age from t where city='杭州' order by name limit 1000;
 
 ##### `max_length_for_sort_data`
 
-控制用于排序的行数据长度
-- <= `max_length_for_sort_data`: 全字段排序
-- > `max_length_for_sort_data`: rowid 排序
+default: 4096
+
+控制用于排序的行数据长度:
+- `<= max_length_for_sort_data`: 全字段排序
+- `> max_length_for_sort_data`: rowid 排序
 
 ##### `sort_buffer_size`
+
+default:
+- `innodb_sort_buffer_size`: 1048576
+- `sort_buffer_size`: 262144
 
 mysql 为排序设置的 sort_buffer 大小
 
@@ -1038,7 +1208,7 @@ mysql 为排序设置的 sort_buffer 大小
 可通过以下方法确定排序语句是否使用了临时文件(MariaDB 无效)
 
 ```sql
-/* 打开 optimizer_trace，只对本线程有效 */
+/* 打开 optimizer_trace, 只对本线程有效 */
 SET optimizer_trace='enabled=on';
 
 /* @a 保存 Innodb_rows_read 的初始值 */
@@ -1057,14 +1227,9 @@ select VARIABLE_VALUE into @b from performance_schema.session_status where varia
 select @b-@a;
 ```
 
-**注意: 如果需要用到临时文件, 则会使用外部排序(仅是临时文件是归并, 还是 sort_buffer 的算法也替换到归并?), 外部排序一般使用归并排序**
-
-##### max_length_for_sort_data
-
-控制用于排序的行数据长度
-
-- 小于 `max_length_for_sort_data`: 全字段排序
-- 大于 `max_length_for_sort_data`: `rowid` 排序
+注意
+- 如果需要用到临时文件, 则会使用外部排序, 外部排序一般使用归并排序(k 路归并)
+- 否则通过 堆排序(少量) 或者 快速排序(无 limit)
 
 #### 通过索引优化
 
@@ -1096,6 +1261,20 @@ alter table t add index city_user(city, name, age);
 3. 重复步骤 2 , 直到满足 `limit` 或者 不满足 `city='杭州'` 条件时循环结束
 
 ![(city, name, age) 联合索引后, 查询执行计划](df4b8e445a59c53df1f2e0f115f02cd6.jpg)
+
+#### order by limit 的不稳定输出
+
+在 **无索引** 的列中排序, mysql 有两种方式:
+- 快速排序: 无索引, 需要大量/全部结果
+- 堆排序: 无索引, 需要少量结果(<?)
+
+而 快速排序 和 堆排序 都是不稳定排序, 不能保证 目标列相同值 的排序结果稳定; 解决方案:
+
+```sql
+select column from tablen order by column , id limit count
+```
+
+**通过添加一个唯一属性的列, 保证目标列相同值的稳定(但是这里的唯一属性列没有索引的效果)**
 
 #### 结论
 
@@ -1135,7 +1314,7 @@ select word from words order by rand() limit 3;
 ```
 
 内部流程:
-1. 创建一个临时表(为了多出的 rand() 字段); 这个临时表使用的是 memory 引擎, 表里有两个字段, 第一个字段是 *double* 类型(R), 第二个字段是 *varchar(64)* 类型(W); 且该表没有索引
+1. 创建一个临时表(为了多出的 `rand()` 字段); 这个临时表使用的是 memory 引擎, 表里有两个字段, 第一个字段是 *double* 类型(R), 第二个字段是 *varchar(64)* 类型(W); 且该表没有索引
 2. 从 `words` 表中, 按主键顺序取出所有的 word 值, 对于每一个 word 值, 调用 rand() 生成一个大于 0 小于 1 的随机小数(double), 并把这个 随机小数(double) 和 word(varchar) 分别存入临时表的 R 和 W 字段中, 到此, 扫描行数是 10000
 3. 目前临时表中有 10000 行数据, 接下来需要在没有索引的内存临时表中, 按照字段 R(double) 排序
 4. 初始化 sort_buffer, sort_buffer 中有两个字段, double 和 整数
@@ -1150,9 +1329,9 @@ select word from words order by rand() limit 3;
 `rowid`:
 - 引擎用于唯一定位一行数据的信息
 - 对于有主键的 InnoDB 表来说, 这个 rowid 就是主键 ID
-- 对于没有主键的 InnoDB 表来说, 这个 rowid 就是由 **InnoDB** 生成的长度为 6 字节的 rowid
-- memory 引擎不是索引组织表, 在这个例子里面, 你可以认为它就是一个数组, 这个 rowid 其实就是数组的下标(尽管 memory 并没有 rowid)
-- rowid 是对 **InnoDB** 生效, 对 MySQL 透明的, 所以 **优化器** 不能利用 rowid 作为主键优化
+- 对于没有主键的 InnoDB 表来说, 这个 rowid 就是由 **InnoDB** 生成的长度为 6 byte(48bit)的 rowid
+- memory 引擎不是索引组织表, 在这个例子里面, 你可以认为它就是一个 **数组** , 这个 rowid 其实就是数组的下标(尽管 memory 并没有 rowid)
+- rowid 是对 存储引擎 生效, 对 MySQL 透明的, 所以 **优化器** **不能** 利用 rowid 作为主键优化
 
 即 **order by rand() 使用了内存临时表, 内存临时表排序的时候使用了 rowid 排序方法**
 
@@ -1160,7 +1339,7 @@ select word from words order by rand() limit 3;
 
 - `tmp_table_size` 这个配置限制了内存临时表的大小, 默认值是 16M
 - 如果临时表大小超过 `tmp_table_size`, 那么内存临时表就会转成磁盘临时表
-- 磁盘临时表使用的默认引擎由 `internal_tmp_disk_storage_engine` 设置(默认是 InnoDB), MariaDB 则是 `default_tmp_storage_engine` ?
+- 磁盘临时表使用的默认引擎由 `internal_tmp_disk_storage_engine`(`<MySQL?`)/`default_tmp_storage_engine`(`MySQL8.0/MariaDB`) 设置(默认是 InnoDB)
 
 #### 优先队列(最大/最小堆)算法
 
@@ -1184,10 +1363,11 @@ DEALLOCATE prepare stmt;
 ### 函数与索引
 
 - sql 语句的索引一般观察的是 **被驱动表** 的索引(select l from table)
+- 其实以下的转换和操作大多准循一个规则: **生成临时表**
 
 #### 条件字段的函数操作
 
-- (由于 B+ 树的有序性是按深度递增, )对索引字段作函数操作, 可能会破坏索引值的 **有序性** , 因而导致优化器决定放弃树搜索功能
+- (由于 B+ 树的有序性是按深度递增, )对索引字段作 **函数/运算** 操作, 可能会破坏索引值的 **有序性** , 因而导致优化器决定放弃树搜索功能
 - 即使运算不会破坏有序性, MySQL 也有可能不会考虑索引
 
 #### 隐式类型转换
@@ -1202,7 +1382,9 @@ DEALLOCATE prepare stmt;
 
 ### 事务与查询与锁
 
-- 查询(select) 的时候使用 `lock in share mode` 或者 `for update` 会导致该查询放弃该事务的视图, 而转用最新的视图, 如果使用了行锁, 则分别是添加 S 锁 或者 X 锁; 破坏了读可重复性, 但是由于不需要回滚 MVCC 版本, 查询效率更高(尤其是该查询的目标表已经进行了大量的更改)
+- 在显式事务(`begin`)中, 查询(select) 会使用当前的视图(如果未创建则先以最新的 XID 创建视图) 查询, 且不会添加任何锁
+- 在 `autocommit` 中, 查询(select) 使用最新 XID 来查询
+- 查询(select) 的时候使用 `lock in share mode` 或者 `for update` 会导致该查询放弃该事务的视图, 而转用最新的视图, 如果使用了行锁, 则分别是添加 S 锁 或者 X 锁; 破坏了读可重复性
 - 间隙锁, 锁的是查询到数据的间隙; **间隙锁之间不冲突**; 间隙锁是 前开后开 区间
 
 ---
@@ -1214,7 +1396,7 @@ DEALLOCATE prepare stmt;
   2. 查找过程中 访问到的对象(索引, 行等) 才加锁
 - 优化:
   1. 索引上的 **等值查询** , 给 唯一索引 加锁的时候, next-key lock 退化为 **行锁**
-  2. 索引上的 **等值查询**, **向右遍历** 时且 (在一个 next-key lock 区间)最后一个值 **不等于** 等值条件 的时候, next-key lock 退化为 **间隙锁**
+  2. 索引上的 **等值查询** , **向右遍历** 时且 (在一个 next-key lock 区间)最后一个值 **不等于** 等值条件 的时候, next-key lock 退化为 **间隙锁**
 - BUG:
   1. (唯一?)索引上的范围查询会访问到不满足条件的第一个值为止(, 并为该索引上锁)
 
@@ -1269,13 +1451,13 @@ redo log 写盘的 具体调用(function call):
 > `sync_binlog` 和 `innodb_flush_log_at_trx_commit` 都为 1:
 > 一个事务完整提交的同时需要经历 redo log (prepare 阶段) 和 binlog 两次写盘
 
-组提交机制:
+组提交(group commit)机制:
 - LSN(log sequence number / 日志逻辑序列号): 单调递增, 对应 redo log 的 **写入点** ; 每次写入 length 的 redo log, LSN 的值就加上 length
 - 并发事务在 perpare 阶段, 写完 redo log buffer , 准备持久化到磁盘; 该组的 leader (一般是第一个写盘的事务)以该组的 LSN 总和的方式写盘
 
 ![redo log 组提交](933fdc052c6339de2aa3bf3f65b188cc.png)
 
-![两阶段提交, 组提交细节](5ae7d074c34bc5bd55c82781de670c28.png)
+![两阶段提交细节](5ae7d074c34bc5bd55c82781de670c28.png)
 
 binlog 的 fsync 变量(mysql/mariadb):
 - `binlog_group_commit_sync_delay` / `binlog_commit_wait_usec`: 等待时间
@@ -1288,7 +1470,7 @@ binlog 的 fsync 变量(mysql/mariadb):
 #### 为什么 binlog cache 是每个线程独立维护, 而 redo log buffer 是全局共用
 
 - binlog 不能被打断: **一个事务的 binlog 必须连续写** , 因此要整个事务完成后, 再一起写到文件
-- redo log 为了减少写盘次数, 会携带并发时的其他事务一起写盘(LSN 机制)
+- redo log 为了减少写盘次数(IOPS), 会携带并发时的其他事务一起写盘(LSN 机制)
 
 #### binlog 已写盘 , redo log 也 commit 了, 但是因为网络原因, 客户端接受不到响应, 此时仍然是正常情况
 
@@ -1352,7 +1534,7 @@ MySQL 是在 binlog 中记录该命令的 server id, 以解决复制循环的问
 
 双 M 结构规定:
 - 两个库的 server id 必须不同, 如果相同, 则它们之间不能设定为主备关系
-- 一个备库接收到 binlog 并在重放的过程中, 生成于原 binlog 的 server id 相同的 binlog
+- 一个备库接收到 binlog 并在重放的过程中, 生成于原 binlog 的 server id 相同(GTID 相同?)的 binlog
 - 每个库在收到从字节的主库发过来的日志后, 先判断 server id , 如果与自己相同, 表示这个日志是自己生成的, 就直接丢弃这个日志
 
 按照上面逻辑, 如果我们设置了双 M 结构, 日志的执行流程应该是:
@@ -1480,11 +1662,11 @@ start slave;
 
 #### MySQL 5.7 的并行复制策略
 
-`slave-parallel-type`: 控制并行复制策略:
+`slave_parallel_type`: 控制并行复制策略:
 - `DATABASE`(default): 使用 5.6 的按库并行策略
 - `LOGICAL_CLOCK`: 再两阶段提交中, 只要能达到 redo log perpare 阶段, 就表示事务已经通过锁冲突的检验
   - 同时处于 **prepare** 状态的事务, 再备库执行时是可以并行的
-  - 处于 prepare 状态的事务, 与处于 commit 状态的事务之间, 在备库执行时也是可以并行的(? 如果修改同一行, 也可以吗 ?)
+  - 同一时间, 处于 prepare 状态的事务与处于 commit 状态的事务之间, 在备库执行时也是可以并行的
   - 那么通过组提交的策略, 通过控制 `binlog_group_commit_sync_delay` 和 `binlog_group_commit_sync_no_delay_count`, 提高备库复制的并行度
 
 ```conf
@@ -1501,10 +1683,15 @@ relay_log_recovery        = ON
 
 **注意: 该策略导致该版本的 binlog 不向下兼容**
 
-`binlog_transation_dependency_tracking`: 控制是否开启新策略
-- `COMMIT_ORDER`: 根据 redo log 的规则, 是否同时进入 `prepare` 和 `commit` 来判断是否可以并行的策略
+`binlog_transaction_dependency_tracking`: 控制是否开启新策略, 需要 `slave_parallel_type` 为 `LOGICAL_CLOCK`
+- `COMMIT_ORDER`(5.7): 根据 redo log 的规则, 是否同时进入 `prepare` 和 `commit` 来判断是否可以并行的策略
 - `WRITESET`: 对于事务涉及更新的每一行, 计算出这一行的 hash 值, 组成集合 `writeset`; 如果两个事务的 `writeset` 没有交集, 就认为没有操作相同的行, 可以并行
 - `WRITESET_SESSION`: 在 `WRITESET` 之上, 在主库上 同一个线程(**线程约束**) 先后执行的两个事务, 在备库执行的时候, 要保证相同的先后顺序
+
+`transaction_write_set_extraction`: `WRITESET*` 并行策略的 hash 方法:
+- OFF(default `<8.0.2`)
+- MURMUR32
+- XXHASH64(default `>=8.0.2`)
 
 相比 丁奇版 的 优势:
 - **writeset** 是在主库生成后 **直接写入到 binlog 里**; 那么在备库执行时, 不需要解析 binlog 内容(event 里的数据行) , 节省解析时的计算量
@@ -1805,6 +1992,11 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 #### rm 删除数据
 
 - 集群 方案解决
+
+![NDB 【读写分离+数据分片】集群方案](ndb_cluster.png)
+
+![InnoDB 【读写分离】集群方案](innodb_cluster.png)
+
 - 跨机房/跨城市 备份
   - 如果数据量大, 用物理备份 [xtrabackup](https://github.com/percona/percona-xtrabackup)
   - 如果数据量小, 用 mysqldump / mysqldumper
@@ -1815,7 +2007,7 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 - 备份脚本: 是对需要变更的数据备份到一张表中, 固定需要操作的数据行, 以便误操作或业务要求进行回滚
 - 执行脚本: 对数据变更的脚本, 为防 Update 错数据, 一般连备份表进行 Update 操作
 - 验证脚本: 验证数据变更或影响行数是否达到预期要求效果
-- 回滚脚本: 将数据回滚到修改前的状态。
+- 回滚脚本: 将数据回滚到修改前的状态
 
 小 tip:
 **chattr +i**: (无论什么权限)不能 添加/修改/删除/重命名 文件
@@ -1915,13 +2107,33 @@ InnoDB 的 LRU 完整流程:
 
 `STRAIGHT_JOIN`: 固定的, 以左边的表作为驱动表, 驱动右表; 强制 优化器 对于 联表查询 的执行顺序
 
-#### NLJ(Index Nested-Loop Join)
+#### INLJ/Index Nested-Loop Join
 
 使用上 被驱动表 的索引
 
-#### Simple Nested-Loop Join
+![INLJ](1166598-20180111155418394-1864597971.png)
+
+伪代码:
+```text
+For each row r in R do      -- 扫描R表
+  lookup s in S index       -- 查询S表的索引（固定3~4次IO，B+树高度）
+    if found s == r         -- 如果 r匹配了索引s
+      Then output the tuple -- 输出结果集
+```
+
+#### SNLJ(Simple Nested-Loop Join)
 
 无索引无优化
+
+![SNLJ](1166598-20180111155339722-875705260.png)
+
+伪代码:
+```text
+For each row r in R do                     -- 扫描R表
+  Foreach row s in S do                    -- 扫描S表
+    If r and s satisfy the join condition  -- 如果r和s满足join条件
+      Then output the tuple                -- 那就输出结果集
+```
 
 #### BNL(Block Nested-Loop Join)
 
@@ -1929,11 +2141,11 @@ MySQL 无索引优化
 
 ![Block Nested-Loop Join](15ae4f17c46bf71e8349a8f2ef70d573.jpg)
 
-`join_buffer_size`: 设置 join_buffer 的大小
+`join_buffer_size`: 设置 join buffer 的大小
 
 - 如果放不下 驱动表 需要的数据, 那么 驱动表 会被分段放置
-- 把驱动表上的数据需要读到的全部读入到 join_buffer 中
-- 扫描 被驱动表, 把 被驱动表 中的数据和 join_buffer 中的数据对比, 满足 join 条件的, 作为结果集的一部分返回
+- 把驱动表上的数据需要读到的(不是所有列!)以分块的方式读入到 join buffer 中
+- 扫描 被驱动表, 把 被驱动表 中的数据和 join buffer 中的数据对比, 满足 join 条件的, 作为结果集的一部分返回
 
 如果使用 join , 应该选择大表做驱动表还是小表做驱动表
 - 如果是 `Index Nested-Loop Join` , 应该选择小表做驱动表
@@ -1942,12 +2154,27 @@ MySQL 无索引优化
   - 在 `join_buffer_size` 不够大的时候, 应该选择小表做驱动表(避免多次表分段)
 - 小表的判断, 需要考虑到 表行数 和 表列数
 
-#### 课后问题 (BNL 的性能问题)
+![成本比较](1166598-20180111171301894-2066907381.png)
+
+#### HJ(Hash Join)
+
+MariaDB 的 Hash Join:
+
+![MariaDB 的 Hash Join](1166598-20180111171747894-316902373.png)
+
+![MariaDB 的 Hash Join 2](1166598-20180111181924097-1552736957.png)
+
+在 Block Join 基础之上, 根据 Join Buffer 中的对象创建哈希表, 内表通过哈希算法进行查找, 减少内外表扫描的次数
+
+MySQL 的 Hash Join:
+TODO:
+
+#### 课后问题(BNL 的性能问题)
 
 如果被驱动表是一张 **大表** , 且是一个 **冷数据库**, 查询中会对 MySQL 服务器产生什么影响
 
 如果 驱动表 太大导致分段, 那么 被驱动表 就会被多次读取:
-- 如果大表的大小 M 页比 old 区域 N 小(M<N), 循环读取间隔很可能超过 `innodb_old_blocks_time` 的时间, 那么该数据会被迁移到 **young** 区域, 把部分 **热点数据被淘汰**, 导致 "Buffer pool hit rate" 命中率极低; 热点数据的请求需要读磁盘, 因此响应慢, 请求被阻塞等
+- 如果大表的大小 M 页比 old 区域 N 小(M < N), 循环读取间隔很可能超过 `innodb_old_blocks_time` 的时间, 那么该数据会被迁移到 **young** 区域, 把部分 **热点数据被淘汰**, 导致 "Buffer pool hit rate" 命中率极低; 热点数据的请求需要读磁盘, 因此响应慢, 请求被阻塞等
 - 如果大表的大小 M 页比 old 区域 N 页大(M>N), 则使得读取一次(M 页)大表后再读, 都需要从头开始读取大表(从第 1 页开始), 影响 缓存(buffer pool) 区域的作用
 
 #### MRR(Multi-Range Read) 优化
@@ -1964,18 +2191,22 @@ set optimizer_switch="mrr=on,mrr_cost_based=off";
 ```
 
 开启 MRR 后, 逻辑:
-- 根据索引, 定位到满足条件的记录, 将 id 值放入到 read_rnd_buffer
-- 将 read_rnd_buffer 中的 id 递增排序
+- 根据索引, 定位到满足条件的记录, 将 id 值放入到 `read_rnd_buffer`
+- 将 `read_rnd_buffer` 中的 id 递增排序
 - 以排序后的 id 序列, 依次到主键 id 索引中查记录, 并作为结果返回
 
 #### BKA(Batched Key Access)
 
-开启 BKA -- NLJ + MRR:
+![BKA](1166598-20180111172052676-1129007687.png)
+
+在 index join 的基础上, 增加 MRR 的功能, *先对索引进行排序(???)*, 然后批量获取 **聚集索引** 中的记录
+
+开启 BKA -- INLJ + MRR:
 ```sql
 -- mysql
 set optimizer_switch="mrr=on,mrr_cost_based=off,batched_key_access=on";
 
--- mariadb TODO
+-- mariadb TODO:
 set optimizer_switch="";
 ```
 
@@ -2005,7 +2236,7 @@ select * from t1 join t2 on(t1.a=t2.a) join t3 on (t2.b=t3.b) where t1.c>=X and 
   - (调用 innodb 接口,)从 t1 取一行数据, 返回到 server
   - 从 t2 取满足条件的数据, 获得中间结果
   - 从 t3 取满足条件的数据, 和中间结果对比, 并且构成最终结果
-- 如果采用 BKA 进行优化(只有 BKA 可以?), 会提取范围内的数据, 且直接的嵌套查询; 且每多一个 `join` 部分，就多一个 join_buffer
+- 如果采用 BKA 进行优化(只有 BKA 可以?), 会提取范围内的数据, 且直接的嵌套查询; 且每多一个 `join` 部分, 就多一个 join_buffer
 - 如果没有 `straight_join` , 那么第一个驱动表 MySQL 会在经过 `where t1.c>=X and t2.c>=Y and t3.c>=Z` 过滤后, 以数据最少的表(在 t1/t2/t3 中选), 作为第一个驱动表, 此时可能出现以下情况:
   - 如果驱动表是 t1, 则连接顺序是 t1->t2->t3, 则需要在(被驱动表) t2.a 和 t3.b 上创建索引
   - 如果驱动表是 t3, 连接顺序: t3->t2->t1, 则需要在 t2.b 和 t1.a 上创建索引
@@ -2263,7 +2494,7 @@ insert into t values(11,10,10) on duplicate key update d=100;
 ```shell
 mysqldump -h$host -P$port -u$user --add-locks=0 --no-create-info --single-transaction --{set-gtid-purged|gtid}=OFF db1 t --where=$where --result-file=/client_path/result.sql
 ```
-
+- `-d, --no-data`: 只导出表结构, 不导出数据
 - `--single-transaction`: 导出数据时不对目标表加锁, 而是通过 `START TRANSACTION WITH CONSISTENT SNAPSHOT;` 复制视图
   - `WITH CONSISTENT SNAPSHOT`: 生成独立视图
   - `READ WRITE`: 可读写
@@ -2273,13 +2504,14 @@ mysqldump -h$host -P$port -u$user --add-locks=0 --no-create-info --single-transa
 - `--{set-gtid-pureged(mysql)|gtid(mariadb)}=OFF`: 不输出跟 GTID 相关的信息
 - `--result-file`: 输出文件的路径
 - `--{extended-insert|skip-extended-insert}`: 开启|关闭 使用多个 VALUES 列表的多行 INSERT
+- `--skip-column-statistics`: MySQL 8.0 新增 `information_schema.COLUMN_STATISTICS`, 用于关联 schema 和 table 的关系(但是一般不启动 ?)
 
 通过以下命令导入文件
 ```sql
 source /client_path/to/result.sql
 ```
 
-##### 特点:
+##### 特点
 
 - 能够筛选, 导出部分数据
 - 无法使用 join 等复杂的条件写法
@@ -2501,7 +2733,7 @@ select * from a join b where a.f2=b.f2 and a.f1=b.f1;
 
 - `left join` 优化为 `join`, 即驱动表是 b , 被驱动表为 a
 
-从以上来看, **如果需要 left join 的语义，就不能把被驱动表的字段放在 where 条件里面做等值判断或不等值判断, 必须都写在 on 里面**
+从以上来看, **如果需要 left join 的语义, 就不能把被驱动表的字段放在 where 条件里面做等值判断或不等值判断, 必须都写在 on 里面**
 
 #### Simple Nested Loop Join 的性能问题
 
@@ -2533,7 +2765,7 @@ SET INSERT_ID=CURRENT_ID;
 
 ---
 
-### 自增主键用完
+### 如果自增主键用完
 
 #### 表定义自增键
 
@@ -2607,7 +2839,7 @@ do {
 
 ### NULL
 
-NULL 跟任何值执行等值判断和不等值判断的结果，都是 NULL
+NULL 跟任何值执行等值判断和不等值判断的结果, **都是 NULL**
 
 ### 为什么 `add column` 不指定位置
 
@@ -2664,18 +2896,18 @@ mysql >= 5.7 后, 默认开启 ssl, 即使用 unixsock 连接, 也会读取 `/et
 > 好像不是, 好像只是, go-sql-driver 在 **client** 对时间的 二进制 内容转换为 time.Time, 没有加 `parseTime=true` 的时候只是返回字符串
 
 从上面的类型看:
-- `binaryRows`.`readRow`: 新版 stmt 协议 "prepared statement protocol" (`>= mysql/4.1`)
+- `binaryRows.readRow`: 新版 stmt 协议 "prepared statement protocol" (`>= mysql/4.1`)
   - fieldTypeTime: -- "-838:59:59" 到 "838:59:59" 3 字节
     - formatBinaryTime -- 二进制 编码到 time 字符串
   - !fieldTypeTime && hasParams(conn, "parseTime=true"):
     - parseBinaryDateTime -- 二进制 直接编码到 time.Time
   - 其余:
     - formatBinaryDateTime -- 二进制 编码到 time 字符串
-- `textRows`.`readRow`: 旧版协议 (`>= mysql/3.20`)
+- `textRows.readRow`: 旧版协议 (`>= mysql/3.20`)
   - hasPrarms(conn, "parseTime=true") && fieldTypeTimestamp, fieldTypeDateTime, fieldTypeDate, fieldTypeNewDate:
     - parseDateTime -- "YYYY-MM-DD HH:MM:SS.MMMMMM" -> time.Parse(sql.timeFormat) -> time.Time
 
-由于 go 里面不能直接赋值到 `time`.`Time` , 所以如果没有添加 "parseTime=true" , 那么在结构体里面不能使用 `time`.`Time` , 而是用 `database/sql`.`NullString` , 再自行转换到 `time`.`Time`
+由于 go 里面不能直接赋值到 `time.Time` , 所以如果没有添加 "parseTime=true" , 那么在结构体里面不会使用 `time.Time` , 而是用 `database/sql.NullString` , 再自行转换到 `time.Time`
 
 ### `show processlist.state`
 
@@ -2711,6 +2943,8 @@ mysql >= 5.7 后, 默认开启 ssl, 即使用 unixsock 连接, 也会读取 `/et
 
 InnoDB 通过 Mini-transaction 协议实现 redo log , 其中该协议分为三个子协议
 
+TODO:
+
 #### The FIX Rules
 
 The FIX Rules 规定:
@@ -2727,10 +2961,173 @@ The FIX Rules 规定:
 - Write-Ahead Log 保证了单个数据页的一致性, 但是不保证事务的一致性
 - Force-log-at-commit 要求当一个事务提交时, 其生成的所有 mini-transaction 日志必须持久到设备上
 
-
 #### 源码
 
 ![mtr_t 内存结构](20141203164837968.jpeg)
 
 ![log 结构](20141203164610859.jpeg)
 
+### 一致性与隔离级别的关系
+
+![一致性与隔离级别](v2-bb901763533ccc7c043c31b461ba1b5e_hd.jpg)
+
+### JSON
+
+```sql
+
+> CREATE TABLE lnmp (
+    `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+    `category` JSON,
+    `tags` JSON,
+    PRIMARY KEY (`id`)
+  );
+
+> insert into lnmp(category, tags) values ('{"id": 1, "name": "lnmp"}
+    ', '[1, 2, 3]');
+
+> select id,category->'$.name' from lnmp;
++------|----------------------+
+| id   | category->'$.name'   |
+|------|----------------------|
+| 1    | "lnmp"               |
++------|----------------------+
+
+> select id, JSON_UNQUOTE(category->'$.name') from lnmp;
++------|------------------------------------+
+| id   | JSON_UNQUOTE(category->'$.name')   |
+|------|------------------------------------|
+| 1    | lnmp                               |
++------|------------------------------------+
+
+> select id, category->>'$.name' from lnmp;
++------|-----------------------+
+| id   | category->>'$.name'   |
+|------|-----------------------|
+| 1    | lnmp                  |
++------|-----------------------+
+```
+
+### 触发器/存储过程
+
+触发器是被动执行的, 存储过程是主动执行(通过名称调用)的
+
+### `sql_mode`
+
+#### `ONLY_FULL_GROUP_BY`
+
+`select` 的字段只允许 `group by` 后的字段以及聚合函数的结果
+
+关闭后, 获取的其他字段只是该 group 的第一个字段, 无意义
+
+- 窗口函数仅将结果附加到当前的结果, 即输入输出的行数不变
+- 每个 Group 仅保留一行聚合结果
+
+### MySQL 索引结构
+
+TODO:
+
+### InnoDB 与 B+ Tree
+
+数据存储单位:
+- 磁盘扇区: 512bytes
+- 文件系统页: 4Kbytes
+- InnoDB 页: `innodb_page_size`, 16Kbytes
+
+- 在 InnoDB 中, 叶子节点存放数据, 中间节点存放数据的元数据
+- 指针(数据偏移)在 InnoDB 中为 6 bytes
+
+获得 B+ 树的高度(`<8.0`):
+- 在 InnoDB 表空间文件(.frm) 中, 约定 **页序号/page number == 3** 的代表主键索引的根页
+- 根页偏移量为 64 的地方存放了该 B+ 树的 `page_level=(int)(*(void *)(16384*3+64)[:2])=(int)(*(void *)(49216)[:2])`
+- `tree_height=page_level+1`
+
+`>=8.0`:
+TODO:
+
+![select info_schema](v2-ab72e4b446d501dabae2b373d0fd46ce_r.jpg)
+![result](v2-442458eba8e4776eb1f919799337c158_r.jpg)
+
+问题: 为什么 MySQL 的索引要使用 B+ 树而不是 B 树:
+因为 B 树不管在叶子节点还是非叶子节点都保存数据, 以至于在非叶子节点存储的扇出指针少于 B+ 树; 在同等规模的数据下, 树的高度增加, IO 数也随之增加
+
+### 地理信息
+
+#### Geometry
+
+Spatial Indexes:
+```markdown
+MySQL uses **R-Trees with quadratic splitting** for SPATIAL indexes on spatial columns. A SPATIAL index is built using the minimum bounding rectangle (MBR) of a geometry. For most geometries, the MBR is a minimum rectangle that surrounds the geometries. For a horizontal or a vertical linestring, the MBR is a rectangle degenerated into the linestring. For a point, the MBR is a rectangle degenerated into the point.
+
+It is also possible to create normal indexes on spatial columns. In a non-SPATIAL index, you must declare a prefix for any spatial column except for POINT columns.
+
+MyISAM and InnoDB support both SPATIAL and non-SPATIAL indexes.
+```
+
+#### R-Tree
+
+TODO:
+
+### Group by 与索引扫描
+
+[2016-blog](https://blog.csdn.net/tianlianchao1982/article/details/51565616)
+[group-by-optimization](https://dev.mysql.com/doc/refman/8.0/en/group-by-optimization.html)
+
+#### 松散索引扫描(Loose Index Scan)
+
+Group by 要使用上 Loose Index Scan, 需要满足以下条件:
+- The query is over a single table
+- The GROUP BY names only columns that form a leftmost prefix of the index and no other columns
+- The only aggregate functions used in the select list (if any) are MIN() and MAX(), and all of them refer to the same column. The column must be in the index and must immediately follow the columns in the GROUP BY
+- Any other parts of the index than those from the GROUP BY referenced in the query must be constants (that is, they must be referenced in equalities with constants), except for the argument of MIN() or MAX() functions.
+- For columns in the index, full column values must be indexed, not just a prefix. For example, with c1 VARCHAR(20), INDEX (c1(10)), the index uses only a prefix of c1 values and cannot be used for Loose Index Scan.
+- after **5.5** , AVG(DISTINCT), SUM(DISTINCT), and COUNT(DISTINCT) are supported. AVG(DISTINCT) and SUM(DISTINCT) take a single argument. COUNT(DISTINCT) can have more than one column argument.
+- There must be no GROUP BY or DISTINCT clause in the query.
+
+#### Skip scan range
+
+version: `>=MySQL 8.0.13`
+
+原理:
+- Skip between distinct values of the first index part, f1 (the index prefix).
+- Perform a subrange scan on each distinct prefix value for the f2 > 40 condition on the remaining index part.
+
+假设如下场景:
+`Table T has at least one compound index with key parts of the form ([A_1, ..., A_k,] B_1, ..., B_m, C [, D_1, ..., D_n]). Key parts A and D may be empty, but B and C must be nonempty.`/表 T 存在一个复合索引, 形如 ([A_1, ..., A_k,] B_1, ..., B_m, C [, D_1, ..., D_n]) 其中 A 和 D 可能为空, B 和 C 必然不为空
+
+LSR 适用于以下场景:
+- The query references only one table / 该查询仅引用一个表
+- The query does not use GROUP BY or DISTINCT / 该查询不使用 Group by 和 Distinct
+- The query references only columns in the index / where 部分不能使用非同一索引的列
+- The predicates on A_1, ..., A_k must be equality predicates and they must be constants. This includes the IN() operator / 如果使用 A 列, 那么必须使用 相等谓词且必须是常量 OR IN 运算符(否则那就是单纯前缀索引了)
+- The query must be a conjunctive query; that is, an AND of OR conditions: (cond1(key_part1) OR cond2(key_part1)) AND (cond1(key_part2) OR ...) AND ... / where 最外层必须是一个 CNF 范式(逻辑与)
+- There must be a range condition on C. / 必须使用 C 的范围搜索 (??)
+- Conditions on D columns are permitted. Conditions on D must be in conjunction with the range condition on C. / 如果需要使用 D 列, 则需要配合 C 列一起使用(食用) (??)
+
+#### 紧凑索引扫描(Tight Index Scan)
+
+扫描索引的一个范围 或者 全索引扫描
+
+条件: 在查询中存在常量相等 where 条件字段(索引中的字段), 且该字段在 group by 指定的字段的 **前面或者中间**
+
+示例:
+
+```sql
+-- c2 在 c1 , c3 之前, c2='a' 填充这个坑, 组成一个索引前缀, 因而能够使用紧凑索引扫描
+select c1,c2,c3 from t1 where c2 = 'a' group by c1,c3
+
+-- c1 在索引的最前面, c1=a 和 group by c2, c3 组成一个索引前缀, 因而能够使用紧凑索引扫描
+select c1,c2,c3 from t1 where c1 = 'a' group by c2,c3
+```
+
+松散索引扫描 和 紧凑索引扫描 的最大区别在于: 是否需要扫描 整个索引 或者 整个范围扫描
+
+### Insert into ... select 加锁规则
+
+select 本身如果加了 `lock in share mode` 或者 `for update` 会按照规则加锁, 但是锁的生命周期/lifecycle 只存在 select 语句期间, 即使开启了交互式事务(begin)也是一样
+
+
+## 技巧
+
+### 字符串优化
+
+`instr`: 以下标 1 为起始

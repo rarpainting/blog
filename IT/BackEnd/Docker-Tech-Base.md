@@ -16,8 +16,17 @@ Linux 提供了以下 7 种不同的命名空间
 
 在 Linux 系统中有两个特殊进程
 
-- /sbin/init -- 负责执行内核部分初始化工作和系统配置
-- [kthreadd] -- 内核进程, 负责管理和调度其他进程
+- `/sbin/init` OR `/lib/systemd/systemd` -- 负责执行内核部分初始化工作和系统配置
+- `[kthreadd]` -- 内核进程, 负责管理和调度其他进程
+
+### Inode
+
+硬链接:
+- 多个文件名指向同一个 inode
+- inode 中有一个表示 "链接数" 的字段, 当该字段为 0 , 系统会在某阶段(?)回收该 inode 和它的资源
+
+软链接/符号链接:
+- 一个符号链接文件(fileA) inode 中指向一个文件名(fileB), 因此链接文件(fileA)的操作不会影响 fileB 的 inode
 
 ---
 
@@ -36,34 +45,35 @@ Docker 的网络模式
 CGroup 为一组进程分配(CPU 内存 网络等宽等)资源
 
 功能:
-- Resource Limiting
-- Prioritization
-- Accounting
-- Control
+- Resource Limiting: 资源限制
+- Prioritization: 优先级
+- Accounting: 记录, 通过 `cpuacct` 子系统记录某个进程组使用的 CPU 时间
+- Control: 控制, 使用 `freezer` 子系统将进程组挂起或恢复
 
-### CGroup 支持的文件类型
+### CGroup 支持的文件种类
 
-|文件名|R/W|用途|
-|:-|:-:|:-|
-|Release_agent       |RW|删除分组时执行, 该文件只存在于 根分组|
-|Notify_on_release   |RW|设置是否执行 release_agent|
-|Tasks               |RW|属于分组的线程 TID 列表|
-|CGroup.procs        |R |属于该分组的进程 PID . 仅包括多线程进程的线程 leader 的 TID (这点与 tasks 不同)|
-|CGroup.event_control|RW|监视状态变化和分组删除事件的配置文件|
+| 文件名                 | R/W | 用途                                                                            |
+| :-                     | :-: | :-                                                                              |
+| `Release_agent`        | RW  | 删除分组时执行, 该文件只存在于 根分组                                           |
+| `Notify_on_release`    | RW  | 设置是否执行 `release_agent`                                                    |
+| `Tasks`                | RW  | 属于分组的线程 TID 列表                                                         |
+| `CGroup.procs`         | R   | 属于该分组的进程 PID . 仅包括多线程进程的线程 leader 的 TID (这点与 tasks 不同) |
+| `CGroup.event_control` | RW  | 监视状态变化和分组删除事件的配置文件                                            |
 
 ![cgroup 层级](cgroup-img001.png)
 
-### CGroup 子系统
+### CGroup 子系统机制
 
-- blkio -- 这个子系统为块设备设定输入/输出限制, 比如物理设备(磁盘, 固态硬盘, USB 等等)
-- cpu -- 这个子系统使用调度程序提供对 CPU 的 cgroup 任务访问
-- cpuacct -- 这个子系统自动生成 cgroup 中任务所使用的 CPU 报告
-- cpuset -- 这个子系统为 cgroup 中的任务分配独立 CPU（在多核系统）和内存节点
-- devices -- 这个子系统可允许或者拒绝 cgroup 中的任务访问设备
-- freezer -- 这个子系统挂起或者恢复 cgroup 中的任务
-- memory -- 这个子系统设定 cgroup 中任务使用的内存限制, 并自动生成由那些任务使用的内存资源报告
-- net_cls -- 这个子系统使用等级识别符(classid)标记网络数据包, 可允许 Linux 流量控制程序(tc)识别从具体 cgroup 中生成的数据包
-- ns -- 名称空间子系统
+CGroup 定义了以下的子系统:
+- `blkio` -- 这个子系统为块设备设定输入/输出限制, 比如物理设备(磁盘, 固态硬盘, USB 等等)
+- `cpu` -- 这个子系统使用调度程序提供对 CPU 的 cgroup 任务访问
+- `cpuacct` -- 这个子系统自动生成 cgroup 中任务所使用的 CPU 报告
+- `cpuset` -- 这个子系统为 cgroup 中的任务分配独立 CPU(在多核系统)和内存节点
+- `devices` -- 这个子系统可允许或者拒绝 cgroup 中的任务访问设备
+- `freezer` -- 这个子系统挂起或者恢复 cgroup 中的任务
+- `memory` -- 这个子系统设定 cgroup 中任务使用的内存限制, 并自动生成由那些任务使用的内存资源报告
+- `net_cls` -- 这个子系统使用等级识别符(classid)标记网络数据包, 可允许 Linux 流量控制程序(tc)识别从具体 cgroup 中生成的数据包
+- `ns` -- namespace 子系统
 
 ### CGroup 设计解析
 
@@ -79,15 +89,17 @@ task_struct: 管理进程的数据结构
 
 ```C
 #ifdef CONFIG_CGROUPS
-struct css_set *cgroups;
-struct list_head cg_list;
+	/* Control Group info protected by css_set_lock */
+	struct css_set __rcu *cgroups;
+	/* cg_list protected by css_set_lock and tsk->alloc_lock */
+	struct list_head cg_list;
 #endif
 ```
 
 - `cgroups`: 与进程相关的 CGroup 信息
-- `cg_list`: 归属于同一个 `css_set` 的进程链表
+- `cg_list`: 归属于同一个 `css_set` 的进程链表, 该链表被 `css_set_lock` & `tsk->alloc_lock` 保护
 
-css_set:
+`css_set`:
 
 ```C
 struct css_set {
@@ -116,7 +128,7 @@ struct cgroup_subsys_state {
 
 因此进程和 CGroup 的关系:
 
-task_struct->css_set->cgroup_subsys_state->cgroup
+`task_struct` -> `css_set` -> `cgroup_subsys_state` -> `cgroup`
 
 #### linux-4.9
 
@@ -189,7 +201,7 @@ struct task_group {
  * Per-subsystem/per-cgroup state maintained by the system.  This is the
  * fundamental structural building block that controllers deal with.
  *
- * Fields marked with "PI:" are public and immutable and may be accessed
+ * Fields marked with "PI:" ar\e public and immutable and may be accessed
  * directly without synchronization.
  */
 struct cgroup_subsys_state {
@@ -222,14 +234,14 @@ struct cgroup_subsys_state {
 	/*
 	 * Monotonically increasing unique serial number which defines a
 	 * uniform order among all csses.  It's guaranteed that all
-	 * ->children lists are in the ascending order of ->serial_nr and
+	 * ->children lists ar\e in the ascending order of ->serial_nr and
 	 * used to allow interrupting and resuming iterations.
 	 */
 	u64 serial_nr;
 
 	/*
 	 * Incremented by online self and children.  Used to guarantee that
-	 * parents are not offlined before their children.
+	 * parents ar\e not offlined befor\e their children.
 	 */
 	atomic_t online_cnt;
 
@@ -281,8 +293,8 @@ struct cgroup {
 	 * The bitmask of subsystems enabled on the child cgroups.
 	 * ->subtree_control is the one configured through
 	 * "cgroup.subtree_control" while ->child_ss_mask is the effective
-	 * one which may have more subsystems enabled.  Controller knobs
-	 * are made available iff it's enabled in ->subtree_control.
+	 * one which may have mor\e subsystems enabled.  Controller knobs
+	 * ar\e made available iff it's enabled in ->subtree_control.
 	 */
 	u16 subtree_control;
 	u16 subtree_ss_mask;
@@ -302,7 +314,7 @@ struct cgroup {
 
 	/*
 	 * On the default hierarchy, a css_set for a cgroup with some
-	 * susbsys disabled will point to css's which are associated with
+	 * susbsys disabled will point to css's which ar\e associated with
 	 * the closest ancestor which has the subsys enabled.  The
 	 * following lists all css_sets which point to this cgroup's css
 	 * for the given subsystem.

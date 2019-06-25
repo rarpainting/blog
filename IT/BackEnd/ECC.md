@@ -48,7 +48,7 @@ $${k = -(F_x(x, y)/F_y(x. y)) = (3x^2 + 2a_2x + a_4 - a_1y)/(2y + a_1x + a_3)}$$
 - 已知集合和运算(G, *), 如果该集合为群, 则
   - 封闭性: ALL a, b OF G, a*b OF G
   - 结合性(交换律): ALL a, b, c OF G, (a*b)*c = a*(b*c)
-  - 单位元: 
+  - 单位元:
   - 逆元
 
 ## 有限域椭圆曲线 [todo]
@@ -74,7 +74,6 @@ $${k = -(F_x(x, y)/F_y(x. y)) = (3x^2 + 2a_2x + a_4 - a_1y)/(2y + a_1x + a_3)}$$
 
 `env:somevar` 从环境变量中获取密码
 `file:somepathname` 从位置的文件的第一行获取密码 pathname
-`fd:number` 从文件描述符号中获取密码。
+`fd:number` 从文件描述符号中获取密码;
 `stdin` 从标准输入读取
 ```
-

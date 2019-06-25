@@ -102,19 +102,19 @@ Host: www.domain.com
 
 ### If-Modified-Since
 
-如果请求的部分在指定时间之后被修改则请求成功，未被修改则返回304代码
+如果请求的部分在指定时间之后被修改则请求成功, 未被修改则返回304代码
 
 - If-Modified-Since: Sat, 29 Oct 2010 19:43:31 GMT
 
 ### If-None-Match
 
-如果内容未改变返回304代码，参数为服务器先前发送的Etag，与服务器回应的Etag比较判断是否改变
+如果内容未改变返回304代码, 参数为服务器先前发送的Etag, 与服务器回应的Etag比较判断是否改变
 
 - If-None-Match: “737060cd8c284d8af7ad3082f209582d”
 
 ### If-Range
 
-如果实体未改变，服务器发送客户端丢失的部分，否则发送整个实体。参数也为Etag
+如果实体未改变, 服务器发送客户端丢失的部分, 否则发送整个实体; 参数也为Etag
 
 - If-Range: “737060cd8c284d8af7ad3082f209582d”
 
@@ -230,7 +230,7 @@ web 服务器支持的返回内容压缩编码类型
 
 ### Content-Location
 
-请求资源可替代的备用的另一地址	
+请求资源可替代的备用的另一地址
 
 - Content-Location: /index.htm
 
@@ -242,7 +242,7 @@ web 服务器支持的返回内容压缩编码类型
 
 ### Content-Range
 
-在整个返回体中本部分的字节位置	
+在整个返回体中本部分的字节位置
 
 - Content-Range: bytes 21010-47021/47022
 
@@ -295,19 +295,19 @@ web 服务器支持的返回内容压缩编码类型
 
 ### refresh
 
-应用于重定向, 在 5 秒之后重定向(由网景提出，被大部分浏览器支持)	
+应用于重定向, 在 5 秒之后重定向(由网景提出, 被大部分浏览器支持)
 
 - Refresh: 5; url=http://www.zcmhi.com/archives/94.html
 
 ### Retry-After
 
-如果实体暂时不可取，通知客户端在指定时间之后再次尝试
+如果实体暂时不可取, 通知客户端在指定时间之后再次尝试
 
 - Retry-After: 120
 
 ### Server
 
-web 服务器软件名称	
+web 服务器软件名称
 
 Server: Apache/1.3.27 (Unix) (Red-Hat/Linux)
 
@@ -325,7 +325,7 @@ Server: Apache/1.3.27 (Unix) (Red-Hat/Linux)
 
 ### Transfer-Encoding
 
-文件传输编码	
+文件传输编码
 
 - Transfer-Encoding:chunked
 

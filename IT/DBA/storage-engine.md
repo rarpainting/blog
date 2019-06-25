@@ -4,7 +4,7 @@ DAM(Disk-Access mode):
 1. 一台机器有一个处理器、一个可以包含 M 个 objects 的内存以及无穷大小的外存
 2. 在一次 I/O 操作中, 计算机可以在内存和外存之间传输包含 B objects 的 block, 其中 1 < B < M
 3. 一个算法的 Running Time 可以定义为在算法执行期间 I/O 的次数、只用内存数据进行的计算可以认为是没有代价的
-4. 一个数据结构的大小可以定义成可以包含它的 blocks 数的大小 
+4. 一个数据结构的大小可以定义成可以包含它的 blocks 数的大小
 
 - **写放大**: 实际写入磁盘的数据大小 和 程序要求写入数据大小 之比
 - **读放大**: 一次查询所需要的 I/O 数
@@ -43,21 +43,23 @@ B+Tree 的放大特性: 如果 B+Tree 的 block size 为 B, 故每个内部节�
 
 ### 放大特性
 
+- **空间放大(Space Amplification)**: 由于 LSM 本身都是顺序写(Append-Only) , 不是原地更新(In-Place Update), 因此会随时间推移残留过期数据; LSM 通过合并来减少空间放大, 但也因此引入了写放大
+
 #### Leveld LSM Tree
 
 如果数据集大小为 N, 放大因子为 k, 最小一层一个文件大小为 B, 每层文件的单个文件大小相同为 B, 不过每层文件个数不同
 
 - **写放大**: 同一个 record, 会在本层 k 此后才会被 compact 到下一层(放大 k), 层数为 O((log N/B) / (log B)) , 故写放大为 O(k(log N/B) / (log B))
-- **读放大**: 依次在每一层进行 **二次查找**, 直到最后一层找到;
-  - R = (log N/B) + (log N/(Bk)) + (log N/(Bkk)) + ... + 1 = (log N/B) + (log N/B) - (log k) + (log N/B) - 2(log k) + ... + 1 
+- **读放大**: 依次在每一层进行 **二分查找**, 直到最后一层找到:
+  - R = (log N/B) + (log N/(Bk)) + (log N/(Bkk)) + ... + 1 = (log N/B) + (log N/B) - (log k) + (log N/B) - 2(log k) + ... + 1
   - 读放大为 O((log N/B)*(log N/B)/(log k))
-  
+
 #### Size-tiered LSM-Tree
 
-假设数据集大小为 N，放大因子为 k，最大层有 k 个大小为 N/k 个文件，倒数第二层有 k 个 N/kk 个文件…那么一共有 O((log N/B)/(log k)) 层
+假设数据集大小为 N, 放大因子为 k, 最大层有 k 个大小为 N/k 个文件, 倒数第二层有 k 个 N/kk 个文件…那么一共有 O((log N/B)/(log k)) 层
 
-- **写放大**: 同一个 record，在每一层只会写一次，所以写放大等于层数，即 O((log N/B)/(log k))
-- **读放大**: 每一层读 k 个文件，一共 O((log N/B)/(log k)) 层，故一共需要读 O(k(log N/B)/(log k)) 个文件，不同于 Leveld LSM Tree，一个文件不只是一个 block B，而是有很多 blocks，近似 O(N/B) 个，在文件内部二分查找找到对应的 block 需要 O(log N/B)，故整体需要 O(k(log N/B)(log N/B)/(log k)) 次 I/O ，即读放大为 O(k(log N/B)(log N/B)/(log k))
+- **写放大**: 同一个 record, 在每一层只会写一次, 所以写放大等于层数, 即 O((log N/B)/(log k))
+- **读放大**: 每一层读 k 个文件, 一共 O((log N/B)/(log k)) 层, 故一共需要读 O(k(log N/B)/(log k)) 个文件, 不同于 Leveld LSM Tree, 一个文件不只是一个 block B, 而是有很多 blocks, 近似 O(N/B) 个, 在文件内部二分查找找到对应的 block 需要 O(log N/B), 故整体需要 O(k(log N/B)(log N/B)/(log k)) 次 I/O , 即读放大为 O(k(log N/B)(log N/B)/(log k))
 
 #### 具体阐述
 
@@ -82,7 +84,7 @@ LSM-Tree 是由 两个或两个以上 存储数据的结构 组成的, 以两个
 
 带随机概率的 Bitmap
 
-#### Compact 
+#### Compact
 
 ## LSH 树()
 
@@ -104,7 +106,7 @@ FTI 将每个 Block 从中分出一部分用作 buffer;
 
 ![总结](conclusion.png)
 
-- Fractal Tree Index 在 **写放大和读放大** 方便表现的都很不错
-- Leveld LSM Tree 在 **写放大** 方面和 FTI 差不多, 但是读放大方面比 FTI 要差
+- Fractal Tree Index 在 **写放大和读放大** 方面表现的都很不错
+- Leveld LSM Tree 在 **写放大** 方面和 FTI 差不多, 但是读放大比 FTI 要差
 - Size-tiered LSM Tree 在 **写放大** 方面优于 FTI 和 Leveld LSM Tree, 但读放大方面表现最差, 一般 **少读多写并对写性能有较高要求** 的场景下考虑使用 Size-tired LSM Tree
 - B+ Tree 有较高的写放大, 但是在 **读放大** 方面不错
