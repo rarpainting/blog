@@ -20,7 +20,7 @@
   - 以 Raft 协议做复制, 保证数据一致性和容灾; 副本以 Region 为单位调度管理; 多个 Region 以 (?) 组成 Raft Group, 互为副本
 - TiSpark
   - 用于解决复杂的 OLAP 需求, 将 Spark SQL 直接运行在 TiDB 存储层上
-  
+
 特性:
 - 水平扩展:
   - 计算能力: TiDB
@@ -32,6 +32,9 @@
 
 - RocksDB: 存储引擎
 - Raft: 分布式一致性
+  - Leader 选举
+  - 成员变更
+  - 日志复制
 
 ## 附加
 

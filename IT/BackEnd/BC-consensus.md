@@ -28,3 +28,32 @@
 共识算法的选择与应用场景高度相关, 可信环境使用 paxos 或者 raft. 带许可的联盟可使用 pbft , 非许可链可以是 pow, pos, ripple 共识等
 根据对手方信任度分级, 自由选择共识机制, 这样才是真的最优
 
+## Raft
+
+Raft 与 Multi-Paxos 相似的概念:
+
+![Raft 与 Multi-Paxos 相似的概念](v2-a932cb62a02604d5ec57dc0a046a1414_r.jpg)
+
+![Raft 与 Multi-Paxos 不同的部分](v2-7679d235c0ac8056552ba88b677e73a2_r.jpg)
+
+### 总结
+
+Raft 算法各节点维护的状态:
+
+![Raft 算法各节点维护的状态](v2-9b53bd65fa9e11eeefd5331833d41c78_r.jpg)
+
+Leader 的选举:
+
+![Leader 的选举](v2-05b80ce9095004381b5846c6179f932e_r.jpg)
+
+日志同步:
+
+![日志同步](v2-8713b773762e9644c38defa5086afacd_r.jpg)
+
+Raft 状态机:
+
+![Raft 状态机](v2-4abb923772ec1be269843c977b5af3c8_r.jpg)
+
+安装 snapshot:
+
+![安装 snapshot](v2-793f4024bfcb648d9aab2a3dfe6b80de_r.jpg)
