@@ -25,7 +25,7 @@ B+Tree 的放大特性: 如果 B+Tree 的 block size 为 B, 故每个内部节�
 
 ## LSM 树(Log-Structured Merge Tree)
 
-代表数据库: nessDB, levelDB, HBase
+代表数据库: nessDB, levelDB, HBase, rocksdb
 
 核心思想: 通过 **批量存储** 技术规避磁盘随机写入问题, 放弃部分读能力
 

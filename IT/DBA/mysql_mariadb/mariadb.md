@@ -2706,3 +2706,31 @@ mysql >= 5.7 后, 默认开启 ssl, 即使用 unixsock 连接, 也会读取 `/et
 - `Waiting for tables`: 该线程得到通知, 数据表结构已经被修改了, 需要重新打开数据表以取得新的结构; 然后, 为了能的重新打开数据表, 必须等到所有其他线程关闭这个表. 以下几种情况下会产生这个通知: `FLUSH TABLES tbl_name`, `ALTER TABLE`, `RENAME TABLE`, `REPAIR TABLE`, `ANALYZE TABLE`, 或 `OPTIMIZE TABLE`
 - `Send to client`: 客户端接收数据慢, 或者服务端的网络栈写满
 - `Waiting for handler insert`: `INSERT DELAYED` 已经处理完了所有待处理的插入操作, 正在等待新的请求
+
+### Mini-transaction
+
+InnoDB 通过 Mini-transaction 协议实现 redo log , 其中该协议分为三个子协议
+
+#### The FIX Rules
+
+The FIX Rules 规定:
+- 修改一个页需要获得该页的 x-latch
+- 访问一个页需要获得该页的 s-latch 或 x-latch
+- 持有该页的 latch 直到修改或者访问该页的操作完成
+
+#### Write-Ahead Log
+
+原子性的持久化页
+
+#### Force-log-at-commit
+
+- Write-Ahead Log 保证了单个数据页的一致性, 但是不保证事务的一致性
+- Force-log-at-commit 要求当一个事务提交时, 其生成的所有 mini-transaction 日志必须持久到设备上
+
+
+#### 源码
+
+![mtr_t 内存结构](20141203164837968.jpeg)
+
+![log 结构](20141203164610859.jpeg)
+
