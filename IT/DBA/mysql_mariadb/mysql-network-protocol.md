@@ -214,7 +214,7 @@
 |    2 | number of columns in result set (结果集中列的数量)   |
 |    2 | number of parameters in query (查询语句中参数的数量) |
 |    1 | 0x00 (填充值)                                        |
-|    2 | 	警告数                                           |
+|    2 | 警告数                                           |
 
 - 在执行(exec) prepare statement 时, 如果结果集(result set)的 columns 数和 parameters 数都大于 0 , 则会有额外的两个包传输以上两者信息:
 
@@ -231,11 +231,11 @@
 - 用不同的方式定义 NULL
 - 根据数据类型的不同进行相应的编码
 
-| 相对包内容的位置        | 长度/byte           | 名称                                 | 描述                                                                                                                          |
-| :-                      | :-                  | :-                                   |                                                                                                                               |
-| 0                       | 1                   | 包头标识                             | 0x00                                                                                                                          |
-| 1                       | (`col_count`+7+2)/8 | Null Bit Map                         | 前两位为预留字节, 主要用于区别与其他的几种包(OK, ERROR, EOF), 在 MySQL 5 之后这两个字节都为 0X00, 其中 `col_count` 为列的数量 |
-| (`col_count`+7+2)/8 + 1 | n	column values  | 具体的列值, 重复多次, 根据值类型编码 |                                                                                                                               |
+| 相对包内容的位置        | 长度/byte           | 名称          | 描述                                                                                                                          |
+| :-                      | :-                  | :-            | :-                                                                                                                            |
+| 0                       | 1                   | 包头标识      | 0x00                                                                                                                          |
+| 1                       | (`col_count`+7+2)/8 | Null Bit Map  | 前两位为预留字节, 主要用于区别与其他的几种包(OK, ERROR, EOF), 在 MySQL 5 之后这两个字节都为 0X00, 其中 `col_count` 为列的数量 |
+| (`col_count`+7+2)/8 + 1 | n	               | column values | 具体的列值, 重复多次, 根据值类型编码                                                                                          |
 
 #### Null Bit Map
 
