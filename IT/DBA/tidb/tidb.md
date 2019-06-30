@@ -12,7 +12,7 @@
   - 集群管理模块
   - 存储集群的元数据
   - 对 TiKV 集群进行调度和负载均衡(数据迁移/Raft group leader 迁移)
-  - 分配全局唯一且递增的事务 ID
+  - 分配全局唯一且递增的事务 ID , 提供全局时钟服务
   - PD 通过 Raft 协议保证数据安全性; 因此建议部署奇数个 PD 节点
 - TiKV-Server:
   - 分布式, 带事务的 Key-Value 存储引擎
@@ -25,7 +25,7 @@
 - 水平扩展:
   - 计算能力: TiDB
   - 存储能力: TiKV
-  - 调度能里: PD
+  - 调度能力: PD
 
 ## TIDB
 
@@ -152,6 +152,30 @@ TiKV 集群定期向 PD 汇报
 - 数据写入 / 读取的速度
 
 #### 调度策略
+
+## SQL 流程
+
+### 协议层
+
+![sql 流程](sql-process.png)
+
+![sql 协议层简析](SQL-流程-协议层简析.png)
+
+### SQL 处理
+
+![sql SQL处理](SQL-流程-SQL处理.png)
+
+### 执行 SQL 计划
+
+TiDB 的执行引擎是以 Volcano 模型运行的
+
+如果以下 SQL 语句的执行计划
+
+```sql
+SELECT c1 FROM t WHERE c2 > 1;
+```
+
+![运行执行器](executeStatement.png)
 
 ## 附加
 
