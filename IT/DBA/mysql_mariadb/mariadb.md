@@ -2727,10 +2727,14 @@ The FIX Rules 规定:
 - Write-Ahead Log 保证了单个数据页的一致性, 但是不保证事务的一致性
 - Force-log-at-commit 要求当一个事务提交时, 其生成的所有 mini-transaction 日志必须持久到设备上
 
-
 #### 源码
 
 ![mtr_t 内存结构](20141203164837968.jpeg)
 
 ![log 结构](20141203164610859.jpeg)
+
+### 一致性与隔离级别的关系
+
+
+![一致性与隔离级别](v2-bb901763533ccc7c043c31b461ba1b5e_hd.jpg)
 
