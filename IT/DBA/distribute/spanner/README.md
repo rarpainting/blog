@@ -76,3 +76,27 @@
 
 应用的数据模型架构在 **目录桶的键值映射层** 之上
 
+![Users 主表 Albums 从表](GoogleSpanner-fig4.jpg)
+
+- 客户端 通过 `INTERLEAVE IN` 语句在数据库中声明主从库的层次结构
+- 同时 Spanner 根据声明建立数据库的交织层次(interleaved layout)
+
+## TrueTime
+
+![TrueTime API](GoogleSpanner-tab1.jpg)
+
+- TTinterval: 时间区间, 表示有界限的时间不确定性
+- TrueTime 显式地把时间表达成 TTinterval
+- TTinterval 区间的端点是 TTstamp 类型
+- TrueTime 利用 GPS 和原子钟两种失败模式: GPS 存在天线和接收器失效、局部电磁干扰和 GPS 系统运行中断; 原子钟则会因频率误差而经时间积累
+- TrueTime 是由每个数据中心上面的许多 time master 机器和每台机器上的一个 timeslave daemon 来共同实现的
+
+## 并发控制
+
+Spanner 客户端的写操作和 Paxos 看到的写操作(例如 2PL 操作)是不同的
+
+### 时间戳管理
+
+![Spanner 内的读写操作](GoogleSpanner-tab2.jpg)
+
+- Spanner 可以支持读写事务、只读事务(预先声明的快照隔离事务)和快照读操作; 独立写操作, 会被当做 读写事务 ; 非快照独立读操作, 会被当做 只读事务
