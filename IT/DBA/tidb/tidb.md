@@ -201,6 +201,14 @@ Calcite 实现的 Volcano Optimizer 支持以下三种终止条件:
 - Query Compilation: 通过 LLVM 等工具将优化后的执行方案编译成机器码
 - 利用索引和物化视图
 
+## Insert 概览
+
+以以下语句为例
+
+```sql
+INSERT INTO t VAULES ("pingcap001", "pingcap", 3);
+```
+
 ## 附加
 
 ### 概念

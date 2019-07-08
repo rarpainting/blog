@@ -24,6 +24,14 @@
   - 数据分配 zonemaster -> spanserver -> client
   - client 通过 location-proxy 定位为自己提供数据的 spanserver
 
+### MegaStore
+
+- MegaStore 目标应用是读远远多于写的
+
+### Dremel
+
+交互式数据分析系统
+
 ## Spanserver 软件栈
 
 ![spanserver 软件栈](GoogleSpanner-fig2.jpg)
@@ -60,3 +68,11 @@
 - 事实上, 当一个目录变得太大时, Spanner 会把它分片存储; 每个分片有可能不在同一个 Paxos Group 中; 同时 Movedir 在不同组之间转移的不是目录, 而是 **分片**
 
 ## 数据模型
+
+以下数据, Spanner 会暴露给应用
+- 基于模式化的半关系表的数据模型
+- 查询语言
+- 通用事务
+
+应用的数据模型架构在 **目录桶的键值映射层** 之上
+
