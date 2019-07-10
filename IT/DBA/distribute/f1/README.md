@@ -1,5 +1,7 @@
 # Google F1
 
+## 异步 schema 变更
+
 ## F1 简介
 
 F1 设计目标:
@@ -46,3 +48,35 @@ F1 数据库层面的事务一致性:
 - 层级锁: 锁定父表的列, 字表对应的列也会相应锁上
 
 ## 变更历史记录
+
+- 每个事务变更都会通过 Protobuf 记录(包括变更前后的列值, 对应主键和事务提交的时间戳), 而且 root 表下会产生单独的 ChangeBatch 子表存放这些子表
+- 一个事务同时变更多个 root 表, 每个 root 表的变更依然写入它的子表的对应变更值, 但是同时多了 **连接到其他 root 表的指针**
+
+## F1 client
+
+## 分布式 SQL
+
+F1 支持集中式 SQL (在一个 F1 server 运行) 和 分布式 SQL
+
+```sql
+SELECT agcr.CampaignId, click.Region,cr.Language, SUM(click.Clicks) FROM
+ AdClick clickJOIN AdGroupCreative agcrUSING (AdGroupId, CreativeId)
+ JOIN Creative crUSING (CustomerId, CreativeId) WHERE click.Date ='2013-03-23'
+ GROUP BY agcr.CampaignId, click.Region,cr.Language
+```
+
+可能的执行计划
+
+![执行计划](16020-89b4dc180a2f5450.png)
+
+- 一个 SQL 生成数十个更小的执行计划, 每个计划通过 有向无环图(DAG) 合并到最顶层
+- hash partition 可以通过时刻调整, 而让 F1 的 partition 更高效; 而 range patition 需要相关统计
+- F1 的运算都在内存中执行, 再加上管道的运用, 没有中间数据会存放在磁盘上
+- 为了减少网络延迟, F1 使用 批处理和管道技术
+
+## 层级表间 Join
+
+## 客户端的并行
+
+## Protobuf 提供嵌套表支持
+
