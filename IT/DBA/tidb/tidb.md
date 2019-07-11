@@ -209,6 +209,25 @@ Calcite 实现的 Volcano Optimizer 支持以下三种终止条件:
 INSERT INTO t VAULES ("pingcap001", "pingcap", 3);
 ```
 
+## TiDB 的异步 schema 变更实现
+
+### 新概念
+
+- 元数据记录: 为了简化设计, 引入 system database 和 system table 来记录异步 schema 变更过程中的一些元数据
+- state: 根据 F1 的异步 schema 变更过程, 中间引入了一些状态, 该状态和 columns, index, table 和 database 绑定
+  - 主要包括 none, delete-only, write-only, write-reorganization, public
+  - 创建操作的状态与顺序相反(??), write-reorganization 改为 delete-reorganization
+- Lease: 同时刻系统所有节点的 schema 最多只有 **两** 个不同版本
+  - 一个租期内每个正常节点都主动加载 schema 信息; 如果不能租期内正常加载, 该节点自动退出系统
+  - 即: **确保整个系统的所有节点都已经从某个状态更新到下个状态, 需要 2 倍的租期时间**
+- Job: 每个单独的 DDL (Data Defined Language)操作都可看作一个 job
+  - 在一个 DDL 操作开始时, 会将此操作封装成一个 job 并存放到 job queue, 等此操作完成时, 会将此 job 从 job queue 删除, 并在存入 history job queue, 便于查看历史 job
+- Worker: 每个节点都有一个 worker 用于处理 job
+- Owner
+  - 一个独立的系统只有一个节点的 worker 能当选 owner
+  - owner 角色有任期, owner 的信息会存储在 KV 层中, worker 定期获取 KV 层中的 owner 信息, 如果其中 ownerID 为空, 或者当前的 owner 超过了任期, 则 worker 可以尝试更新 KV 层中的 owner 信息(设置 ownerID 为自身的 workerID); 如果更新成功, 则该 worker 称为 owner
+  - 这个用来确保整个系统同一时间只有一个节点在处理 schema 变更
+
 ## 附加
 
 ### 概念
