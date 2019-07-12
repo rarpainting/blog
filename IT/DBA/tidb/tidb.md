@@ -227,6 +227,7 @@ INSERT INTO t VAULES ("pingcap001", "pingcap", 3);
   - 一个独立的系统只有一个节点的 worker 能当选 owner
   - owner 角色有任期, owner 的信息会存储在 KV 层中, worker 定期获取 KV 层中的 owner 信息, 如果其中 ownerID 为空, 或者当前的 owner 超过了任期, 则 worker 可以尝试更新 KV 层中的 owner 信息(设置 ownerID 为自身的 workerID); 如果更新成功, 则该 worker 称为 owner
   - 这个用来确保整个系统同一时间只有一个节点在处理 schema 变更
+- Background operations: 主要用于 delete reorganization 的优化处理; 总共引入了 background job, background job queue, background job history queue, background worker 和 background owner
 
 ## 附加
 
