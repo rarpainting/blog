@@ -51,7 +51,35 @@
 			- [连接器](#连接器)
 			- [查询缓存](#查询缓存)
 			- [分析器](#分析器)
-			- [优化器](#优化器)
+			- [优化器策略](#优化器策略)
+				- [`index_merge=on`](#index_mergeon)
+				- [`engine_condition_pushdown=off`](#engine_condition_pushdownoff)
+				- [`index_condition_pushdown=on`](#index_condition_pushdownon)
+				- [`derived_merge=on`](#derived_mergeon)
+				- [`derived_with_keys=on`](#derived_with_keyson)
+				- [`firstmatch=on`](#firstmatchon)
+				- [`loosescan=on`](#loosescanon)
+				- [`materialization=on`](#materializationon)
+				- [`in_to_exists=on`](#in_to_existson)
+				- [`semijoin=on`](#semijoinon)
+				- [`partial_match_rowid_merge=on`](#partial_match_rowid_mergeon)
+				- [`partial_match_table_scan=on`](#partial_match_table_scanon)
+				- [`subquery_cache=on`](#subquery_cacheon)
+				- [`mrr=off`](#mrroff)
+				- [`mrr_cost_based=off`](#mrr_cost_basedoff)
+				- [`mrr_sort_keys=off`](#mrr_sort_keysoff)
+				- [`outer_join_with_cache=on`](#outer_join_with_cacheon)
+				- [`semijoin_with_cache=on`](#semijoin_with_cacheon)
+				- [`join_cache_incremental=on`](#join_cache_incrementalon)
+				- [`join_cache_hashed=on`](#join_cache_hashedon)
+				- [`join_cache_bka=on`](#join_cache_bkaon)
+				- [`optimize_join_buffer_size=off`](#optimize_join_buffer_sizeoff)
+				- [`table_elimination=on`](#table_eliminationon)
+				- [`extended_keys=on`](#extended_keyson)
+				- [`exists_to_in=on`](#exists_to_inon)
+				- [`orderby_uses_equalities=on`](#orderby_uses_equalitieson)
+				- [`condition_pushdown_for_derived=on`](#condition_pushdown_for_derivedon)
+				- [`split_materialized=on`](#split_materializedon)
 			- [执行器](#执行器)
 		- [一次更新运行流程(WAL: Write-Ahead Logging)](#一次更新运行流程wal-write-ahead-logging)
 			- [update 的实际执行流程:](#update-的实际执行流程)
@@ -60,7 +88,7 @@
 			- [注意事项](#注意事项)
 			- [索引优化](#索引优化)
 			- [字符串索引](#字符串索引)
-		- [优化器](#优化器-1)
+		- [优化器](#优化器)
 			- [MySQL 优化指令](#mysql-优化指令)
 		- [脏页及其控制处理](#脏页及其控制处理)
 			- [`innodb_io_capacity`: innodb 一次刷新到磁盘的脏页数](#innodb_io_capacity-innodb-一次刷新到磁盘的脏页数)
@@ -215,6 +243,12 @@
 		- [MySQL 配置](#mysql-配置)
 		- [go-sql-driver](#go-sql-driver)
 		- [`show processlist.state`](#show-processliststate)
+		- [Mini-transaction](#mini-transaction)
+			- [The FIX Rules](#the-fix-rules)
+			- [Write-Ahead Log](#write-ahead-log)
+			- [Force-log-at-commit](#force-log-at-commit)
+			- [源码](#源码)
+		- [一致性与隔离级别的关系](#一致性与隔离级别的关系)
 
 <!-- /TOC -->
 
@@ -703,43 +737,81 @@ rpl_semi_sync_master_timeout=1000
   - 其中包括对字段是否正确的判断 -- 依据: 字段不同于表数据, 结构事先已经缓存在 server 中
 - 语义解析
 
-#### 优化器
+#### 优化器策略
 
-MySQL 对 ast 执行树的优化
+MySQL 对 AST 执行树的优化
 
-`optimizer_switch`: 优化器策略
-- `index_merge=on`
-- `index_merge_union=on`
-- `index_merge_sort_union=on`
-- `index_merge_intersection=on`
-- `index_merge_sort_intersection=off`
-- `engine_condition_pushdown=off`
-- `index_condition_pushdown=on`
-- `derived_merge=on`
-- `derived_with_keys=on`
-- `firstmatch=on`
-- `loosescan=on`
-- `materialization=on`
-- `in_to_exists=on`
-- `semijoin=on`
-- `partial_match_rowid_merge=on`
-- `partial_match_table_scan=on`
-- `subquery_cache=on`
-- `mrr=off`
-- `mrr_cost_based=off`
-- `mrr_sort_keys=off`
-- `outer_join_with_cache=on`
-- `semijoin_with_cache=on`
-- `join_cache_incremental=on`
-- `join_cache_hashed=on`
-- `join_cache_bka=on`
-- `optimize_join_buffer_size=off`
-- `table_elimination=on`
-- `extended_keys=on`
-- `exists_to_in=on`
-- `orderby_uses_equalities=on`
-- `condition_pushdown_for_derived=on`
-- `split_materialized=on`
+`optimizer_switch`: 优化器策略, 各策略如下
+
+##### `index_merge=on`
+
+多个索引交集/并集访问
+
+注意:
+- Version<5.6.7, 只要有 range 的部分, 那么就不会选择 index-merge
+- Version>=5.6.7
+
+部分参数:
+- `index_merge_union=on` 与 `index_merge_sort_union=on` 差异在于 `sort_union` 可能需要获得所有行, 然后排序
+- `index_merge_union=on` 与 `index_merge_intersection=on` 差异在于 前者是 并集索引合并, 后这是 交集索引合并
+- `index_merge_intersection=on` `index_merge_sort_intersection=off`
+
+##### `engine_condition_pushdown=off`
+
+##### `index_condition_pushdown=on`
+
+- Version<5.6, 匹配第一个(where)查询的结果, 回表, 在 Server 层 完成剩下的匹配
+- **Version>=5.6, 索引下推技术(Debug)** ; MySQL 引擎层 会尽可能在一次非聚簇索引中完成对查询(例如 where)的匹配, 减少回表次数
+
+##### `derived_merge=on`
+
+##### `derived_with_keys=on`
+
+##### `firstmatch=on`
+
+##### `loosescan=on`
+
+##### `materialization=on`
+
+##### `in_to_exists=on`
+
+##### `semijoin=on`
+
+##### `partial_match_rowid_merge=on`
+
+##### `partial_match_table_scan=on`
+
+##### `subquery_cache=on`
+
+##### `mrr=off`
+
+##### `mrr_cost_based=off`
+
+##### `mrr_sort_keys=off`
+
+##### `outer_join_with_cache=on`
+
+##### `semijoin_with_cache=on`
+
+##### `join_cache_incremental=on`
+
+##### `join_cache_hashed=on`
+
+##### `join_cache_bka=on`
+
+##### `optimize_join_buffer_size=off`
+
+##### `table_elimination=on`
+
+##### `extended_keys=on`
+
+##### `exists_to_in=on`
+
+##### `orderby_uses_equalities=on`
+
+##### `condition_pushdown_for_derived=on`
+
+##### `split_materialized=on`
 
 #### 执行器
 
@@ -2735,6 +2807,4 @@ The FIX Rules 规定:
 
 ### 一致性与隔离级别的关系
 
-
 ![一致性与隔离级别](v2-bb901763533ccc7c043c31b461ba1b5e_hd.jpg)
-
