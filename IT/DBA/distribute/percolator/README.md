@@ -75,8 +75,20 @@ percolator 在实现时, prewrite 阶段会为一个事务中的第一行(row)�
 ### 对比
 
 Percolator vs RDBMS/Relational Database Management System (如 innodb)
+- Percolator 在事务过程是乐观的, 而 innodb 的实现, 在事务中是悲观的, 存在读锁和写锁
+- Percolator 在递交的过程中的一阶段, 把锁和数据一起持久化; 该行为和 InnoDB 的 redo/undo log 是等价的, Percolator 依赖了 **bigtable 的单行原子和隔离** 来做到持久化行为
 
 Percolator vs GTM/Global Transaction Management (如 Omid)
+- GTM 在事务过程中的写入是直接持久化到 storage node 的, 这增加了写入的 latency
+- GTM 的读取是分为两阶段且都要请求 TMS (transaction manager), 存在读单点
+- GTM 的读是完全无阻塞的, 而 Percolator 如果事务正在提交中, 会阻塞进行中的事务读(此读锁和 2PL 的读锁不同, 请注意甄别)
 
-
-Percolator vs Spanner 的 rw transaction
+Percolator vs Spanner 的 RW transaction
+- Spanner 的读写事务是 **悲观锁**, 事务过程中就会加入读锁(读锁 buffer 在 storage 的内存), 还引入了参数发现, 超时锁自动释放, 因此在并发 update 冲突时有更好的性能(事务回滚代价更小)
+- Spanner 还引入了 **blind-write 优化**, 在 batch insert 的情况下, 和 percolator 给本性能一致
+- percolator 在事务过程中的读是 **根据时间戳做快照读**, spanner 是直接使用读锁 + 读最新数据, 不需要时间戳, 当并发事务重入同一条记录:
+  - spanner 会等在事务过程中
+  - percolator 会直接读取到 begin ts 之前的值, 并不会阻塞
+- percolator 的提交是让 client 做 coordinator ; spanner 的提交是让 storage node 中的一个节点作为 coordinator
+- percolator 的数据 ts 使用在事务过程 + 事务提交 ; 而 spanner 的 ts 仅用在 RW 事务的提交过程
+- spanner 的 RW 事务的读是 **阻塞** 的, 因此 spanner 额外提供两个只读事务类型(spanner 只读事务指 **事务开始的时候就需要声明自己是只读事务**)
