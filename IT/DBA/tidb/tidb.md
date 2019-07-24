@@ -2,6 +2,12 @@
 
 ## 概念
 
+- Timestamp Oracle (TO)
+- The Server Oracle (TSO)
+- Commit Table (CT)
+- Shadow Cells (SCs)
+- Transactional Clients (TCs)
+
 ![架构](tidb-architecture.png)
 
 - TiDB-Server:
