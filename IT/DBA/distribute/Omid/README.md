@@ -88,3 +88,12 @@ tentative write 通过向 DT 表插入新记录以更新 commit 状态
 DT 表的 commit_ts 属性:
 - `commit_ts == NULL`: tentative 私有暂时版本
 - `commit_ts == T.commit_ts`: committed 版本, 内有创建该事务的 txid 和 commit_ts
+
+#### Omid 的事务状态
+
+- outstanding: 事务尚在执行中; 如果 client 或 TM 发生 crash , 则主动进入 aborted status
+- aborted: 事务已经回滚; TM 执行并发控制逻辑时, 发现事务 T 无法进行下去, 则使其回滚
+- committed: 事务成功提交; 到达 commit point
+- complete: 事务回滚或提交后, 完成后续的 roll forward 和 rollback 操作
+
+**Omid 恢复时, outstanding 和 aborted 都作为 aborted 事务处理**
