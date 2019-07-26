@@ -961,6 +961,9 @@ select count(distinct col)/count(*) as dist from table;
   - 从 CPU 计算复杂度: 一个是 `reverse`, 一个是 `hashEncoding`
   - 从查询效率看: 比起使用的依然是 前缀索引 方式的倒序索引, Hash 一般更为稳定
 
+经验:
+- 使用 `str like "STR%"` 可以经过字符串前缀索引(, 其他形式 (`"%STR"`, `"S%TR"`) 无效)
+
 ---
 
 ### 优化器
@@ -2736,18 +2739,18 @@ mysql >= 5.7 后, 默认开启 ssl, 即使用 unixsock 连接, 也会读取 `/et
 > 好像不是, 好像只是, go-sql-driver 在 **client** 对时间的 二进制 内容转换为 time.Time, 没有加 `parseTime=true` 的时候只是返回字符串
 
 从上面的类型看:
-- `binaryRows`.`readRow`: 新版 stmt 协议 "prepared statement protocol" (`>= mysql/4.1`)
+- `binaryRows.readRow`: 新版 stmt 协议 "prepared statement protocol" (`>= mysql/4.1`)
   - fieldTypeTime: -- "-838:59:59" 到 "838:59:59" 3 字节
     - formatBinaryTime -- 二进制 编码到 time 字符串
   - !fieldTypeTime && hasParams(conn, "parseTime=true"):
     - parseBinaryDateTime -- 二进制 直接编码到 time.Time
   - 其余:
     - formatBinaryDateTime -- 二进制 编码到 time 字符串
-- `textRows`.`readRow`: 旧版协议 (`>= mysql/3.20`)
+- `textRows.readRow`: 旧版协议 (`>= mysql/3.20`)
   - hasPrarms(conn, "parseTime=true") && fieldTypeTimestamp, fieldTypeDateTime, fieldTypeDate, fieldTypeNewDate:
     - parseDateTime -- "YYYY-MM-DD HH:MM:SS.MMMMMM" -> time.Parse(sql.timeFormat) -> time.Time
 
-由于 go 里面不能直接赋值到 `time`.`Time` , 所以如果没有添加 "parseTime=true" , 那么在结构体里面不能使用 `time`.`Time` , 而是用 `database/sql`.`NullString` , 再自行转换到 `time`.`Time`
+由于 go 里面不能直接赋值到 `time.Time` , 所以如果没有添加 "parseTime=true" , 那么在结构体里面不会使用 `time.Time` , 而是用 `database/sql.NullString` , 再自行转换到 `time.Time`
 
 ### `show processlist.state`
 
