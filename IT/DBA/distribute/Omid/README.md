@@ -140,3 +140,47 @@ II: 事务修改的元素无交集(disjoint), 访问数据库的不同部分
 1. Omid 是 OCC 协议, 并混杂了 MVCC
 2. OCC 在 validate phase 阶段, 还需要检查当前事务的 `read_set` 与已验证过的事务的 `write_set` 是否有冲突
 3. Omid 由于采用多版本, 事务 T 可以直接读取 T.start_ts 时刻的 snapshot 的最新版本的数据
+
+backward 冲突检查: 检查集合 {T|T0.start_ts < T.commit_ts} 中的事务是否和 T0 冲突(与已提交的事务的冲突)
+forward 冲突检查: 检查集合 {T|T.start_ts < T.commit_ts} 中的事务是否和 T0 冲突(与未提交的事务的冲突)
+
+**Omid 采用 backward 冲突检查**
+
+#### 隔离性 1: 事务 T0 能够读到提交时间早于 T0 开始时间的所有事务的变更
+
+即:
+- T0 可以读到 {T|T.commit_ts < T0.start_ts} 的全部(累计)结果
+- T0 开始前已经提交的事务产生的变更对 T0 可见
+- T0 能够读到 T0.start_ts 时刻的 snapshot
+
+**write-too-late**: 由于前一事务的写由于 **故障等不正常因素** 导致后一事务 **读** 操作在于前一事务的 **写** 操作
+
+出现 write-too-late 的原因:
+
+![write-too-late](v2-6db1c756080a89a1ba1d89b3119b95d7_r.jpg)
+
+因此, 需要保持以下的 invariant:
+
+```text
+TM 处理事务 T0 的 BEGIN 请求时,
+集合 S={T|T.commit_ts < T0.start_ts} 是早于 T0 开始提交到事务,
+只有等到 S 中的所有事务执行完 UpdateCT(T.start_ts, T.commit_ts)(落盘)或 abort 后, 
+TM 才能返回 T0.start_ts
+```
+
+即: 事务集合 S 确定点(fsync OR abort) 可延迟到最迟 T0.start_ts 之前
+
+**在同一 TM 中, 能够保持该 invariant; 当 TM 做 failover 时, 无法保持该条件**
+
+#### 隔离性 2: 事务 T0 和已提交的事务冲突, 则 T0 必须回滚
+
+例如: 存在 T s.t. T is committed && T0.start_ts < T.commit_ts < T0.commit_ts, 则 T0 必须回滚
+(完全是因为没有互斥队列的缘故...)
+
+总结:
+
+隔离性是指: 1.事务提交则对后续事务可见, 2.事务和已提交事务发生冲突则夭折
+
+不满足隔离性则会出现 Stale Read 和 Lost Update anomaly
+
+### TM 冲突检查
