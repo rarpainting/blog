@@ -184,3 +184,51 @@ TM 才能返回 T0.start_ts
 不满足隔离性则会出现 Stale Read 和 Lost Update anomaly
 
 ### TM 冲突检查
+
+```text
+假设T0是TM正在提交的事务, 则:
+
+与 T0 冲突的 committed 事务集合: 
+    ConflictSet(T0) = 
+        {T.txid | T is committed && T conflicts with T0 }
+与 T0 执行时间区间重叠的 committed 事务集合:
+    OverlappingSet(T0) = 
+        {T.txid | T is committed && T0.start_ts < T.commit_ts}
+执行时间区间重叠是事务冲突的必要条件, 所以:
+    ConflictSet(T0) ∈ OverlappingSet(T0)
+    
+
+TM 维护活跃事务的最小 txid
+    min_outstanding_txid = MIN{T.txid | T is outstanding}
+与活跃事务有可能存在冲突的已提交事务集合:
+    PotentialConflictSet = 
+        {T.txid | T is committed && min_outstanding_txid < T.commit_ts}
+显然, min_outstanding_txid < T0.start_ts, 所以
+    ConflictSet(T0) ∈ OverlappingSet(T0) ∈ PotentialConflictSet
+
+TM 的 hash table 表只需要维护 PotentialConflictSet 中所有事务的 write_set 的并集;
+可以将 hash table 看成是 DT 表的同步更新的物化视图:
+    CREATE MATERIALIZED VIEW HashTable
+    AS
+    SELECT key, MAX(commit_ts) AS last_commit_ts
+    FROM DT
+    WHERE min_outstanding_txid < commit_ts 
+    GROUP BY key; 
+
+冲突检查的逻辑也可以用 SQL 表达为:
+    SELECT COUNT(*)
+    FROM HashTable
+    WHERE key in T0.write_set and T0.txid < last_commit_ts
+
+如果为 0, 则无冲突; 否则, 存在冲突
+```
+
+即**hash table 中保存提交时间晚于最小活跃事务开始时间的已提交事务的 write_set 中 key 和 key 最近修改时间**
+
+T0 可提交的判断:
+- `T0.write_set` 中所有 key, 在 hash table 中没有出现
+- `T0.start_ts > last_commit_ts`
+
+提交后, 将 `write_set` 中的每个 key 和 `T0.commit_ts` 作为 key-value 对插入到 hash table 中, 并且执行 `UpdateCT(T0.start_ts, T0.commit_ts)`
+
+#### TM 优化
