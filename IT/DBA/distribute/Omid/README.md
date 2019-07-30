@@ -232,3 +232,9 @@ T0 可提交的判断:
 提交后, 将 `write_set` 中的每个 key 和 `T0.commit_ts` 作为 key-value 对插入到 hash table 中, 并且执行 `UpdateCT(T0.start_ts, T0.commit_ts)`
 
 #### TM 优化
+
+理论的 TM 提交逻辑性能上不可接受:
+- write_set 和 hash table 直接存储 item 的 key , 太粗糙
+- TM 采用 in-memory hash table, 容易受容量限制
+- 应该尽量多核并行处理
+- TM 更新 CT 表的 RTT 影响事务处理的 吞吐率
