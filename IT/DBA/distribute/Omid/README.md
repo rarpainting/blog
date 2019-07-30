@@ -233,8 +233,52 @@ T0 可提交的判断:
 
 #### TM 优化
 
-理论的 TM 提交逻辑性能上不可接受:
-- write_set 和 hash table 直接存储 item 的 key , 太粗糙
-- TM 采用 in-memory hash table, 容易受容量限制
-- 应该尽量多核并行处理
-- TM 更新 CT 表的 RTT 影响事务处理的 吞吐率
+理论的 TM 缺陷与工程解决方案:
+
+##### `write_set` 和 hash table 直接存储 item 的 key , 太粗糙
+
+`write_set` 和 hash table 只存储 key 的 64bit hash(murmur3 hash), 作为 key 的 fingerprint
+
+##### TM 采用 in-memory hash table, 容易受容量限制
+
+将 hash table 分为多个固定大小的 bucket
+
+由于当 bucket 填满时, 新插入的会替换 last_commit_ts 最小 slot, 即, 在某些情况下, **hash table 中并没有保存全部潜在冲突的 fingerprint, 满 bucket 只保存最近更新的 fingerprint**
+
+在:
+1. fingerprint FP 在 bucket 查找不到
+2. bucket已满
+3. T.start_ts < bucket.last_commit_ts
+
+这三个条件都满足的条件下, TM 仍然会认为 T 冲突而 abort T , 即可能产生 **冲突误判**
+
+##### 应该尽量多核并行处理
+
+TM 的采用 SEDA 框架做并发处理, 思路是:
+将计算过程分解为若干个 stage , stage 之间通过 队列 连接构成 pipeline , 每个 stage 多线程处理
+
+TM 的提交处理分为三个 stage: 分配时间戳, 查找更新 hash table 作冲突检查, UpdateCT
+
+同时, hash table 通过 bucket 作为加锁颗粒, 使得 bucket 间的并行处理
+
+但是, 由于之前的 bucket 的冲突误判没有根治, 因此在发生冲突误判时, 可能导致后续的事务发生 **连锁式夭折**, 上层应用雪崩
+
+##### TM 更新 CT 表的 RTT 影响事务处理的 吞吐率
+
+TM 将 UpdateCT 操作打包成一 batch, 并发执行 batch
+
+batch 在提升 吞吐 的同时, 也减低了单次通信的 response time
+
+Omid 可通过 CT 表分散到更多的 RegionServer 的方式, 来降低 UpdateCT 的延迟
+
+##### 总结
+
+**TM 的优化目标是为了提升 TPS, 但会增加事务冲突误判的几率, 会让更多的事务夭折, 甚至出现 cascading rollback. 所以 Omid 适用于冲突极少应用场景**
+
+### TM HA
+
+**primary-backup + failstop + failover**
+
+- primary-backup: 部署多个服务, 一个是 primary, 对外提供服务; 其余是 backup, 作为热备
+- failstop: 如果 primary 出现故障, 则及时停止服务, 避免错误潜伏导致更隐蔽, 更不可控的错误
+- failover: when the primary fails, the backup takes over almost instantly
