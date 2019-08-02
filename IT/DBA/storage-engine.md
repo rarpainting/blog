@@ -4,7 +4,7 @@ DAM(Disk-Access mode):
 1. 一台机器有一个处理器、一个可以包含 M 个 objects 的内存以及无穷大小的外存
 2. 在一次 I/O 操作中, 计算机可以在内存和外存之间传输包含 B objects 的 block, 其中 1 < B < M
 3. 一个算法的 Running Time 可以定义为在算法执行期间 I/O 的次数、只用内存数据进行的计算可以认为是没有代价的
-4. 一个数据结构的大小可以定义成可以包含它的 blocks 数的大小 
+4. 一个数据结构的大小可以定义成可以包含它的 blocks 数的大小
 
 - **写放大**: 实际写入磁盘的数据大小 和 程序要求写入数据大小 之比
 - **读放大**: 一次查询所需要的 I/O 数
@@ -48,10 +48,10 @@ B+Tree 的放大特性: 如果 B+Tree 的 block size 为 B, 故每个内部节�
 如果数据集大小为 N, 放大因子为 k, 最小一层一个文件大小为 B, 每层文件的单个文件大小相同为 B, 不过每层文件个数不同
 
 - **写放大**: 同一个 record, 会在本层 k 此后才会被 compact 到下一层(放大 k), 层数为 O((log N/B) / (log B)) , 故写放大为 O(k(log N/B) / (log B))
-- **读放大**: 依次在每一层进行 **二次查找**, 直到最后一层找到;
-  - R = (log N/B) + (log N/(Bk)) + (log N/(Bkk)) + ... + 1 = (log N/B) + (log N/B) - (log k) + (log N/B) - 2(log k) + ... + 1 
+- **读放大**: 依次在每一层进行 **二分查找**, 直到最后一层找到:
+  - R = (log N/B) + (log N/(Bk)) + (log N/(Bkk)) + ... + 1 = (log N/B) + (log N/B) - (log k) + (log N/B) - 2(log k) + ... + 1
   - 读放大为 O((log N/B)*(log N/B)/(log k))
-  
+
 #### Size-tiered LSM-Tree
 
 假设数据集大小为 N，放大因子为 k，最大层有 k 个大小为 N/k 个文件，倒数第二层有 k 个 N/kk 个文件…那么一共有 O((log N/B)/(log k)) 层
@@ -82,7 +82,7 @@ LSM-Tree 是由 两个或两个以上 存储数据的结构 组成的, 以两个
 
 带随机概率的 Bitmap
 
-#### Compact 
+#### Compact
 
 ## LSH 树()
 
@@ -104,7 +104,7 @@ FTI 将每个 Block 从中分出一部分用作 buffer;
 
 ![总结](conclusion.png)
 
-- Fractal Tree Index 在 **写放大和读放大** 方便表现的都很不错
-- Leveld LSM Tree 在 **写放大** 方面和 FTI 差不多, 但是读放大方面比 FTI 要差
+- Fractal Tree Index 在 **写放大和读放大** 方面表现的都很不错
+- Leveld LSM Tree 在 **写放大** 方面和 FTI 差不多, 但是读放大比 FTI 要差
 - Size-tiered LSM Tree 在 **写放大** 方面优于 FTI 和 Leveld LSM Tree, 但读放大方面表现最差, 一般 **少读多写并对写性能有较高要求** 的场景下考虑使用 Size-tired LSM Tree
 - B+ Tree 有较高的写放大, 但是在 **读放大** 方面不错

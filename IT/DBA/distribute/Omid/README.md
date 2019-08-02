@@ -282,3 +282,46 @@ Omid 可通过 CT 表分散到更多的 RegionServer 的方式, 来降低 Update
 - primary-backup: 部署多个服务, 一个是 primary, 对外提供服务; 其余是 backup, 作为热备
 - failstop: 如果 primary 出现故障, 则及时停止服务, 避免错误潜伏导致更隐蔽, 更不可控的错误
 - failover: when the primary fails, the backup takes over almost instantly
+
+#### 时间戳严格单调递增
+
+invariant 需要保证以下条件:
+**老 primary TM 分配出的 timestamp 都小于新 primary TM 上分配的 timestamp**
+
+时间戳分配机制:
+
+1. TM 将时间戳空间划分为 (start_ts, end_ts], 且各个区间不重叠
+2. TM 维护两个状态: maxTS 和 prevTS
+  - maxTS: shared and non-volatile -- 当前 epoch 的 end_ts , 下一个 epoch 的 start_ts ; 存储在 zk 中共享
+  - prevTS: private and volatile -- 已分配的时间戳 ; TM 所私有
+3. TM 分配 epoch 顺序: maxTS = end_ts ==> prevTS = start_ts
+4. TM 分配一个初始的 epoch 作为 当前 epoch
+5. 如果当前 epoch 已经耗尽 (prevTS==maxTS) , 分配下一个
+6. 旧 TM crash , 新 TM 读到 maxTS , 分配 `start_ts=maxTS` 的 epoch 作为当前 epoch , 接着分配时间戳
+
+**TM crash 之前, 已分配的时间戳 <= maxTS; 新 TM 启用后, 分配时间戳 > maxTS; 因此时间戳在 TM failover 的时候依然保持严格的单调递增**
+
+#### write-too-late
+
+![TM failover](v2-9318683ed29410324040ca8d4c7d3a3f_r.jpg)
+
+为了避免 write-too-late , 则添加规则:
+
+```text
+如果 T1 和 T2 满足:
+   1. T1.commit_ts < T2.start_ts;
+   2. 存在 K ∈ T1.write_set ∩ T2.read_set.
+因为 write-too-late 原因, T2 读到了 item K 的 T1 之前的版本, 则 T1 不能提交
+```
+
+具体实施由 client 在执行读操作时将 write-too-late 的事务杀死(invalidate)
+
+```text
+如果 T2 读取数据时,
+发现 DT 表有 T1 的 tentative update, 并且 T1.txid 属于过期 epoch
+则, 执行原子操作 invalidate T1 if T1. txid not in CT
+```
+
+#### primary 的 uniqueness 约束
+
+primary TM 遭遇无法及时修复的故障时, 因停服而不可用 ; backup TM 自动 failover, 恢复服务
