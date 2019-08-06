@@ -215,6 +215,22 @@ Calcite 实现的 Volcano Optimizer 支持以下三种终止条件:
 INSERT INTO t VAULES ("pingcap001", "pingcap", 3);
 ```
 
+```golang
+type InsertStmt {
+  dmlNode
+  
+  IsReplace   bool
+  IgnoreErr   bool
+  Table       *TableRefsClause
+  Columns     []*ColumnName
+  Lists       [][]ExprNode
+  Setlist     []*Assignment
+  Priority    mysql.PriorityEnum
+  OnDuplicate []*Assignment
+  Select      ResultSetNode
+}
+```
+
 ## TiDB 的异步 schema 变更实现
 
 ### 概念
@@ -346,7 +362,7 @@ TiDB Server 1 流程:
 
 ### 概念
 
-- OLTP(联机事务处理/on-line transaction processing):
+- OLTP(联机事务处理/On-Line Transaction Processing):
   - 强调数据库内存效率, 强调内存各种指标的命令率, 强调绑定变量, 强调并发操作
 - OLAP(联机分析处理/On-Line Analytical Processing):
   - 强调数据分析, 强调 SQL 执行市场, 强调磁盘 I/O, 强调分区
