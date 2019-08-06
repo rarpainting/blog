@@ -325,3 +325,61 @@ invariant 需要保证以下条件:
 #### primary 的 uniqueness 约束
 
 primary TM 遭遇无法及时修复的故障时, 因停服而不可用 ; backup TM 自动 failover, 恢复服务
+
+backup 通过 **Lease 故障检测** 发现 primary 故障
+
+#### Lease 机制
+
+TODO:
+
+#### Omid 租约机制
+
+1. primary 和 backup 共享 Zookeeper 的 permanent multi-versioned znode: `/tso-lease`
+
+2. 两者都尝试通过 zk 版本的 CAS 操作, 将 `/tso-lease` 的数据版本+1
+
+```text
+zk 的 CAS 原子操作为:
+    Zookeeper.setData(znode, data, version);
+```
+
+3. primary 在租期剩余时间少于 guardLeasePeriodInMs 时 tryToRenewLeasePeriod 以续租
+
+4. backup 每隔 leasePeriodInMS 周期 `tryToGetInitialLeasePeriod()` 以通过 failover 机制取代 primary
+
+**primary uniqueness invariant: 既在任意时刻之多有一个 primary; 当然, 容许出现无主的空窗期**
+
+#### 总结
+
+- TM 通过 primary-backup+failstop+failover 提供 HA
+- TM HA能够保证故障切换不影响逻辑时钟的严格单调递增特性
+- 故障切换破坏了的单机 TM 避免 write-too-late 问题的 invariant, TM HA 增强了该 invarint
+- TM HA 通过 lease 机制实现故障检测, failstop 和 primary unique invariant 保证
+
+### Omid 读操作
+
+#### Client 在执行当前事务的读操作时解析 item 的版本
+
+TODO:
+- 创建 tentative 版本事务 T1 已经在 CT 表中有 valid 提交信息, 但没有 roll forward 安装该版本, 当前事务 T 要代劳 rollback
+- T1 在 CT 表的提交信息为 invalid, 跳过该版本
+- T1 在 CT 表中无提交信息且 T1.txid 属于老 TM 上的过期 epoch, 当前事务用原子操作(HBase 版本的 CAS 操作 checkAndMutate)在 CT 表中将 T1 杀死(invalidation)
+- T1 在 CT 表中无提交信息且 T1.txid 属于当前 epoch, 因为竞争条件存在, 当前事务 re-read DT 表中的 item, 才能判断是 tentative 版本是否提交
+
+#### 两个竞争条件
+
+##### 杀死 epoch 过期的事务需要用 CAS 操作
+
+##### epoch 未过期的 tentative 版本在 CT 中不存在对应的提交消息需要 re-read DT 表确认是否提交
+
+#### 总结
+
+保证 MVCC 的 SI 隔离级别, 也需要客户端的参与. 主要原因是 相继发生的事件:
+commit_ts 分配, 提交标记落盘和 apply 完成之间存在事件差, 会有其他并发事务的操作穿插 (interleaving), 破坏隔离性
+
+### 结论
+
+scalability 是 TM 最大问题, 可选的方案有:
+
+- TM 轻量化, 大多数工作移交给 Client, 比如 Percolator
+- TM  scale-out, 增加 TM 的节点来提升负载能力
