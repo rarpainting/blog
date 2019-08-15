@@ -216,9 +216,10 @@ INSERT INTO t VAULES ("pingcap001", "pingcap", 3);
 ```
 
 ```golang
+// .../parser/ast/dml.go
 type InsertStmt {
   dmlNode
-  
+
   IsReplace   bool
   IgnoreErr   bool
   Table       *TableRefsClause
@@ -229,7 +230,180 @@ type InsertStmt {
   OnDuplicate []*Assignment
   Select      ResultSetNode
 }
+
+// .../tidb/planner/core/planbuilder.go
+func (b *PlanBuilder) Build(ctx context.Context, node ast.Node) (Plan, error)
+...
+	case *ast.InsertStmt:
+		return b.buildInsert(ctx, x)
+...
+
+// .../tidb/planner/core/plan.go
+type Plan interface {
+	// Get the schema.
+	Schema() *expression.Schema
+	// Get the ID.
+	ID() int
+	// Get the ID in explain statement
+	ExplainID() fmt.Stringer
+	// replaceExprColumns replace all the column reference in the plan's expression node.
+	replaceExprColumns(replace map[string]*expression.Column)
+
+	context() sessionctx.Context
+
+	// property.StatsInfo will return the property.StatsInfo for this plan.
+	statsInfo() *property.StatsInfo
+}
+// .../tidb/planner/core/common_plans.go
+type Insert struct {
+	baseSchemaProducer
+
+	Table       table.Table
+	tableSchema *expression.Schema
+	Columns     []*ast.ColumnName
+	Lists       [][]expression.Expression
+	SetList     []*expression.Assignment
+
+	OnDuplicate        []*expression.Assignment
+	Schema4OnDuplicate *expression.Schema
+
+	IsReplace bool
+
+	// NeedFillDefaultValue is true when expr in value list reference other column.
+	NeedFillDefaultValue bool
+
+	GenCols InsertGeneratedColumns
+
+	SelectPlan PhysicalPlan
+}
+
+// .../tidb/executor/build.go
+func (b *executorBuilder) build(p plannercore.Plan) Executor
+...
+	case *plannercore.Insert:
+		return b.buildInsert(v)
+...
+
+// .../tidb/executor/executor.go
+type Executor interface {
+	base() *baseExecutor
+	Open(context.Context) error
+	Next(ctx context.Context, req *chunk.Chunk) error
+	Close() error
+	Schema() *expression.Schema
+}
+// .../tidb/executor/insert.go
+type InsertExec struct {
+        *InsertValues
+        OnDuplicate []*expression.Assignment
+        Priority    mysql.PriorityEnum
+}
+
+// .../tidb/executor/insert.go
+insertExec.Next
+↓
+func (e *InsertValues) insertRows(ctx context.Context,
+  exec func(ctx context.Context, rows [][]types.Datum) error) (err error)
+↓
+insertExec.exec
+...
+		for _, row := range rows {
+			if _, err := e.addRecord(row); err != nil {
+				return err
+			}
+    }
+...
+
+// .../tidb/executor/insert_common.go
+type InsertValues struct {
+        SelectExec Executor
+
+        Table   table.Table
+        Columns []*ast.ColumnName
+        Lists   [][]expression.Expression
+        SetList []*expression.Assignment
+
+        GenColumns []*ast.ColumnName
+        GenExprs   []expression.Expression
+
+        // Has unexported fields.
+}
+
+func (e *InsertValues) addRecord(row []types.Datum) (int64, error)
+...
+	h, err := e.Table.AddRecord(e.ctx, row)
+...
+
+// .../tidb/table/table.go
+type Table interface {
+...
+	// Indices returns the indices of the table.
+  Indices() []Index
+...
+	// AddRecord inserts a row which should contain only public columns
+  AddRecord(ctx sessionctx.Context, r []types.Datum, opts ...AddRecordOption) (recordID int64, err error)
+...
+}
+
+// .../tidb/table/tables/tables.go
+type tableCommon struct {
+	tableID int64
+	// physicalTableID is a unique int64 to identify a physical table.
+	physicalTableID int64
+	Columns         []*table.Column
+	publicColumns   []*table.Column
+	writableColumns []*table.Column
+	writableIndices []table.Index
+	indices         []table.Index
+	meta            *model.TableInfo
+	alloc           autoid.Allocator
+
+  // recordPrefix / indexPrefix -- generated using physicalTableID
+	recordPrefix kv.Key
+	indexPrefix  kv.Key
+}
+
+// 索引创建
+// addIndices adds data into indices.
+func (t *tableCommon) addIndices(ctx sessionctx.Context, recordID int64, r []types.Datum, rm kv.RetrieverMutator,
+  opts []table.CreateIdxOptFunc) (int64, error)
+// .../tidb/table/tables/index.go
+Index.Create(ctx sessionctx.Context, rm kv.RetrieverMutator, indexedValues []types.Datum, h int64, opts ...CreateIdxOptFunc) (int64, error)
+
+// k/v 创建
+
+tableCommon.AddRecord()
+...
+  key := t.RecordKey(recordID) // get key
+  writeBufs.RowValBuf, err = tablecodec.EncodeRow(sc, row, colIDs, writeBufs.RowValBuf, writeBufs.AddRowValues) // get value
+  txn.Set(key, value) // set into storage engine by transaction
+...
 ```
+
+## SQL Parser 的实现
+
+- 词法解析 -- [lexer.go](https://github.com/pingcap/tidb/blob/source-code/parser/lexer.go)
+- 语法解析 -- goyacc -> [parser.y](https://github.com/pingcap/tidb/blob/source-code/parser/parser.y)
+
+### definitions
+
+```yacc
+%union {
+	offset    int // offset
+	item      interface{}
+	ident     string
+	expr      ast.ExprNode
+	statement ast.StmtNode
+}
+```
+
+### rules
+
+TODO:
+
+## Select 概览
+
+# [builddatabase](https://github.com/ngaut/builddatabase)
 
 ## TiDB 的异步 schema 变更实现
 
