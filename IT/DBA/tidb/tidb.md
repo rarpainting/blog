@@ -218,8 +218,6 @@ INSERT INTO t VAULES ("pingcap001", "pingcap", 3);
 ```golang
 // .../parser/ast/dml.go
 type InsertStmt {
-  dmlNode
-
   IsReplace   bool
   IgnoreErr   bool
   Table       *TableRefsClause
@@ -402,6 +400,92 @@ tableCommon.AddRecord()
 TODO:
 
 ## Select 概览
+
+```golang
+// .../parser/ast/dml.go
+type SelectStmt struct {
+	*SelectStmtOpts
+	Distinct    bool
+	From        *TableRefsClause
+	Wher e       ExprNode
+	Fields      *FieldList
+	GroupBy     *GroupByClause
+	Having      *HavingClause
+	WindowSpecs []WindowSpec
+	OrderBy     *OrderByClause
+	Limit       *Limit
+	LockTp      SelectLockType
+	TableHints []*TableOptimizerHint
+	IsAfterUnionDistinct bool
+	IsInBraces  bool
+}
+
+// .../tidb/planner/core/logical_plan_builder.go
+func (b *PlanBuilder) buildSelect(ctx context.Context, sel *ast.SelectStmt) (p LogicalPlan, err error) {
+...
+	if sel.Wher e != nil {
+		p, err = b.buildSelection(ctx, p, sel.Where, nil)
+	}
+...
+}
+func (b *PlanBuilder) buildSelection(ctx context.Context, p LogicalPlan, wher e ast.ExprNode, AggMapper map[*ast.AggregateFuncExpr]int) (LogicalPlan, error)
+
+// .../tidb/planner/core/plan.go
+type LogicalPlan interface {
+	Plan
+	PredicatePushDown([]expression.Expression) ([]expression.Expression, LogicalPlan)
+	PruneColumns([]*expression.Column) error
+	DeriveStats(childStats []*property.StatsInfo) (*property.StatsInfo, error)
+	MaxOneRow() bool
+	Children() []LogicalPlan
+	SetChildren(...LogicalPlan)
+	SetChild(i int, child LogicalPlan)
+}
+
+// .../tidb/planner/core/logical_plans.go
+type LogicalSelection struct {
+	baseLogicalPlan
+	Conditions []expression.Expression
+}
+
+// .../tidb/session/session.go
+func (s *session) Execute(ctx context.Context, sql string) (recordSets []sqlexec.RecordSet, err error) {
+	...
+	func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec.RecordSet, err error) {
+		...
+		stmt, err := compiler.Compile(ctx, stmtNode)
+		==> func (c *Compiler) Compile(ctx context.Context,
+		stmtNode ast.StmtNode) (*ExecStmt, error) {
+			...
+			planner.Optimize()
+			==> func Optimize(ctx context.Context, sctx sessionctx.Context, node ast.Node, is infoschema.InfoSchema) (plannercore.Plan, error) {
+				...
+				plannercore.DoOptimize(ctx, builder.GetOptFlag(), logic)
+				...
+			}
+			...
+		}
+		...
+	}
+	...
+}
+
+
+// .../tidb/planner/core/optimizer.go
+func DoOptimize(ctx context.Context, flag uint64, logic LogicalPlan) (PhysicalPlan, error) {
+	logic, err := logicalOptimize(ctx, flag, logic)
+	...
+	physical, err := physicalOptimize(logic)
+	...
+	finalPlan := postOptimize(physical)
+	...
+}
+
+// 逻辑优化 基于规则的优化
+func logicalOptimize(ctx context.Context, flag uint64, logic LogicalPlan) (LogicalPlan, error)
+// 物理优化 基于代价的优化
+func physicalOptimize(logic LogicalPlan) (PhysicalPlan, error)
+```
 
 # [builddatabase](https://github.com/ngaut/builddatabase)
 
