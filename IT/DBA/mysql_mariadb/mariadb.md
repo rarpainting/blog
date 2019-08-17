@@ -249,6 +249,7 @@
 			- [Force-log-at-commit](#force-log-at-commit)
 			- [源码](#源码)
 		- [一致性与隔离级别的关系](#一致性与隔离级别的关系)
+		- [JSON](#json)
 
 <!-- /TOC -->
 
@@ -2786,6 +2787,8 @@ mysql >= 5.7 后, 默认开启 ssl, 即使用 unixsock 连接, 也会读取 `/et
 
 InnoDB 通过 Mini-transaction 协议实现 redo log , 其中该协议分为三个子协议
 
+TODO:
+
 #### The FIX Rules
 
 The FIX Rules 规定:
@@ -2802,6 +2805,7 @@ The FIX Rules 规定:
 - Write-Ahead Log 保证了单个数据页的一致性, 但是不保证事务的一致性
 - Force-log-at-commit 要求当一个事务提交时, 其生成的所有 mini-transaction 日志必须持久到设备上
 
+
 #### 源码
 
 ![mtr_t 内存结构](20141203164837968.jpeg)
@@ -2811,3 +2815,39 @@ The FIX Rules 规定:
 ### 一致性与隔离级别的关系
 
 ![一致性与隔离级别](v2-bb901763533ccc7c043c31b461ba1b5e_hd.jpg)
+
+### JSON
+
+```sql
+
+> CREATE TABLE lnmp (
+    `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+    `category` JSON,
+    `tags` JSON,
+    PRIMARY KEY (`id`)
+  );
+
+> insert into lnmp(category, tags) values ('{"id": 1, "name": "lnmp"}
+    ', '[1, 2, 3]');
+
+> select id,category->'$.name' from lnmp;
++------|----------------------+
+| id   | category->'$.name'   |
+|------|----------------------|
+| 1    | "lnmp"               |
++------|----------------------+
+
+> select id, JSON_UNQUOTE(category->'$.name') from lnmp;
++------|------------------------------------+
+| id   | JSON_UNQUOTE(category->'$.name')   |
+|------|------------------------------------|
+| 1    | lnmp                               |
++------|------------------------------------+
+
+> select id, category->>'$.name' from lnmp;
++------|-----------------------+
+| id   | category->>'$.name'   |
+|------|-----------------------|
+| 1    | lnmp                  |
++------|-----------------------+
+```
