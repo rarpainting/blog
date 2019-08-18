@@ -523,6 +523,20 @@ func logicalOptimize(ctx context.Context, flag uint64, logic LogicalPlan) (Logic
 
 ### 物理优化 -- CBO/cost based optimization
 
+![逻辑算子与物理算子](2.png)
+
+以以下 SQL 为例:
+
+```sql
+> select sum(s.a),count(t.b) from s join t on s.a = t.a and s.c < 100 and t.c > 10 group bys.a
+```
+
+![前面流程](3.jpeg)
+
+![完整流程](4.jpeg)
+
+#### 代价评估
+
 # [builddatabase](https://github.com/ngaut/builddatabase)
 
 ## TiDB 的异步 schema 变更实现
