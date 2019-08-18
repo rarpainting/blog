@@ -459,9 +459,9 @@ func (s *session) Execute(ctx context.Context, sql string) (recordSets []sqlexec
 			...
 			planner.Optimize()
 			==> func Optimize(ctx context.Context, sctx sessionctx.Context, node ast.Node, is infoschema.InfoSchema) (plannercore.Plan, error) {
+                plannercore.TryFastPlan(sctx, node)
 				...
 				plannercore.DoOptimize(ctx, builder.GetOptFlag(), logic)
-				...
 			}
 			...
 		}
@@ -485,7 +485,43 @@ func DoOptimize(ctx context.Context, flag uint64, logic LogicalPlan) (PhysicalPl
 func logicalOptimize(ctx context.Context, flag uint64, logic LogicalPlan) (LogicalPlan, error)
 // 物理优化 基于代价的优化
 func physicalOptimize(logic LogicalPlan) (PhysicalPlan, error)
+
+// TODO:
 ```
+
+以上是 Select 的流程, 下面重点关注 `logicalOptimize`, `physicalOptimize` 的实现流程
+
+### 逻辑优化 -- RBO/rule based optimization
+
+```golang
+var optRuleList = []logicalOptRule{
+	&columnPruner{},
+	&buildKeySolver{},
+	&decorrelateSolver{},
+	&aggregationEliminator{},
+	&projectionEliminater{},
+	&maxMinEliminator{},
+	&ppdSolver{},
+	&outerJoinEliminator{},
+	&partitionProcessor{},
+	&aggregationPushDownSolver{},
+	&pushDownTopNOptimizer{},
+	&joinReOrderSolver{},
+}
+
+// 逻辑优化 基于规则的优化
+func logicalOptimize(ctx context.Context, flag uint64, logic LogicalPlan) (LogicalPlan, error)
+```
+
+列裁剪
+
+最大最小消除
+
+投影消除
+
+谓词下推
+
+### 物理优化 -- CBO/cost based optimization
 
 # [builddatabase](https://github.com/ngaut/builddatabase)
 
