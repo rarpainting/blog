@@ -70,7 +70,11 @@
 
 ### semi-join
 
+`exists/in`
+
 ### anti-join
+
+`not exists/in`
 
 ```sql
 SELECT * FROM STUDENT LEFT JOIN SCORE ON STUDENT.sno = SCORE.sno WHERE SCORE.sno IS NULL;

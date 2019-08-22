@@ -43,6 +43,18 @@ SELECT * FROM TEST_A, LATERAL (SELECT a FROM TEST_B WHERE TEST_A.b = TEST_B.b) b
 
 外连接转换为内连接
 
+### 投影消除
+
+投影消除的情况:
+- Projection 算子需要投影的列和子节点的输出列一样, 则该算子可被消除
+- Projection 的子节点也是 Projection, 则 *子节点的投影* 可被消除
+- Aggregation 在投影中行为相似, 因此例如 `Aggregation(A) -> Projection(A, B, C)`
+
+### 最大最小消除
+
+- max(column)/min(column) 可能导致 `TableScan+Aggregation`, 是一个全表扫描
+- 转化为 `select column from table order by column desc(asc) limit 1 where column is not null` 则是成为 `TableScan+Sort+Limit` , 能充分应用 index
+
 ### 谓词下推
 
 ```sql
@@ -75,3 +87,4 @@ SELECT * FROM TEST_A, LATERAL (SELECT a FROM TEST_B WHERE TEST_A.b = TEST_B.b) b
 ![](20180523122525962.png)
 
 ## 物理优化
+

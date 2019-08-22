@@ -513,17 +513,50 @@ var optRuleList = []logicalOptRule{
 func logicalOptimize(ctx context.Context, flag uint64, logic LogicalPlan) (LogicalPlan, error)
 ```
 
-列裁剪
+以下 RBO 理论部分看 [PostgreSQL](IT/DBA/PostgreSQL.md)
 
-最大最小消除
+部分重要函数:
 
-投影消除
+```golang
+// 从表达式中提取列及其信息
+func ExtractColumnsFromExpressions(result []*Column, exprs []Expression, filter func(*Column) bool) []*Column
+```
 
-谓词下推
+#### 列裁剪
+
+```golang
+func (p *LogicalJoin) PruneColumns(parentUsedCols []*expression.Column) error
+```
+
+#### 最大最小消除
+
+#### 投影消除
+
+```golang
+func (pe *projectionEliminater) eliminate(p LogicalPlan, replace map[string]*expression.Column, canEliminate bool) LogicalPlan
+```
+
+#### 谓词下推
+
+```golang
+func (p *baseLogicalPlan) PredicatePushDown(predicates []expression.Expression) ([]expression.Expression, LogicalPlan)
+```
+
+#### 构建节点属性
+
+主要是构建 `unique key` 和 `MaxOneRow` 属性
+
+如果一个算子满足:
+- 该算子的子节点是 `MaxOneRow` 算子
+- 该算子是 `Limit 1`
+- `Selection`: 且满足 `unique_key = CONSTANT`
+- `Join`: 左右节点是 `MaxOneRow`
+
+以上情况保证了 **该节点的输出肯定只有一行** , 因此可以设置该节点为 `MaxOneRow`
 
 ### 物理优化 -- CBO/cost based optimization
 
-![逻辑算子与物理算子](2.png)
+![逻辑算子与物理算子对应](2.png)
 
 以以下 SQL 为例:
 
