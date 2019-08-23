@@ -570,6 +570,58 @@ func (p *baseLogicalPlan) PredicatePushDown(predicates []expression.Expression) 
 
 #### 代价评估
 
+## Hash Join
+
+### Classic Hash Join
+
+构建哈希表的连接关系称为 "构建(build)" 输入, 而另一个输入称为 "探测(probe)" 输入
+
+1. For each tuple {\displaystyle r} r in the build input {\displaystyle R} R
+  1. Add {\displaystyle r} r to the in-memory hash table
+  2. If the size of the hash table equals the maximum in-memory size:
+    1. Scan the probe input {\displaystyle S} S, and add matching join tuples to the output relation
+    2. Reset the hash table, and continue scanning the build input {\displaystyle R} R
+2. Do a final scan of the probe input {\displaystyle S} S and add the resulting join tuples to the output relation
+
+翻译:
+- 如果 Hash Join 小于 最大可用内存 , 则将 匹配的连续元组 写入到 Hash Join memory 中
+- 如果超过 最大可用内存 , 则在写满可用内存后, 删除已构建的元组, 从当前元组点重新构建(??)
+
+适合于小表写入
+
+### Grace Hash Join
+
+特点:
+- 首先 Hash R 和 S 元组并为此构建分区, 并将分区写入到 template disk file
+
+### TiDB 的 Hash Join
+
+- Build 阶段, 对 Inner 表建哈希表
+- Probe 阶段, 对由 Outer 表驱动执行 Join 过程
+
+Hash Join 实现:
+- Main Thread, 一个, 负责:
+  - 读取所有的 Inner 表数据
+  - 根据 Inner 表数据构造哈希表
+  - 启动 `Outer Fetcher` 和 `Join Worker` 开始后台工作, 生成 Join 结果, 各个 goroutine 的启动过程由 `fetchOuterAndProbeHashTable` 这个函数完成
+  - 将 `Join Worker` 计算出的 Join 结果返回给 NextChunk 接口的调用方法
+- `Outer Fetcher`: 一个, 负责读取 Outer 表的数据并分发给各个 `Join Worker`
+- `Join Worker`: 多个, 负责查哈希表、Join 匹配的 Inner 和 Outer 表的数据, 并把结果传递给 Main Thread
+
+#### 关键函数
+
+```golang
+func (e *HashJoinExec) fetchOuterAndProbeHashTable(ctx context.Context)
+```
+
+```golang
+func (e *HashJoinExec) runJoinWorker(workerID uint)
+```
+
+```golang
+func (e *HashJoinExec) waitJoinWorkersAndCloseResultChan()
+```
+
 # [builddatabase](https://github.com/ngaut/builddatabase)
 
 ## TiDB 的异步 schema 变更实现
