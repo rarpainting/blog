@@ -17,13 +17,15 @@
 
 ## channel
 
+CSP 思想
+
 ![channel](channel-tricks.png)
 
 channel 的 happen before 规则:
-- 第 n 个 send 一定 happen before 第 n 个 receive 完成, 不管是 buffered channel 还是 unbuffered channel
-- 对于 capacity 为 m 的 channel, 第 n 个 receive 一定 happen before 第 (n+m) send 完成
-- m=0 unbuffered. 第 n 个 receive 一定 happen before 第 n 个 send 完成
-- channel 的 close 一定 happen before receive 端得到通知, 得到通知意味着 receive 收到一个因为 channel close 而收到的零值(或者 panic?)
+- 第 n 个 `send` 一定 `happen before` 第 n 个 `receive finished`, 不管是 buffered channel 还是 unbuffered channel
+- 对于 capacity 为 m 的 channel, 第 n 个 `receive` 一定 `happen before` 第 (n+m) `send finished`
+- m=0 unbuffered. 第 n 个 `receive` 一定 `happen before` 第 n 个 `send finished`
+- channel 的 close 一定 `happen before` receive 端得到通知, 得到通知意味着 receive 收到一个 channel close 后的零值, 而 close 之后的 send 则发生 panic
 
 
 ## go runtime
@@ -65,6 +67,7 @@ channel 的 happen before 规则:
 ### 调度器字段
 
 | 字段名称   | 数据类型 | 用途描述                                                 |
+| :--:       | :--:     | :--:                                                     |
 | gcwaiting  | uint32   | 作为垃圾回收任务被执行期间的辅助标记, 停止计数和通知机制 |
 | stopwait   | int32    |                                                          |
 | stopnote   | Note     |                                                          |
@@ -104,12 +107,12 @@ channel 的 happen before 规则:
 - 匿名返回值 -- func f() Type {} -- 在 return 执行时被声明
 
 结论:
-defer 语句能访问有名返回值
+`defer` 语句能访问有名返回值
       不能直接访问匿名返回值
 
 ### defer
 
-defer 的 颗粒度 是 函数级 的, 即 defer 会在函数结束时调用, 而不在 代码块
+`defer` 的 颗粒度 是 函数级 的, 即 defer 会在函数结束时调用, 而不在 代码块
 
 ### http 响应
 
@@ -134,7 +137,7 @@ if err != nil {
 
 失败的类型断言 返回断言声明中 **类型** 的 "零" 值
 
-其中, `interface{}`和 `slice` 的零值为 nil
+其中, `interface{}`和 `slice` 的零值为 `nil`
 
 ### 阻塞的 goroutine 和资源泄漏
 
@@ -196,15 +199,7 @@ func First(query string, replicas ...Search) Result {
 }
 ```
 
-4. 指针构成的 "循环引⽤" 加上 runtime.SetFinalizer 会导致内存泄露
-
-5. `go-sql-driver/mysql`
-
-- 同一个事务每一个 Query 的结果集用的都是同一个缓存, 必须把 Query 后的结果集清空才能再次执行
-
-- Stmt
-  - `DB.Prepare()` 会重新从连接池获取一条新的连接
-  - `Tx.Prepare()` 重用 事务(Tx) 的连接
+4. (??) 指针构成的 "循环引⽤" 加上 runtime.SetFinalizer 会导致内存泄露
 
 ### 使用指针接受方法
 
@@ -221,6 +216,14 @@ func First(query string, replicas ...Search) Result {
 - 因此, 在 多线程且无互斥需求 的情况下, 随机数生成器尽量使用 `NewSource`(即 `rngSource`)
 
 ### MySQL
+
+#### `go-sql-driver/mysql`
+
+- 同一个事务每一个 Query 的结果集用的都是同一个缓存, 必须把 Query 后的结果集清空才能再次执行
+
+- Stmt
+  - `DB.Prepare()` 会重新从连接池获取一条新的连接
+  - `Tx.Prepare()` 重用 事务(Tx) 的连接
 
 MySQL 8.0 使用 `caching_sha2_password` 作为默认加密插件, `go-sql-driver/mysql` 本身不支持该插件
 

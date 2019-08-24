@@ -37,7 +37,7 @@ GC 会对 方法区(HotSpot 中的永久代) 进行垃圾收集, 包括收集 �
 - 方法区中 常量 引用的变量
 - 本地方法中 JNI(Native 方法) 引用的变量
 
-### 垃圾收集算法
+### 垃圾收集算法 -- 理论
 
 #### 标记-清除算法
 
@@ -63,13 +63,88 @@ GC 会对 方法区(HotSpot 中的永久代) 进行垃圾收集, 包括收集 �
 
 #### 垃圾收集器
 
-JDK7/8后，HotSpot虚拟机所有收集器及组合
+JDK7/8 后，HotSpot 虚拟机所有收集器及组合
 
 ![垃圾收集器](v2-e0b3e4dc7bab44463e2f2d21429af850_r.jpg)
 
 ![GC](v2-a2428828075c7cb4a4c8610ff62d7897_hd.png)
 
-#### JDK11 - ZGC
+### G1 -- Garbage-First Garbage Collector
+
+正式发布: `JDK 7u4`
+
+作为 default GC: `JEP 248`
+
+开启: `-XX:+UseG1GC`
+
+feature:
+- Can operate concurrently with applications threads like the CMS collector.
+- Compact free space without lengthy GC induced pause times.
+- Need more predictable GC pause durations.
+- Do not want to sacrifice a lot of throughput performance.
+- Do not require a much larger Java heap.
+
+特性:
+- 像CMS收集器一样， 能与应用程序线程并发执行
+- 整理空闲空间更快
+- 需要更多的时间来预测gc停顿时间
+- 不希望牺牲大量的吞吐性能
+- 不需要更大的Java heap
+
+#### 概念
+
+##### Region
+
+堆内存划分为 老年代(O-Older)/新生代(E-Eden)/幸存区(S-Service)/巨大对象(H-Humongous Object)
+
+H-Obj 的特征:
+- H-Obj 直接分配到了 old gen , 防止了反复拷贝移动
+- H-Obj 在 `global concurrent marking` 阶段的 cleanup 和 full GC 阶段回收
+- 在分配 H-Obj 之前先检查是否超过 initiating heap occupancy percent 和 the marking threshold , 如果超过的话, 就启动 global concurrent marking, 为的是提早回收, 防止 evacuation failures 和 full GC
+
+设置: `-XX:G1HeapRegionSize`
+
+```cpp
+// share/vm/gc_implementation/g1/heapRegion.cpp
+// Minimum region size; we won't go lower than that.
+// We might want to decrease this in the future, to deal with small
+// heaps a bit more efficiently.
+#define MIN_REGION_SIZE  (      1024 * 1024 )
+// Maximum region size; we don't go higher than that. There's a good
+// reason for having an upper bound. We don't want regions to get too
+// large, otherwise cleanup's effectiveness would decrease as there
+// will be fewer opportunities to find totally empty regions after
+// marking.
+#define MAX_REGION_SIZE  ( 32 * 1024 * 1024 )
+// The automatic region size calculation will try to have around this
+// many regions in the heap (based on the min heap size).
+#define TARGET_REGION_NUMBER          2048
+void HeapRegion::setup_heap_region_size(size_t initial_heap_size, size_t max_heap_size) {
+  uintx region_size = G1HeapRegionSize;
+  if (FLAG_IS_DEFAULT(G1HeapRegionSize)) {
+    size_t average_heap_size = (initial_heap_size + max_heap_size) / 2;
+    region_size = MAX2(average_heap_size / TARGET_REGION_NUMBER,
+                       (uintx) MIN_REGION_SIZE);
+  }
+  int region_size_log = log2_long((jlong) region_size);
+  // Recalculate the region size to make sure it's a power of
+  // 2. This means that region_size is the largest power of 2 that's
+  // <= what we've calculated so far.
+  region_size = ((uintx)1 << region_size_log);
+  // Now make sure that we don't go over or under our limits.
+  if (region_size < MIN_REGION_SIZE) {
+    region_size = MIN_REGION_SIZE;
+  } else if (region_size > MAX_REGION_SIZE) {
+    region_size = MAX_REGION_SIZE;
+  }
+}
+```
+
+##### SATB/Snapshot-At-The-Beginning
+
+通过 Root Tracing 得到的 GC 开始时活着的对象的一个快照, 作用是 维持并发 GC 的正确性
+
+### JDK11 - ZGC
 
 开启:
 
@@ -88,7 +163,7 @@ JDK7/8后，HotSpot虚拟机所有收集器及组合
 
 关键技术:
 - 着色指针(Colored Pointer):
-  - 指针 64 位中的几位表示 `Finalizable` / `Remapped` / `Marked1` / `Marked0` (ZGC仅支持64位平台), 以标记该指向内存的存储状态
+  - 指针 64 位中的几位表示 `Finalizable` / `Remapped` / `Marked1` / `Marked0` (ZGC 仅支持 64 位平台), 以标记该指向内存的存储状态
 - 读屏障(Load Barrier):
   - 由于着色指针的存在, 在程序运行时访问对象的时候, 可以轻易知道对象在内存的存储状态
   - 若请求读的内存在被着色了, 那么则会触发读屏障
@@ -103,9 +178,9 @@ JDK7/8后，HotSpot虚拟机所有收集器及组合
 ```txt
  6                 4 4 4  4 4                                             0
  3                 7 6 5  2 1                                             0
-+-------------------+-+----+-----------------------------------------------+
++-------------------|-|----|-----------------------------------------------+
 |00000000 00000000 0|0|1111|11 11111111 11111111 11111111 11111111 11111111|
-+-------------------+-+----+-----------------------------------------------+
++-------------------|-|----|-----------------------------------------------+
 |                   | |    |
 |                   | |    * 41-0 Object Offset (42-bits, 4TB address space)
 |                   | |

@@ -576,12 +576,12 @@ func (p *baseLogicalPlan) PredicatePushDown(predicates []expression.Expression) 
 
 构建哈希表的连接关系称为 "构建(build)" 输入, 而另一个输入称为 "探测(probe)" 输入
 
-1. For each tuple {\displaystyle r} r in the build input {\displaystyle R} R
-  1. Add {\displaystyle r} r to the in-memory hash table
+1. For each tuple ${\displaystyle r}$ in the build input ${\displaystyle R}$
+  1. Add ${\displaystyle r}$ to the in-memory hash table
   2. If the size of the hash table equals the maximum in-memory size:
-    1. Scan the probe input {\displaystyle S} S, and add matching join tuples to the output relation
-    2. Reset the hash table, and continue scanning the build input {\displaystyle R} R
-2. Do a final scan of the probe input {\displaystyle S} S and add the resulting join tuples to the output relation
+    1. Scan the probe input ${\displaystyle S}$, and add matching join tuples to the output relation
+    2. Reset the hash table, and continue scanning the build input ${\displaystyle R}$
+2. Do a final scan of the probe input ${\displaystyle S}$ and add the resulting join tuples to the output relation
 
 翻译:
 - 如果 Hash Join 小于 最大可用内存 , 则将 匹配的连续元组 写入到 Hash Join memory 中
