@@ -39,6 +39,12 @@ GC 会对 方法区(HotSpot 中的永久代) 进行垃圾收集, 包括收集 �
 
 ### 垃圾收集算法 -- 理论
 
+#### 三色标记法
+
+- 白: 对象没有被标记到, 标记阶段结束后, 会被当做垃圾回收掉
+- 灰: 对象被标记了, 但是它的 field 还没有被标记或标记完
+- 黑: 对象被标记了, 且它的所有 field 也被标记完了
+
 #### 标记-清除算法
 
 ![标记-清除](v2-8ccb7745e5bbc915f7ba5b6130fe53b1_hd.png)
@@ -104,8 +110,11 @@ H-Obj 的特征:
 
 设置: `-XX:G1HeapRegionSize`
 
+Region 有 两个 top-at-mark-start(TAMS)指针, 分别为 `prevTAMS` 和 `nextTAMS`
+
 ```cpp
 // share/vm/gc_implementation/g1/heapRegion.cpp
+
 // Minimum region size; we won't go lower than that.
 // We might want to decrease this in the future, to deal with small
 // heaps a bit more efficiently.
@@ -119,30 +128,134 @@ H-Obj 的特征:
 // The automatic region size calculation will try to have around this
 // many regions in the heap (based on the min heap size).
 #define TARGET_REGION_NUMBER          2048
-void HeapRegion::setup_heap_region_size(size_t initial_heap_size, size_t max_heap_size) {
-  uintx region_size = G1HeapRegionSize;
-  if (FLAG_IS_DEFAULT(G1HeapRegionSize)) {
-    size_t average_heap_size = (initial_heap_size + max_heap_size) / 2;
-    region_size = MAX2(average_heap_size / TARGET_REGION_NUMBER,
-                       (uintx) MIN_REGION_SIZE);
-  }
-  int region_size_log = log2_long((jlong) region_size);
-  // Recalculate the region size to make sure it's a power of
-  // 2. This means that region_size is the largest power of 2 that's
-  // <= what we've calculated so far.
-  region_size = ((uintx)1 << region_size_log);
-  // Now make sure that we don't go over or under our limits.
-  if (region_size < MIN_REGION_SIZE) {
-    region_size = MIN_REGION_SIZE;
-  } else if (region_size > MAX_REGION_SIZE) {
-    region_size = MAX_REGION_SIZE;
-  }
-}
+void HeapRegion::setup_heap_region_size(size_t initial_heap_size, size_t max_heap_size);
 ```
 
 ##### SATB/Snapshot-At-The-Beginning
 
-通过 Root Tracing 得到的 GC 开始时活着的对象的一个快照, 作用是 维持并发 GC 的正确性
+通过 Root Tracing 得到的 **GC 开始时活着的对象的快照** , 作用是 **维持并发 GC 的正确性**
+
+在并发阶段, Mutator 和 Garbage Collector 线程同时对对象进行修改, 在以下前提下, 可能导致白对象漏标:
+- Mutator 赋予一个黑对象该白对象的引用
+- Mutator 删除了所有从灰对象到该白对象的直接或者间接引用
+
+为了避免 Mutator 删除了灰对象到白对象的引用导致白对象被回收, 则需要通过 **SATB 在 Write Barrier 时期将旧引用记录**
+
+SATB 会导致 **float garbage**
+
+```cpp
+//  share/vm/gc_implementation/g1/g1SATBCardTableModRefBS.hpp
+
+// This notes that we don't need to access any BarrierSet data
+// structures, so this can be called from a static context.
+template <class T> static void write_ref_field_pre_static(T* field, oop newVal) {
+  T heap_oop = oopDesc::load_heap_oop(field);
+  if (!oopDesc::is_null(heap_oop)) {
+    enqueue(oopDesc::decode_heap_oop(heap_oop));
+  }
+}
+
+// share/vm/gc_implementation/g1/g1SATBCardTableModRefBS.cpp
+
+void G1SATBCardTableModRefBS::enqueue(oop pre_val) {
+  // Nulls should have been already filtered.
+  assert(pre_val->is_oop(true), "Error");
+  if (!JavaThread::satb_mark_queue_set().is_active()) return;
+  Thread* thr = Thread::current();
+  if (thr->is_Java_thread()) {
+    JavaThread* jt = (JavaThread*)thr;
+    jt->satb_mark_queue().enqueue(pre_val);
+  } else {
+    MutexLockerEx x(Shared_SATB_Q_lock, Mutex::_no_safepoint_check_flag);
+    JavaThread::satb_mark_queue_set().shared_satb_queue()->enqueue(pre_val);
+  }
+}
+```
+
+##### RSet/Remembered Set
+
+- points-into: 谁引用了我的对象
+- points-out: 我引用了谁的对象
+- Collection Set(CSet): 它记录了 GC 要收集的 Region 集合, 集合里的 Region 可以是任意年代的
+- Card Table(Card): points-out, 每个 Region 有多个 Card, 每个 Card 覆盖一定范围的 Heap, Card 会记录本 Region, 本 Heap 引用的其他 Region 的 Card
+- RSet: points-into
+  - 每个 Region 都有一个 RSet, 每个 Region 会记录下别的 Region 引用本 Region 中的对象的关系, 并标记这些指针分别在哪些 Card 的范围内
+  - Hash Table, Key 是别的 Region 的起始地址, Value 是一个集合, 里面的元素是 Card Table 的 Index
+
+![RSet, Card 和 Region 的关系](fig1.jpg)
+
+- 蓝色实线: points-out
+- 红色虚线: points-into
+- 双向绑定(??)
+
+```cpp
+void oop_field_store(oop* field, oop new_value) {
+  pre_write_barrier(field);             // pre-write barrier: for maintaining SATB invariant
+  *field = new_value;                   // the actual store
+  post_write_barrier(field, new_value); // post-write barrier: for tracking cross-region reference
+}
+```
+
+- post-write barrier 记录了跨 Region 的引用更新, 更新日志缓冲区则记录了那些包含更新引用的 Cards
+- 一旦缓冲区满了, Post-write barrier 就停止服务了, 会由 Concurrent refinement threads 处理这些缓冲区日志
+
+RSet 的引入使得:
+- 在做 YGC 的时候, 只需要选定 young generation region 的 RSet 作为根集, 这些 RSet 记录了 old->young 的跨代引用, 避免了扫描整个 old generation
+- 而 mixed GC 的时候, old generation 中记录了 old->old 的 RSet, young->old 的引用由扫描全部 young generation region 得到, 也不用扫描全部 old generation region
+
+##### Pause Prediction Model
+
+停顿预测模型
+
+基于 `-XX:MaxGCPauseMillis` 的目标停顿时间
+
+```cpp
+//  share/vm/gc_implementation/g1/g1CollectorPolicy.hpp
+
+double get_new_prediction(TruncatedSeq* seq) {
+    return MAX2(seq->davg() + sigma() * seq->dsd(),
+                seq->davg() * confidence_factor(seq->num()));
+}
+```
+
+- TruncateSeq: 序列中的最新的 n 个元素的一个截断的序列
+- davg: 截断序列的衰减均值
+- sigma: 表示信赖度的系数
+- dsd: 衰减标准偏差
+- confidence_factor: 可信度相关系数
+
+G1 GC 过程中, 每个可测量的步骤花费的时间都会记录到 TruncateSeq(和 AbsSeq 相似)中, 用来计算衰减均值、衰减变量、衰减标准偏差等:
+
+```cpp
+// src/share/vm/utilities/numberSeq.cpp
+
+void AbsSeq::add(double val) {
+  if (_num == 0) {
+    // if the sequence is empty, the davg is the same as the value
+    _davg = val;
+    // and the variance is 0
+    _dvariance = 0.0;
+  } else {
+    // otherwise, calculate both
+    _davg = (1.0 - _alpha) * val + _alpha * _davg;
+    double diff = val - _davg;
+    _dvariance = (1.0 - _alpha) * diff * diff + _alpha * _dvariance;
+  }
+}
+```
+
+例如, 预测一次 GC 中, 更新 RSet (将 Dirty Card 加入到 RSet 中) 的时间:
+
+```cpp
+//  share/vm/gc_implementation/g1/g1CollectorPolicy.hpp
+
+double predict_rs_update_time_ms(size_t pending_cards) {
+   return (double) pending_cards * predict_cost_per_card_ms();
+}
+double predict_cost_per_card_ms() {
+   return get_new_prediction(_cost_per_card_ms_seq);
+}
+```
 
 ### JDK11 - ZGC
 
