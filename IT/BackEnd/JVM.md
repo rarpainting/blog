@@ -257,13 +257,42 @@ double predict_cost_per_card_ms() {
 }
 ```
 
+#### GC 过程
+
+GC 模式:
+- Young GC: 选定所有年轻代的 Region ; 通过控制年轻代的 Region 个数, 控制年轻代内存大小, 以控制 Young GC 的开销
+- Mixed GC: 选定所有年轻代的 Region , 且根据 `global concurrent marking` 统计出收集收益高(回收率高)的若干老年代 Region , 尽可能的选择 收益高的老年代 Region
+
+如果 Mixed GC 也无法跟上内存分配的速度, 会选择 serial old GC(full GC)
+
+`global concurrent marking` 作为 Mixed GC 的专属标记服务, 执行过程类似 CMS
+1. 初始标记(Initial Mark/STW): 标记 GC Root 开始直接可达的对象
+2. 并发标记(Concurrent Marking): 从 GC Root 开始对 Heap 中的对象标记; 标记线程和应用程序线程并行执行, 并且收集各个 Region 的存活对象信息
+3. 最终标记(Remark/STW): 标记在并发阶段, 引用关系发生变化的对象
+4. 清除(Cleanup): 清除空 Region (没有存活的对象), 加入到 free list
+
+以下参数控制 Mixed GC 的发生:
+- G1HeapWastePercent: 在 `global concurrent marking` 结束之后, 我们可以知道 old gen regions 中有多少空间要被回收, 在每次 YGC 之后和再次发生 Mixed GC 之前, 会检查垃圾占比是否达到此参数, 只有达到了, 下次才会发生 Mixed GC
+- G1MixedGCLiveThresholdPercent: old generation region 中的存活对象的占比, 只有在此参数之下, 才会被选入 CSet
+- G1MixedGCCountTarget: 一次 `global concurrent marking` 之后，最多执行 Mixed GC 的次数
+- G1OldCSetRegionThresholdPercent: 一次 Mixed GC 中能被选入 CSet 的最多 old generation region 数量
+
+其余 G1GC 参数:
+- `-XX:G1HeapRegionSize=n`: 设置 Region 大小, 并非最终值
+- `-XX:MaxGCPauseMillis`: 设置 G1 收集过程目标时间, 默认值 200ms, 不是硬性条件
+- `-XX:G1NewSizePercent`: 新生代最小值, 默认值 5%
+- `-XX:G1MaxNewSizePercent`: 新生代最大值, 默认值 60%
+- `-XX:ParallelGCThreads`: STW 期间, 并行 GC 线程数
+- `-XX:ConcGCThreads=n`: 并发标记阶段, 并行执行的线程数
+- `-XX:InitiatingHeapOccupancyPercent`: 设置触发标记周期的 Java 堆占用率阈值; 默认值是 45%; 这里的 Java 堆占比指的是 `non_young_capacity_bytes`, 包括 old+humongous
+
+#### GC 日志
+
+TODO:
+
 ### JDK11 - ZGC
 
-开启:
-
-```shell
--XX:+UnlockExperimentalVMOptions -XX:+UseZGC
-```
+开启: `-XX:+UnlockExperimentalVMOptions -XX:+UseZGC`
 
 特点:
 - 低停顿高并发
