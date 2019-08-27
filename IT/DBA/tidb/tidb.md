@@ -600,26 +600,74 @@ func (p *baseLogicalPlan) PredicatePushDown(predicates []expression.Expression) 
 - Probe 阶段, 对由 Outer 表驱动执行 Join 过程
 
 Hash Join 实现:
-- Main Thread, 一个, 负责:
+- Main Thread, 一个; 负责:
   - 读取所有的 Inner 表数据
   - 根据 Inner 表数据构造哈希表
-  - 启动 `Outer Fetcher` 和 `Join Worker` 开始后台工作, 生成 Join 结果, 各个 goroutine 的启动过程由 `fetchOuterAndProbeHashTable` 这个函数完成
-  - 将 `Join Worker` 计算出的 Join 结果返回给 NextChunk 接口的调用方法
-- `Outer Fetcher`: 一个, 负责读取 Outer 表的数据并分发给各个 `Join Worker`
-- `Join Worker`: 多个, 负责查哈希表、Join 匹配的 Inner 和 Outer 表的数据, 并把结果传递给 Main Thread
+  - 启动 `Outer Fetcher` 和 `Join Worker` 开始后台工作, 生成 Join 结果, 各个 goroutine 的启动过程由 `fetchOuterAndProbeHashTable` 完成
+  - 将 `Join Worker` 计算出的 Join 结果返回给 `NextChunk` 接口的调用方法
+- `Outer Fetcher`: 一个; 负责读取 Outer 表的数据并分发给各个 `Join Worker`
+- `Join Worker`: 多个; 负责查哈希表、Join 匹配的 Inner 和 Outer 表的数据, 并把结果传递给 Main Thread
 
-#### 关键函数
+#### Main Thread 读 Inner 表数据
+
+读 Inner 表数据 并且 构建 HashTable (MVMap):
+- `fetchInnerRows` 通过 `e.Next` 获得 inner 表
+- 将 inner 表的结果逐个发送给 `buildHashTableForList` 并行处理
+- 启动 `fetchOuterAndProbeHashTable` 完成 probe 工作
+- 将结果通过 result 返回
 
 ```golang
-func (e *HashJoinExec) fetchOuterAndProbeHashTable(ctx context.Context)
+// .../tidb/executor/join.go
+func (e *HashJoinExec) fetchInnerAndBuildHashTable(ctx context.Context)
+
+// fetchInnerRows fetches all rows from inner executor,
+// and append them to e.innerResult.
+func (e *HashJoinExec) fetchInnerRows(ctx context.Context, chkCh chan<- *chunk.Chunk, doneCh <-chan struct{})
+
+// .../tidb/executor/table_reader.go
+func (e *TableReaderExecutor) Next(ctx context.Context, req *chunk.Chunk) error
+
+// buildHashTableForList builds hash table from `list`.
+func (e *HashJoinExec) buildHashTableForList(innerResultCh <-chan *chunk.Chunk) error
 ```
 
+#### Outer Fetcher
+
+*这部分代码的逻辑与 `net/rpc.Client` 相似*
+
+![Outer Fetcher 流程](1.png)
+
+`fetchOuterChucks` 不停的读大表数据, 将 Outer 表数据分发到 Join Worker, 其中有两个 channel:
+- `outerResultChs[i]`: 每个 Join Worker 一个, Outer Fetcher 将获取到的 Outer Chunk 写入到 该 channel 的 Join Worker 中
+- `outerChkResourceCh`: 当 Join Worker 用完了当前的 Outer Chunk 后, 它需要该 Chunk 以及自身的 `outerResultChs[i]` 一起写入到 `outerResourceCh` 中, 目的是:
+  - Outer Fetcher 用于申请内存(Chunk)供 Join Worker 使用
+  - 通过 `outerChkResourceCh` 回收 Join Worker 拉取到的 Outer 数据
+
+Outer Fetcher 计算逻辑:
+- 从 `outerChkResourceCh` 中获取一个 `outerChkResource`, 存储在变量 `outerResource` 中
+- 从 `Child` 拉取数据, 将数据写入到 `outerResource` 的 `chk` 字段中
+- 将这个 `chk` 发给需要 `Outer` 表的数据的 `Join Worker` 的 `outerResultChs[i]` 中去, 这个信息记录在了 `outerResource.dest` 中
+
 ```golang
+// .../tidb/executor/join.go
+func (e *HashJoinExec) fetchOuterAndProbeHashTable(ctx context.Context)
+
+// fetchOuterChunks get chunks from fetches chunks from the big table in a background goroutine
+// and sends the chunks to multiple channels which will be read by multiple join workers.
+func (e *HashJoinExec) fetchOuterChunks(ctx context.Context)
+
 func (e *HashJoinExec) runJoinWorker(workerID uint)
 ```
 
+#### Join Worker
+
+相关参数:
+- `tidb_hash_join_concurrency`: session 变量
+
+![Join Worker 流程](2-2.png)
+
 ```golang
-func (e *HashJoinExec) waitJoinWorkersAndCloseResultChan()
+func (e *HashJoinExec) runJoinWorker(workerID uint)
 ```
 
 # [builddatabase](https://github.com/ngaut/builddatabase)

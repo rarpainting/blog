@@ -176,7 +176,7 @@ void G1SATBCardTableModRefBS::enqueue(oop pre_val) {
 
 - points-into: 谁引用了我的对象
 - points-out: 我引用了谁的对象
-- Collection Set(CSet): 它记录了 GC 要收集的 Region 集合, 集合里的 Region 可以是任意年代的
+- Collection Set(CSet): 它记录了当次 GC 要收集的 Region 集合, 集合里的 Region 可以是任意年代的
 - Card Table(Card): points-out, 每个 Region 有多个 Card, 每个 Card 覆盖一定范围的 Heap, Card 会记录本 Region, 本 Heap 引用的其他 Region 的 Card
 - RSet: points-into
   - 每个 Region 都有一个 RSet, 每个 Region 会记录下别的 Region 引用本 Region 中的对象的关系, 并标记这些指针分别在哪些 Card 的范围内
@@ -267,24 +267,57 @@ GC 模式:
 
 `global concurrent marking` 作为 Mixed GC 的专属标记服务, 执行过程类似 CMS
 1. 初始标记(Initial Mark/STW): 标记 GC Root 开始直接可达的对象
+2. 根区域扫描(Root Zone Scan): G1 GC 在初始标记的存活区扫描对老年代的引用, 并标记被引用的对象; 只有完成该阶段, 才能开始下一次 STW 的 Young GC
 2. 并发标记(Concurrent Marking): 从 GC Root 开始对 Heap 中的对象标记; 标记线程和应用程序线程并行执行, 并且收集各个 Region 的存活对象信息
 3. 最终标记(Remark/STW): 标记在并发阶段, 引用关系发生变化的对象
 4. 清除(Cleanup): 清除空 Region (没有存活的对象), 加入到 free list
 
 以下参数控制 Mixed GC 的发生:
-- G1HeapWastePercent: 在 `global concurrent marking` 结束之后, 我们可以知道 old gen regions 中有多少空间要被回收, 在每次 YGC 之后和再次发生 Mixed GC 之前, 会检查垃圾占比是否达到此参数, 只有达到了, 下次才会发生 Mixed GC
-- G1MixedGCLiveThresholdPercent: old generation region 中的存活对象的占比, 只有在此参数之下, 才会被选入 CSet
-- G1MixedGCCountTarget: 一次 `global concurrent marking` 之后，最多执行 Mixed GC 的次数
-- G1OldCSetRegionThresholdPercent: 一次 Mixed GC 中能被选入 CSet 的最多 old generation region 数量
+- `-XX:G1HeapWastePercent=10`: 在 `global concurrent marking` 结束之后, 我们可以知道 old gen regions 中有多少空间要被回收, 在每次 YGC 之后和再次发生 Mixed GC 之前, 会检查垃圾占比是否达到此参数, 只有达到了, 下次才会发生 Mixed GC
+- `-XX:G1MixedGCLiveThresholdPercent=65`: old generation region 中的存活对象的占比, 只有在此参数之下, 才会被选入 CSet
+- `-XX:G1MixedGCCountTarget=8`: 一次 `global concurrent marking` 之后，最多执行 Mixed GC 的次数
+- `-XX:G1OldCSetRegionThresholdPercent=10`: 一次 Mixed GC 中能被选入 CSet 的最多 old generation region 数量
 
 其余 G1GC 参数:
-- `-XX:G1HeapRegionSize=n`: 设置 Region 大小, 并非最终值
-- `-XX:MaxGCPauseMillis`: 设置 G1 收集过程目标时间, 默认值 200ms, 不是硬性条件
-- `-XX:G1NewSizePercent`: 新生代最小值, 默认值 5%
-- `-XX:G1MaxNewSizePercent`: 新生代最大值, 默认值 60%
-- `-XX:ParallelGCThreads`: STW 期间, 并行 GC 线程数
+- `-XX:G1HeapRegionSize=n`: 设置 Region 大小, 并非最终值, 目标是根据最小的 Java 堆的大小划分出 2048 区域
+- `-XX:MaxGCPauseMillis=200`: 设置 G1 收集过程目标时间, 默认值 200ms, 不是硬性条件
+- `-XX:G1NewSizePercent=5`: 新生代最小值, 默认值 5%
+- `-XX:G1MaxNewSizePercent=60`: 新生代最大值, 默认值 60%
+- `-XX:ParallelGCThreads=n`: STW 期间, 并行 GC 线程数
 - `-XX:ConcGCThreads=n`: 并发标记阶段, 并行执行的线程数
-- `-XX:InitiatingHeapOccupancyPercent`: 设置触发标记周期的 Java 堆占用率阈值; 默认值是 45%; 这里的 Java 堆占比指的是 `non_young_capacity_bytes`, 包括 old+humongous
+- `-XX:InitiatingHeapOccupancyPercent=45`: 设置触发标记周期的 Java 堆占用率阈值; 默认值是 45%; 这里的 Java 堆占比指的是 `non_young_capacity_bytes`, 包括 old+humongous
+
+- `-XX:+UnlockExperimentalVMOptions`: 解锁实验性标志
+
+##### 建议
+
+- 年轻代大小: 避免使用 `-Xmn` 选项或 `-XX:NewRatio` 等显式设置年轻代大小; 固定年轻代的大小会覆盖暂停时间目标
+- 暂停时间目标: G1 GC 的吞吐量目标是 90% 的应用程序时间和 10% 的垃圾回收时间. 因此在评估 G1 GC 的吞吐量时, 暂停时间应该相对延缓; 在评估 G1 GC 的延迟时, 应该考虑设置合理的(软)实时目标
+- 混合垃圾回收:
+  - `-XX:InitiatingHeapOccupancyPercent`: 用于更改标记阈值
+  - `-XX:G1MixedGCLiveThresholdPercent` 和 `-XX:G1HeapWastePercent`: 当您想要更改混合垃圾回收决定时
+  - `-XX:G1MixedGCCountTarget` 和 `-XX:G1OldCSetRegionThresholdPercent`: 当您想要调整旧区域的 CSet 时
+
+##### 溢出和耗尽
+
+如果日志中出现以下的目标空间溢出/耗尽信息, 表示 G1 GC 没有足够的内存
+
+```text
+924.897: [GC pause (G1 Evacuation Pause) (mixed) (to-space exhausted), 0.1957310 secs]
+924.897:[GC pause (G1 Evacuation Pause) (mixed) (to-space overflow), 0.1957310 secs]
+```
+
+此时建议:
+- 增加 `-XX:G1ReservePercent` 选项的值
+- 减少 `-XX:InitiatingHeapOccupancyPercent` 提前启动标记周期
+- 增加 `-XX:ConcGCThreads` 选项的值来增加并行标记线程的数目
+
+##### 巨型对象和巨型分配
+
+- H-Obj 会被分配到连续的巨型区域, `StartsHumongous` 标记该连续集的开始, `ContinuesHumongous` 标记它的延续
+- 在分配任何巨型区域之前, 会检查标记阈值, 如有必要, 还会启动一个并发周期
+- 由于每个 `StartsHumongous` 和 `ContinuesHumongous` 区域集只包含一个巨型对象, 所以不会使用巨型对象的终点与上个区域的终点之间的空间(即巨型对象所跨的空间); 如果对象只是略大于堆区域大小的数倍, 则此类未使用的空间可能会导致堆碎片化
+- 如果巨型分配导致连续的并发周期, 并且此类分配导致老年代碎片化, 请增加 `-XX:G1HeapRegionSize`, 这样一来, 之前的巨型对象就不再是巨型对象了, 而是采用常规的分配路径
 
 #### GC 日志
 
