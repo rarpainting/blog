@@ -83,3 +83,91 @@ SELECT * FROM STUDENT LEFT JOIN SCORE ON STUDENT.sno = SCORE.sno WHERE SCORE.sno
 
 SELECT * FROM STUDENT ANTI JOIN SCORE ON STUDENT.sno = SCORE.sno;
 ```
+
+## 窗口函数
+
+通过 `OVER` 关键字表示
+
+```sql
+window_function (expression) OVER (
+  [ PARTITION BY part_list ]
+  [ ORDER BY over_list ]
+  [ { ROWS | RANGE } BETWEEN frame_start AND frame_end ])
+```
+
+- `PARTITION BY`: 数据先按 `part_list` 分区
+- `ORDER BY`: 各个 **分区** 内的数据按 `order_list` 进行排序
+
+![窗口函数的基本概念](v2-320b27a3775c2097f7be81a80f25bdab_r.jpg)
+
+`Frame` 表示 当前窗口包含的数据可能有:
+- `ROWS`: 选择前后几行(`ROW BETWEEN 3 PRECEDING AND 3 FOLLOWING` 表示当前行的往前 3 行到往后 3 行的数据, 共 7 行)
+- `RANGE`: 选择数据范围(`RANGE BETWEEN 3 PRECEDING AND 3 FOLLOWING` 表示值在 $[c-3, c+3]$ 这个范围内的行, $c$ 为当前行的值)
+
+![Rows 窗口和 Range 窗口](v2-88c0ad6af7f4193c77e211b087fdeabf_r.jpg)
+
+一个窗口函数的计算 "流程":
+1. 按窗口定义, 将所有输入数据分区, 再排序
+2. 对每一行数据, 计算它的 Frame 范围
+3. 将 Frame 内的行集合输入窗口函数, 计算结果填入当前行
+
+例如:
+
+```sql
+SELECT dealer_id, emp_name, sales,
+       ROW_NUMBER() OVER (PARTITION BY dealer_id ORDER BY sales) AS rank,
+       AVG(sales) OVER (PARTITION BY dealer_id) AS avgsales 
+FROM sales
+```
+
+| `dealer_id` | `emp_name`     | `sales` | `rank` | `avgsales` |
+|          :- | :-             |      :- |     :- |         :- |
+|           1 | Raphael Hull   |    8227 |      1 |      14356 |
+|           1 | Jack Salazar   |    9710 |      2 |      14356 |
+|           1 | Ferris Brown   |   19745 |      3 |      14356 |
+|           1 | Noel Meyer     |   19745 |      4 |      14356 |
+|           2 | Haviva Montoya |    9308 |      1 |      13924 |
+|           2 | Beverly Lang   |   16233 |      2 |      13924 |
+|           2 | Kameko French  |   16233 |      3 |      13924 |
+|           3 | May Stout      |    9308 |      1 |      12368 |
+|           3 | Abel Kim       |   12369 |      2 |      12368 |
+|           3 | Ursa George    |   15427 |      3 |      12368 |
+
+
+解析:
+- 将 `(PARTITION BY dealer_id ORDER BY sales)` 执行得到多个行组, 经过 `ROW_NUMBER()` 得到相关的(`ORDER BY`)行号
+- `AVG(sales)` 得到该行组的平均值(依然通过 `dealer_id` 分组)
+
+- 如果不指定 `PARTITION BY` , 则不对数据进行分区, (所有数据都看作同一个分区)
+- 如果不指定 `ORDER BY`, 则不对各分区做排序, 则不对各分区排序, 通常用于那些顺序无关的窗口函数, 例如 `SUM()`
+- 如果不指定 Frame 子句, 则默认采用以下 Frame 行为:
+  - 若不指定 `ORDER BY` , 默认使用分区内所有行
+  - `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+  - 若指定 `ORDER BY` , 默认使用分区第一行到当前值
+  - `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+
+窗口函数的分类:
+聚合(Aggregate): `AVG()`, `COUNT()`, `MIN()`, `MAX()`, `SUM()` ...
+取值(Value): `FIRST_VALUE()`, `LAST_VALUE()`, `LEAD()`, `LAG()` ...
+排序(Ranking): `RANK()`, `DENSE_RANK()`, `ROW_NUMBER()`, `NTILE()` ...
+
+> 注: Frame 定义并非所有窗口函数都适用; 比如 `ROW_NUMBER()`、`RANK()`、`LEAD()` 等; 这些函数总是应用于整个分区, 而非当前 Frame
+
+### 窗口函数 与 聚合函数
+
+![SQL 各部分的逻辑执行顺序](v2-8faf44f913ce39eef7bab322e4a1b4f9_r.jpg)
+
+关系代数式:
+
+```
+x(cross-product 笛卡尔积) -> σ(selection 选择) -> Group by -> Having -> π(projection 投影) -> Window -> Order by -> asc/desc
+```
+
+### 执行窗口函数
+
+![串口函数的执行过程: 排序和求值](v2-ada4f01ef276a8a3d34a527a7730ca3f_r.jpg)
+
+Frame 的处理逻辑:
+- 对于整个分区的 Frame (例如 `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`), 只要对整个分区计算一次即可
+- 对于逐渐增长的 Frame (例如 `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`), 可以用 Aggregator 维护累加的状态, 这也很容易实现
+- 对于滑动的 Frame (例如 `ROWS BETWEEN 3 PRECEDING AND 3 FOLLOWING`) 相对困难一些; 一种经典的做法是要求 Aggregator 不仅支持增加还支持删除(Removable), 这可能比你想的要更复杂, 例如考虑下 `MAX()` 的实现
