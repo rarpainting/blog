@@ -116,7 +116,7 @@ window_function (expression) OVER (
 ```sql
 SELECT dealer_id, emp_name, sales,
        ROW_NUMBER() OVER (PARTITION BY dealer_id ORDER BY sales) AS rank,
-       AVG(sales) OVER (PARTITION BY dealer_id) AS avgsales 
+       AVG(sales) OVER (PARTITION BY dealer_id) AS avgsales
 FROM sales
 ```
 
@@ -163,7 +163,7 @@ FROM sales
 x(cross-product 笛卡尔积) -> σ(selection 选择) -> Group by -> Having -> π(projection 投影) -> Window -> Order by -> asc/desc
 ```
 
-### 执行窗口函数
+### 窗口函数的执行
 
 ![串口函数的执行过程: 排序和求值](v2-ada4f01ef276a8a3d34a527a7730ca3f_r.jpg)
 
@@ -171,3 +171,20 @@ Frame 的处理逻辑:
 - 对于整个分区的 Frame (例如 `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`), 只要对整个分区计算一次即可
 - 对于逐渐增长的 Frame (例如 `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`), 可以用 Aggregator 维护累加的状态, 这也很容易实现
 - 对于滑动的 Frame (例如 `ROWS BETWEEN 3 PRECEDING AND 3 FOLLOWING`) 相对困难一些; 一种经典的做法是要求 Aggregator 不仅支持增加还支持删除(Removable), 这可能比你想的要更复杂, 例如考虑下 `MAX()` 的实现
+
+### 窗口函数的优化
+
+![窗口函数的优化过程](v2-fe3cc56041b5b1aa2d0e8d0628e5bad6_r.jpg)
+
+- 将 窗口函数从 project 中抽离, 暂时称之为 window 算子
+- 窗口定义(over 子句)相同的窗口函数合并为一个 window 算子
+- 不同的窗口函数, 可以作为不同的 window 算子, 在上图中, 每个 window 算子都需要先做一次排序
+
+### 窗口函数的并行执行
+
+通过 线段树 实现单一全局分区的 **分区内并行**
+
+![](v2-94d37866820d07876550bafaee9d2ea2_r.jpg)
+
+- $O(n\log{n})$ 时间内构造
+- $O(\log{n})$ 时间内查询任意区间的聚合结果
