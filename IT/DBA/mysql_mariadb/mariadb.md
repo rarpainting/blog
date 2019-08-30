@@ -250,6 +250,8 @@
 			- [源码](#源码)
 		- [一致性与隔离级别的关系](#一致性与隔离级别的关系)
 		- [JSON](#json)
+		- [`sql_mode`](#sql_mode)
+			- [`ONLY_FULL_GROUP_BY`](#only_full_group_by)
 
 <!-- /TOC -->
 
@@ -383,9 +385,9 @@ EXPLAIN [extended] SELECT * FROM table;
 
 - `SHOW ENGINE innodb status;` -- 最新一次记录的死锁日志(记录的是 **等待锁的 sql 语句** 记录, 而不是 完整事务 的 sql 记录)
   - 在死锁检查里面:
-    - lock_mode X waiting -- next-key lock
-    - lock_mode X locks rec but not gap -- 行锁
-    - locks gap before rec -- 间隙锁
+    - `lock_mode X waiting` -- next-key lock
+    - `lock_mode X locks rec but not gap` -- 行锁
+    - `locks gap before rec` -- 间隙锁
 
 - `SHOW BINARY LOGS;` -- 当前 Master 未过期的 binlog
 
@@ -851,7 +853,7 @@ redo log 与 binlog 差异:
 ![update 语句执行流程](2e5bff4910ec189fe1ee6e2ecc7b4bbe.png)
 
 WAL 得益于两方面:
-- redo log 和 binlog 都是顺序写, 磁盘的顺序写比随机写速度快
+- redo log 和 binlog 都是顺序写, 基于机械硬盘的顺序写比随机写速度快
 - 组提交机制, 可以大幅度降低磁盘的 IOPS 消耗
 
 **WAL 机制只保证写完了 redo log 和 内存, 不保证写数据到磁盘**
@@ -2862,5 +2864,3 @@ The FIX Rules 规定:
 
 - 窗口函数仅将结果附加到当前的结果, 即输入输出的行数不变
 - 每个 Group 仅保留一行聚合结果
-
-
