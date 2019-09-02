@@ -608,7 +608,7 @@ Hash Join 实现:
 - `Outer Fetcher`: 一个; 负责读取 Outer 表的数据并分发给各个 `Join Worker`
 - `Join Worker`: 多个; 负责查哈希表、Join 匹配的 Inner 和 Outer 表的数据, 并把结果传递给 Main Thread
 
-#### Main Thread 读 Inner 表数据
+#### (Main Thread)读 Inner 表数据
 
 读 Inner 表数据 并且 构建 HashTable (MVMap):
 - `fetchInnerRows` 通过 `e.Next` 获得 inner 表
@@ -644,9 +644,9 @@ func (e *HashJoinExec) buildHashTableForList(innerResultCh <-chan *chunk.Chunk) 
   - 通过 `outerChkResourceCh` 回收 Join Worker 拉取到的 Outer 数据
 
 Outer Fetcher 计算逻辑:
-- 从 `outerChkResourceCh` 中获取一个 `outerChkResource`, 存储在变量 `outerResource` 中
-- 从 `Child` 拉取数据, 将数据写入到 `outerResource` 的 `chk` 字段中
-- 将这个 `chk` 发给需要 `Outer` 表的数据的 `Join Worker` 的 `outerResultChs[i]` 中去, 这个信息记录在了 `outerResource.dest` 中
+1. 从 `outerChkResourceCh` 中获取一个 `outerChkResource` , 作为 `outerResource` 中
+2. 从 Child 拉取数据, 将数据写入到 `outerResource` 的 `chk` 字段中
+3. 这个信息记录在了(发送到) `outerResource.dest` 中, (这个 `chk` 发给需要 `Outer` 表的数据的 `Join Worker` 的 `outerResultChs[i]` 中去)
 
 ```golang
 // .../tidb/executor/join.go
@@ -664,11 +664,61 @@ func (e *HashJoinExec) runJoinWorker(workerID uint)
 相关参数:
 - `tidb_hash_join_concurrency`: session 变量
 
+Join Worker 流程:
+1. 获取一个 Outer Chuck (`outerResult`) 和 一个 Join Check Resource (`outerChkResource`)
+2. 查哈希表, 将匹配的 Outer Row 和 Inner Rows 写到 Join Chunk 中(`e{HashJoinExec}.join2Chunk`)
+3. 同时在 `e{HashJoinExec}.join2Chunk` 中等待取回 Join Chunk, 随后 Join Worker 继续匹配 Outer Row 和 Inner Row
+4. 循环 2, 3 步直到匹配完成, Main Thread 主动关闭通道, Join Worker 结束
+
 ![Join Worker 流程](2-2.png)
 
 ```golang
 func (e *HashJoinExec) runJoinWorker(workerID uint)
 ```
+
+#### Main Thread
+
+```golang
+// step 1. fetch data from inner child and build a hash table;
+// step 2. fetch data from outer child in a background goroutine and probe the hash table in multiple join workers.
+func (e *HashJoinExec) Next(ctx context.Context, req *chunk.Chunk) (err error) {
+	// 只拿一次 ??
+	result, ok := <-e.joinResultCh
+
+	// 交换请求方和结果的数据(被选中的 cols, rows , 以及 0 列的 VirtualRows)
+	req.SwapColumns(result.chk) // result.chk {Join Chuck}
+
+	// 归还 result.chk
+	result.src <- result.chk
+}
+```
+
+#### Hash Join FAQ
+
+[FAQ](https://pingcap.com/blog-cn/tidb-source-code-reading-9/)
+
+## Chuck 和执行框架
+
+`Chuck` 的特点:
+- 只读
+- **不** 支持随机写
+- 只支持追加写
+- **列存储** , 同一列的连续数据在内存中连续存放
+
+`Chunk` 本质上是 `Column` 的集合
+
+### Column
+
+`addColumnByFieldType`: 划定 定长 Column 或 不定长 Column
+
+Column:
+- `length int`: 行数量
+- `nullBitmap []byte`: column 中每个元素是否为 `NULL`; bit 0 is null, 1 is not null
+- `offsets []int64`: 变长 Column ; 每个数据在 data 这个 slice 中的偏移量
+- `data []byte`: 存储具体数据
+- `elemBuf []byte`: 定长 Column ; 用于辅助 encode 或 decode
+
+---
 
 # [builddatabase](https://github.com/ngaut/builddatabase)
 
@@ -799,6 +849,8 @@ TiDB Server 1 流程:
 2. 后台 job 也有对应的 owner, 假设本机的 backgroundworker 就是 background owner 角色, 那么他将从 background job queue 中取出第一个 background job, 然后执行对应类型的操作(删除表中具体的数据)
 3. 执行完成, 那么从 background job queue 中将此 job 删除, 并放入 background job history queue 中(步骤 2 和步骤 3 需要在一个事务中执行)
 
+---
+
 ## 附加
 
 ### 概念
@@ -816,3 +868,5 @@ TiDB Server 1 流程:
   - 根据统计学理论, 将 DW 中的数据进行分析, 找出不能直观发现的规律
 - BI(商业智能):
   - 获取了 OLAP 的统计信息, 和 DM 得到的科学规律之后, 对生产进行适当的调整
+
+---
