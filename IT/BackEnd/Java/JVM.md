@@ -75,6 +75,23 @@ JDK7/8 后，HotSpot 虚拟机所有收集器及组合
 
 ![GC](v2-a2428828075c7cb4a4c8610ff62d7897_hd.png)
 
+新生代和老年代的组合
+
+| 新生代(别名)                   | 老年代                   | JVM 参数                |
+| :-                             | :-                       | :-                      |
+| Serial (DefNew)                | Serial Old(PSOldGen)     | -XX:+UseSerialGC        |
+| Parallel Scavenge (PSYoungGen) | Serial Old(PSOldGen)     | -XX:+UseParallelGC      |
+| Parallel Scavenge (PSYoungGen) | Parallel Old (ParOldGen) | -XX:+UseParallelOldGC   |
+| ParNew (ParNew)                | Serial Old(PSOldGen)     | -XX:-UseParNewGC        |
+| ParNew (ParNew)                | CMS+Serial Old(PSOldGen) | -XX:+UseConcMarkSweepGC |
+| G1                             | G1                       | -XX:+UseG1GC            |
+
+> 注: ParNew -- Serial 收集器的多线程版本
+
+#### 工具
+
+- jinfo
+
 ### G1 -- Garbage-First Garbage Collector
 
 正式发布: `JDK 7u4`
