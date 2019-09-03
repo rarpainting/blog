@@ -8,9 +8,9 @@
 int clone(int (*child_func)(void *), void *child_stack, int flags, void *arg);
 ```
 
-- child_func: 传入子进程运行的程序主函数。
+- child_func: 传入子进程运行的程序主函数
 - child_stack: 传入子进程使用的栈空间
-- flags: 表示使用哪些 CLONE_* 标志位
+- flags: 表示使用哪些 `CLONE_*` 标志位
 - args: 则可用于传入用户参数
 
 ### setns
