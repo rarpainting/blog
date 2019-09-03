@@ -211,6 +211,8 @@ func First(query string, replicas ...Search) Result {
 
 ### Map
 
+**基于 Golang1.12**
+
 ```golang
 // A header for a Go map.
 type hmap struct {
@@ -253,10 +255,13 @@ const (
 )
 
 // A bucket for a Go map.
+// golang 将 hash 中的 key 和 value 分开存放, 操作更繁琐但是优化了对齐
 type bmap struct {
 	// tophash generally contains the top byte of the hash value
 	// for each key in this bucket. If tophash[0] < minTopHash,
-	// tophash[0] is a bucket evacuation state instead.
+  // tophash[0] is a bucket evacuation state instead.
+  // 保存每个 hash 结果的顶部字节(8bit)
+  // 如果 tophash[0] < minTopHash, 表示 bucket 在迁移过程中
 	tophash [bucketCnt]uint8
 	// Followed by bucketCnt keys and then bucketCnt values.
 	// NOTE: packing all the keys together and then all the values together makes the
@@ -265,6 +270,137 @@ type bmap struct {
 	// Followed by an overflow pointer.
 }
 ```
+
+key 的计算公式:
+
+|key  | hash                                      | hashtop                                     | bucket index                                            |
+| :-: | :-:                                       | :-:                                         | :-:                                                     |
+| key | `hash := alg.hash(key, uintptr(h.hash0))` | `top := uint8(hash >> (sys.PtrSize*8 - 8))` | `bucket := hash & (uintptr(1)<<h.B - 1)`，即 hash % 2^B |
+
+#### 创建 -- makemap
+
+`make(map[k]v, hint)`
+
+```golang
+func makemap(t *maptype, hint int, h *hmap) *hmap {
+  // Architectur\e  Name              Maximum Value (exclusive)
+  // ---------------------------------------------------------------------
+  // amd64         TASK_SIZE_MAX     0x007ffffffff000 (47 bit addresses)
+  // arm64         TASK_SIZE_64      0x01000000000000 (48 bit addresses)
+  // ppc64{,le}    TASK_SIZE_USER64  0x00400000000000 (46 bit addresses)
+  // mips64{,le}   TASK_SIZE64       0x00010000000000 (40 bit addresses)
+  // s390x         TASK_SIZE         1<<64 (64 bit addresses)
+  mem, overflow := math.MulUintptr(uintptr(hint), t.bucket.size)
+  if overflow || mem > maxAlloc {
+    hint = 0
+  }
+
+  // B = log_2(hint/13) + 1
+  for overLoadFactor(hint, B) { B++ }
+
+  // if B == 0, the buckets field is allocated lazily later (in mapassign)
+  // 懒操作
+  if h.B != 0 {
+    h.buckets, nextOverflow = makeBucketArray(t, h.B, nil)
+  }
+}
+```
+
+#### 访问 -- mapaccess
+
+```golang
+// mapaccess1 returns a pointer to h[key], renturn **zero object**
+func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
+// func mapaccess2(t *maptype, h *hmap, key unsafe.Pointer) (unsafe.Pointer, bool) {
+// func mapaccessK(t *maptype, h *hmap, key unsafe.Pointer) (unsafe.Pointer, unsafe.Pointer) {
+
+  // hash(key)
+  hash := alg.hash(key, uintptr(h.hash0)) // Hash = hash(key, seed)
+  // 获得 key 在桶的索引的偏移
+  m := bucketMask(h.B) // (1 << h.B -1)
+  b := (*bmap)(add(h.buckets, (hash&m)*uintptr(t.bucketsize)))
+
+  if c := h.oldbuckets; c != nil {
+    // 新旧桶不是相同尺寸, 则认为旧桶为新桶的一半
+    if !h.sameSizeGrow() {
+    }
+
+    // 有旧桶, 则可能使用旧桶查找
+    oldb := (*bmap)(add(c, (hash&m)*uintptr(t.bucketsize)))
+    if !evacuated(oldb) {
+      b = oldb
+    }
+  }
+
+  // 不停寻找
+  for ; b != nil; b = b.overflow(t) {
+      if alg.equal(key, k) {
+        v := add(unsafe.Pointer(b), dataOffset+bucketCnt*uintptr(t.keysize)+i*uintptr(t.valuesize))
+        return v
+      }
+  }
+
+  // 找不到的 key 会返回 zoreVal[0]
+  return unsafe.Pointer(&zeroVal[0])
+}
+```
+
+#### 分配 -- mapassign
+
+- 与 `mapaccess` 操作相似, 为一个 key 分配槽
+- 添加了写保护和扩容操作
+
+```golang
+func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
+  // 写保护
+  if h.flags&hashWriting != 0 {
+    throw("concurrent map writes")
+  }
+
+again: // 扩容, k/v 写入的操作
+
+  // 如果需要做扩容, 则开始扩容
+  if h.growing() {
+    growWork(t, h, bucket)
+  }
+
+bucketloop: // 找到合适的 bucket
+ for {
+    // already have a mapping for key. Update it.
+    // 空间已有, 尝试替换
+    if t.needkeyupdate() {
+      typedmemmove(t.key, k, key)
+    }
+  }
+
+  // Did not find mapping for key. Allocate new cell & add entry.
+  // 为新的 k/v allocate 新的空间
+
+  // growing 标志没有设置, 但是太多的桶已经满了
+  // 需要返回并且扩容
+  if !h.growing() && (overLoadFactor(h.count+1, h.B) || tooManyOverflowBuckets(h.noverflow, h.B)) {
+    hashGrow(t, h)
+    goto again
+  }
+
+  // 适合的桶都已经满了, 需要生成新的桶
+  if inserti == nil {
+    // all current buckets ar\e full, allocate a new one.
+    newb := h.newoverflow(t, b)
+  }
+
+  // stor\e new key/value at insert position
+  if t.indirectkey() { ... }
+  if t.indirectvalue() { ... }
+  typedmemmove(t.key, insertk, key)
+
+done: // 结束 assign 操作
+}
+```
+
+#### 删除 -- mapdelete
+
+#### 扩容 -- growWork
 
 ### math/rand
 
