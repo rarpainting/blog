@@ -5,8 +5,10 @@
 - [TLS-TCP-IP](#tls-tcp-ip)
 	- [以太帧](#以太帧)
 	- [IPV4](#ipv4)
+	- [ICMP](#icmp)
 	- [TCP](#tcp)
 		- [Golang-TCPConn 相关设置](#golang-tcpconn-相关设置)
+		- [Linux 的 TCP 状态](#linux-的-tcp-状态)
 	- [UDP](#udp)
 	- [TLS1.2](#tls12)
 		- [1. Client-Hello 阶段: (TLS handshake)](#1-client-hello-阶段-tls-handshake)
@@ -82,6 +84,13 @@
 
 `Data`: 数据, 不定长度, 但受限于数据报的最大长度(65536/2^16 bytes); 这是在数据报中要传输的数据; 它是一个完整的较高层报文或报文的一个分片
 
+## ICMP
+
+![ICMP](318837-20160617091835838-1982473379.png)
+
+- Ping/Pong 是通过 请求回显/回显应答 报文工作的
+- 信息请求/信息响应: 用来找出一个主机所在的网络个数; 报文的 IP 消息头的目的地址会填为全 0 , 表示 this
+
 ## TCP
 
 ![tcp](574e9258d109b3de49101ee8cebf6c81810a4c87.jpg)
@@ -101,7 +110,7 @@
 `Control Flags`(6 bits)控制位包括
 - `URG`: 为 1 表示紧急指针有效, 为 0 则忽略紧急指针值
 - `ACK`: 为 1 表示确认号有效, 为 0 表示报文中不包含确认信息, 忽略确认号字段; **作为数据帧**
-- `PSH`: 为 1 表示是带有 PUSH 标志的数据, 指示接收方应该尽快将这个报文段交给应用层而不用等待缓冲区装满(一次作为完整通讯中的最后一帧)
+- `PSH`: 为 1 表示是带有 PUSH 标志的数据, 指示接收方应该尽快将这个报文段交给应用层而不用等待缓冲区装满(作为一次完整通讯中的最后一帧)
 - `RST`: 用于复位由于主机崩溃或其他原因而出现错误(error)的连接; 它还可以用于拒绝非法的报文段和拒绝连接请求; 一般情况下, 如果收到一个 RST 为 1 的报文, 那么一定发生了某些问题
 - `SYN`: 同步序号, 为 1 表示连接请求, 用于建立连接和使顺序号同步(synchronize)
 - `FIN`: 用于释放连接, 为 1 表示发送方已经没有数据发送了, 即关闭本方数据流
@@ -121,6 +130,15 @@
 设置后的相关错误返回:
 - SetDeadline                     -- io time out
 - SetKeepAlive/SetKeepAlivePeriod -- read: connection timed out
+
+### Linux 的 TCP 状态
+
+- ESTABLISHED
+- SYN_SENT
+- SYN_RECV
+- FIN_WAIT1
+- FIN_WAIT2
+- TIME_WAIT
 
 ## UDP
 
@@ -164,8 +182,9 @@ Server 支持的加密套件, 随机生成的 Session ticket 2(Random Bytes)
 
 相关报文:
 - Server-Hello(TLS handshake): 供选择的加密套件, 时间戳, Session Ticket 2
-- Certificate(TLS handshake): 数字证书
+- Certificate(TLS handshake): 可选, 数字证书
 - Server Key Exchange(TLS handshake): 可选, 与证书公钥有关的参数, 例如如果使用 ECDHE , 那么该包中包含: 椭圆曲线域参数, 公钥的值
+- CertificateRequest: 可选, 向 Client 请求证书认证
 - Server Hello Done(TLS handshake): 表示 Server-Hello 阶段的 报文已结束
 
 ### 3. Cipher-spec: (TLS handshake) 检测签名的有效性:
