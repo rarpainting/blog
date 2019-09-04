@@ -69,7 +69,7 @@ GC 会对 方法区(HotSpot 中的永久代) 进行垃圾收集, 包括收集 �
 
 #### 垃圾收集器
 
-JDK7/8 后，HotSpot 虚拟机所有收集器及组合
+JDK7/8 后, HotSpot 虚拟机所有收集器及组合
 
 ![垃圾收集器](v2-e0b3e4dc7bab44463e2f2d21429af850_r.jpg)
 
@@ -108,7 +108,7 @@ feature:
 - Do not require a much larger Java heap.
 
 特性:
-- 像CMS收集器一样， 能与应用程序线程并发执行
+- 像CMS收集器一样,  能与应用程序线程并发执行
 - 整理空闲空间更快
 - 需要更多的时间来预测gc停顿时间
 - 不希望牺牲大量的吞吐性能
@@ -292,7 +292,7 @@ GC 模式:
 以下参数控制 Mixed GC 的发生:
 - `-XX:G1HeapWastePercent=10`: 在 `global concurrent marking` 结束之后, 我们可以知道 old gen regions 中有多少空间要被回收, 在每次 YGC 之后和再次发生 Mixed GC 之前, 会检查垃圾占比是否达到此参数, 只有达到了, 下次才会发生 Mixed GC
 - `-XX:G1MixedGCLiveThresholdPercent=65`: old generation region 中的存活对象的占比, 只有在此参数之下, 才会被选入 CSet
-- `-XX:G1MixedGCCountTarget=8`: 一次 `global concurrent marking` 之后，最多执行 Mixed GC 的次数
+- `-XX:G1MixedGCCountTarget=8`: 一次 `global concurrent marking` 之后, 最多执行 Mixed GC 的次数
 - `-XX:G1OldCSetRegionThresholdPercent=10`: 一次 Mixed GC 中能被选入 CSet 的最多 old generation region 数量
 
 其余 G1GC 参数:

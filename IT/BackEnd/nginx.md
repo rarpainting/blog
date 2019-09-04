@@ -83,8 +83,8 @@ int epoll_create(int size);
 //  EPOLLERR: 表示对应的文件描述符发生错误
 //  EPOLLHUP: 表示对应的文件描述符被挂断
 //  EPOLLET: 将 EPOLL 设为边缘触发(Edge Triggered)模式, 这是相对于水平触发(Level Triggered)来说的
-//  EPOLLONESHOT(2.6.2): 只监听一次事件，当监听完这次事件之后, 如果还需要继续监听这个 socket 的话, 需要再次把这个 socket 加入到 EPOLL 队列里
-//  EPOLLWAKEUP(3.5): 系统在 自动休眠 下, 当唤醒设备的事件发生时，设备驱动会保持唤醒状态，直到事件进入排队状态
+//  EPOLLONESHOT(2.6.2): 只监听一次事件, 当监听完这次事件之后, 如果还需要继续监听这个 socket 的话, 需要再次把这个 socket 加入到 EPOLL 队列里
+//  EPOLLWAKEUP(3.5): 系统在 自动休眠 下, 当唤醒设备的事件发生时, 设备驱动会保持唤醒状态, 直到事件进入排队状态
 //       此时如果需要 **保持设备唤醒状态** , 则设置 EPOLLWAKEUP , 系统将保持设备持续唤醒, *从 epoll_wait 调用开始, 直到下一次 epoll_wait 调用*
 //  EPOLLEXCLUSIVE(4.5): 用于避免 惊群效应
 //       如果 多个具有 EPOLLEXCLUSIVE 标签和多个没有 EPOLLEXCLUSIVE 的 epoll 实例同时监听同一事件, 则会向未指定 EPOLLEXCLUSIVE 的所有 epoll 实例以及至少一个指定 EPOLLEXCLUSIVE 的 epoll 实例提供事件

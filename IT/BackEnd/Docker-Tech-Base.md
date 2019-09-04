@@ -2,6 +2,8 @@
 
 ## fork / vfork / clone
 
+三者底层调用的都是 `do_fork`
+
 | 系统调用 | 描述                                                                                                                        |
 | :-       | :-                                                                                                                          |
 | fork     | 父进程的完整副本, 复制了父亲进程的所有资源(已打开的描述符, namespace, 地址空间/内存数据), 包括 `task_struct` 等进程管理结构 |
@@ -31,7 +33,21 @@
 
 ### clone
 
-TODO:
+| 标志                      | 含义                                                                                 |
+| `CLONE_PARENT`(2.3.12)    | 创建的子进程的父进程是调用者的父进程, 新进程与创建它的进程成了 **兄弟** 而不是"父子" |
+| `CLONE_FS`(2.0)           | 子进程与父进程共享相同的文件系统, 包括 root, 当前目录, umask                         |
+| `CLONE_FILES`(2.0)        | 子进程与父进程共享相同的文件描述符(file descriptor)表                                |
+| `CLONE_NEWNS`(2.4.19)	    | 在新的 namespace 启动子进程, namespace 描述了进程的文件 hierarchy                    |
+| `CLONE_SIGHAND`(2.0)      | 子进程与父进程共享相同的信号处理(signal handler)表                                   |
+| `CLONE_PTRACE`(2.2)	    | 若父进程被 trace, 子进程也被 trace                                                   |
+| `CLONE_VFORK`(2.2)        | 父进程被挂起, 直至子进程释放虚拟内存资源                                             |
+| `CLONE_VM`(2.0)           | 子进程与父进程运行于相同的内存空间                                                   |
+| `CLONE_PID`(!obsolete!)   | 子进程在创建时 PID 与父进程一致                                                      |
+| `CLONE_THREAD`(2.4.0)	    | 支持 POSIX 线程标准, 子进程与父进程共享相同的线程群                                  |
+
+```c
+int clone(int (fn)(void ), void *child_stack, int flags, void *arg);
+```
 
 ## Namespace
 
@@ -91,7 +107,7 @@ CGroup 为一组进程分配(CPU 内存 网络等宽等)资源
 - blkio -- 这个子系统为块设备设定输入/输出限制, 比如物理设备(磁盘, 固态硬盘, USB 等等)
 - cpu -- 这个子系统使用调度程序提供对 CPU 的 cgroup 任务访问
 - cpuacct -- 这个子系统自动生成 cgroup 中任务所使用的 CPU 报告
-- cpuset -- 这个子系统为 cgroup 中的任务分配独立 CPU（在多核系统）和内存节点
+- cpuset -- 这个子系统为 cgroup 中的任务分配独立 CPU(在多核系统)和内存节点
 - devices -- 这个子系统可允许或者拒绝 cgroup 中的任务访问设备
 - freezer -- 这个子系统挂起或者恢复 cgroup 中的任务
 - memory -- 这个子系统设定 cgroup 中任务使用的内存限制, 并自动生成由那些任务使用的内存资源报告

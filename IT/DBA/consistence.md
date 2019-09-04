@@ -20,14 +20,14 @@ Innodb 默认是**可重复读**级别
   - 使用 Innodb 提供的 **next-key locks** 锁定被操作的表, 令该表获得该事务期间的**序列化**
 - select * from table lock in share mode; (共享读锁)
   - **next-key locks**获得**加锁读**
-  
+
 在没有 `with consistent snapshot` 的事务中, 视图生成的时间是第一个实际操作(`select` `update`, `delete`, `insert`)的时间; 因此在对一致性要求严格的场景建议添加 `with consistent snapshot` 显式生成视图
 
 #### 事务的大坑 -- 丢失更新
 
-1. 更新(update)数据都是先读后写, 而这个读, 只能读 *当前(最新已提交事务, 无论这个事务(`row trx_id`)是否在当前事务的 数据版本 中)* 的值, 即 `当前读--current read`, 应对: 
+1. 更新(update)数据都是先读后写, 而这个读, 只能读 *当前(最新已提交事务, 无论这个事务(`row trx_id`)是否在当前事务的 数据版本 中)* 的值, 即 `当前读--current read`, 应对:
     - 添加 `lock in share mode` 读锁(S 锁, 共享锁) 或者 `for update` 写锁(X 锁, 排他锁)
-  
+
 ### MVCC -- Innodb 的多版本并发控制
 
 - 每行记录后面都会由两个隐藏的列
@@ -51,9 +51,9 @@ Innodb 默认是**可重复读**级别
 
 7. 开启这个选项 innodb_locks_unsafe_for_binlog 并不关闭 gap 锁在外键检查方面的作用
 
-8. 在 UPDATE 和 DELETE 时，innodb 首先对遇到的每一行加行锁; 如果 innodb_locks_unsafe_for_binlog 开启, 那么不匹配的行上的锁将被释放; 如果未开启, 不匹配的行上的锁也不释放, 直到事务结束
+8. 在 UPDATE 和 DELETE 时, innodb 首先对遇到的每一行加行锁; 如果 innodb_locks_unsafe_for_binlog 开启, 那么不匹配的行上的锁将被释放; 如果未开启, 不匹配的行上的锁也不释放, 直到事务结束
 
-9. 即使 innodb 表上没有索引，也会使用内部的 clustered index 来进行锁定
+9. 即使 innodb 表上没有索引, 也会使用内部的 clustered index 来进行锁定
 
 10. innodb 除主键的索引之外的其他索引和 clustered index 在内部是建立一张索引对应表; 当利用其他索引扫描记录时, 对其他索引加的锁最后都转换为对 clustered index 的锁
 
@@ -61,7 +61,7 @@ Innodb 默认是**可重复读**级别
 
 12. 在使用 unique index 进行搜索, 并且只返回一行时, 不使用 gap 锁
 
-13. next-key 锁举例: 假设索引包括 10，11，13，20，则 next-key 锁为: (negative infinity, 10], (10, 11], (11, 13], (13, 20], (20, positive infinity)
+13. next-key 锁举例: 假设索引包括 10, 11, 13, 20, 则 next-key 锁为: (negative infinity, 10], (10, 11], (11, 13], (13, 20], (20, positive infinity)
 
 14. 使用 next-key 锁可以预防幻读
 

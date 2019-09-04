@@ -335,7 +335,7 @@ EXPLAIN [extended] SELECT * FROM table;
 - `table`: 这一行的数据是属于那一个 table 的, 如果是临时表也会有临时表的表名称
 - `type`: mysql 在表中找到所需行的方式, 又称 **访问类型**
   - `ALL`: Full Table Scan, MySQL 将遍历全表以找到匹配的行
-  - `index`: Full Index Scan，index 与 ALL 区别为 index 类型只遍历索引树
+  - `index`: Full Index Scan, index 与 ALL 区别为 index 类型只遍历索引树
   - `range`: 只检索给定范围的行, 使用一个索引来选择行
   - `ref`: 表示上述表的连接匹配条件, 即哪些列或常量被用于查找索引列上的值
   - `eq_ref`: 类似 ref, 区别就在使用的索引是唯一索引, 对于每个索引键值, 表中只有一条记录匹配, 简单来说, 就是多表连接中使用 primary key 或者 unique key 作为关联条件
@@ -345,7 +345,7 @@ EXPLAIN [extended] SELECT * FROM table;
 - `key`: mysql 在当前查询中实际使用的索引
 - `key_len`: **索引** 中使用的字节数, 可通过该列计算查询中使用的索引的长度
   - 显示的值为索引字段的 **最大可能长度** , 并非实际使用长度, 即 `key_len` 是根据表定义计算而得, 不是通过表内检索出的
-- `ref`: 表示上述表的连接匹配条件，即哪些列或常量被用于查找索引列上的值
+- `ref`: 表示上述表的连接匹配条件, 即哪些列或常量被用于查找索引列上的值
 - `rows`: 表的行数 -- 根据表统计信息及索引选用情况, 估算(?)的找到所需的记录所需要读取的行数
 - `extra`: 用于表示 mysql 解决查询的详细信息
   - `using where`: 列数据是从仅仅使用了索引中的信息而没有读取实际的行动的表返回的, 这发生在对表的全部的请求列都是同一个索引的部分的时候, 表示 mysql 服务器将在存储引擎检索行后再进行过滤
@@ -360,7 +360,7 @@ EXPLAIN [extended] SELECT * FROM table;
 - `EXPLAIN` 不考虑各种 Cache
 - `EXPLAIN` 不能显示 MySQL 在执行查询时所作的优化工作
 - 部分统计信息是估算的, 并非精确值
-- `EXPALIN` 只能解释 SELECT 操作，其他操作要重写为 SELECT 后查看执行计划
+- `EXPALIN` 只能解释 SELECT 操作, 其他操作要重写为 SELECT 后查看执行计划
 
 ### 获取有关数据库和表的信息
 
@@ -691,7 +691,7 @@ log-basename = master1 # mariadb 独有
 
 配置
 
-在主库安装 semisync_master 插件：
+在主库安装 semisync_master 插件:
 
 ```shell
 mysql> INSTALL PLUGIN rpl_semi_sync_master SONAME 'semisync_master.so'; # linux
@@ -926,7 +926,7 @@ show index from table;
 - 使用 **业务字段(如身份证)** 作为主键的场景
   - 只有一个索引
   - 该索引必须是唯一索引
-- 回到主键索引树搜索的过程，称为回表
+- 回到主键索引树搜索的过程, 称为回表
 
 #### 索引优化
 
@@ -1116,7 +1116,7 @@ mysql 为排序设置的 sort_buffer 大小
 可通过以下方法确定排序语句是否使用了临时文件(MariaDB 无效)
 
 ```sql
-/* 打开 optimizer_trace，只对本线程有效 */
+/* 打开 optimizer_trace, 只对本线程有效 */
 SET optimizer_trace='enabled=on';
 
 /* @a 保存 Innodb_rows_read 的初始值 */
@@ -1893,7 +1893,7 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 - 备份脚本: 是对需要变更的数据备份到一张表中, 固定需要操作的数据行, 以便误操作或业务要求进行回滚
 - 执行脚本: 对数据变更的脚本, 为防 Update 错数据, 一般连备份表进行 Update 操作
 - 验证脚本: 验证数据变更或影响行数是否达到预期要求效果
-- 回滚脚本: 将数据回滚到修改前的状态。
+- 回滚脚本: 将数据回滚到修改前的状态;
 
 小 tip:
 **chattr +i**: (无论什么权限)不能 添加/修改/删除/重命名 文件
@@ -2083,7 +2083,7 @@ select * from t1 join t2 on(t1.a=t2.a) join t3 on (t2.b=t3.b) where t1.c>=X and 
   - (调用 innodb 接口,)从 t1 取一行数据, 返回到 server
   - 从 t2 取满足条件的数据, 获得中间结果
   - 从 t3 取满足条件的数据, 和中间结果对比, 并且构成最终结果
-- 如果采用 BKA 进行优化(只有 BKA 可以?), 会提取范围内的数据, 且直接的嵌套查询; 且每多一个 `join` 部分，就多一个 join_buffer
+- 如果采用 BKA 进行优化(只有 BKA 可以?), 会提取范围内的数据, 且直接的嵌套查询; 且每多一个 `join` 部分, 就多一个 join_buffer
 - 如果没有 `straight_join` , 那么第一个驱动表 MySQL 会在经过 `where t1.c>=X and t2.c>=Y and t3.c>=Z` 过滤后, 以数据最少的表(在 t1/t2/t3 中选), 作为第一个驱动表, 此时可能出现以下情况:
   - 如果驱动表是 t1, 则连接顺序是 t1->t2->t3, 则需要在(被驱动表) t2.a 和 t3.b 上创建索引
   - 如果驱动表是 t3, 连接顺序: t3->t2->t1, 则需要在 t2.b 和 t1.a 上创建索引
@@ -2579,7 +2579,7 @@ select * from a join b where a.f2=b.f2 and a.f1=b.f1;
 
 - `left join` 优化为 `join`, 即驱动表是 b , 被驱动表为 a
 
-从以上来看, **如果需要 left join 的语义，就不能把被驱动表的字段放在 where 条件里面做等值判断或不等值判断, 必须都写在 on 里面**
+从以上来看, **如果需要 left join 的语义, 就不能把被驱动表的字段放在 where 条件里面做等值判断或不等值判断, 必须都写在 on 里面**
 
 #### Simple Nested Loop Join 的性能问题
 
@@ -2685,7 +2685,7 @@ do {
 
 ### NULL
 
-NULL 跟任何值执行等值判断和不等值判断的结果，都是 NULL
+NULL 跟任何值执行等值判断和不等值判断的结果, 都是 NULL
 
 ### 为什么 `add column` 不指定位置
 

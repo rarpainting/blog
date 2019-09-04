@@ -54,10 +54,10 @@ B+Tree 的放大特性: 如果 B+Tree 的 block size 为 B, 故每个内部节�
 
 #### Size-tiered LSM-Tree
 
-假设数据集大小为 N，放大因子为 k，最大层有 k 个大小为 N/k 个文件，倒数第二层有 k 个 N/kk 个文件…那么一共有 O((log N/B)/(log k)) 层
+假设数据集大小为 N, 放大因子为 k, 最大层有 k 个大小为 N/k 个文件, 倒数第二层有 k 个 N/kk 个文件…那么一共有 O((log N/B)/(log k)) 层
 
-- **写放大**: 同一个 record，在每一层只会写一次，所以写放大等于层数，即 O((log N/B)/(log k))
-- **读放大**: 每一层读 k 个文件，一共 O((log N/B)/(log k)) 层，故一共需要读 O(k(log N/B)/(log k)) 个文件，不同于 Leveld LSM Tree，一个文件不只是一个 block B，而是有很多 blocks，近似 O(N/B) 个，在文件内部二分查找找到对应的 block 需要 O(log N/B)，故整体需要 O(k(log N/B)(log N/B)/(log k)) 次 I/O ，即读放大为 O(k(log N/B)(log N/B)/(log k))
+- **写放大**: 同一个 record, 在每一层只会写一次, 所以写放大等于层数, 即 O((log N/B)/(log k))
+- **读放大**: 每一层读 k 个文件, 一共 O((log N/B)/(log k)) 层, 故一共需要读 O(k(log N/B)/(log k)) 个文件, 不同于 Leveld LSM Tree, 一个文件不只是一个 block B, 而是有很多 blocks, 近似 O(N/B) 个, 在文件内部二分查找找到对应的 block 需要 O(log N/B), 故整体需要 O(k(log N/B)(log N/B)/(log k)) 次 I/O , 即读放大为 O(k(log N/B)(log N/B)/(log k))
 
 #### 具体阐述
 
