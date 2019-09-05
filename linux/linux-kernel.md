@@ -1,5 +1,45 @@
 # 深入理解 linux 内核
 
+<!-- TOC -->
+
+- [深入理解 linux 内核](#深入理解-linux-内核)
+	- [概念](#概念)
+		- [页表](#页表)
+		- [虚拟内存分配](#虚拟内存分配)
+			- [缺页中断](#缺页中断)
+			- [内存结构](#内存结构)
+		- [物理内存分配](#物理内存分配)
+			- [伙伴系统](#伙伴系统)
+			- [slab 缓存](#slab-缓存)
+			- [页面交换和页面回收](#页面交换和页面回收)
+			- [页类型](#页类型)
+			- [对象管理与引用计数](#对象管理与引用计数)
+				- [类型](#类型)
+				- [引用计数](#引用计数)
+		- [进程管理和调度](#进程管理和调度)
+			- [state](#state)
+			- [namespace](#namespace)
+			- [进程 ID](#进程-id)
+		- [锁与进程间通信](#锁与进程间通信)
+			- [近似的 pre-CPU](#近似的-pre-cpu)
+			- [锁竞争与细颗粒度锁](#锁竞争与细颗粒度锁)
+			- [SysV 进程间通信](#sysv-进程间通信)
+	- [内核调度的不完全抢占](#内核调度的不完全抢占)
+		- [禁用/使能可抢占条件的操作](#禁用使能可抢占条件的操作)
+		- [什么时候不允许抢占](#什么时候不允许抢占)
+			- [内核正在进行中断操作](#内核正在进行中断操作)
+			- [内核正在进行中断上下文的 Bottom Half (中断下部分)处理](#内核正在进行中断上下文的-bottom-half-中断下部分处理)
+			- [内核的代码段帧持有 spinlock 自旋锁](#内核的代码段帧持有-spinlock-自旋锁)
+			- [内核正在执行调度程序 Scheduler](#内核正在执行调度程序-scheduler)
+			- [内核正在对每个 CPU "私有"的数据结构操作](#内核正在对每个-cpu-私有的数据结构操作)
+		- [临界区](#临界区)
+		- [文件系统(filesystem)](#文件系统filesystem)
+			- [EXT4](#ext4)
+			- [XFS](#xfs)
+			- [Brtfs](#brtfs)
+
+<!-- /TOC -->
+
 ## 概念
 
 ### 页表
@@ -17,6 +57,44 @@ CPU 优化:
 
 1. MMU
 2. 对于地址转换最频繁的那部分地址, 保存到 **地址转换后备缓冲器(TLB)** 的 CPU 高速缓存中
+
+### 虚拟内存分配
+
+#### 缺页中断
+
+```shell
+ps -o majflt,minflt -C $program
+```
+
+- majflt 代表 major fault
+- minflt 代表 minor fault
+
+当某进程发生缺页中断, 进程陷入内核态:
+1. 检查要访问的虚拟地址是否合法
+2. 查找/分配一个物理页
+3. 填充物理页内容(读取磁盘(如果需要读取磁盘, 那么这次缺页中断就是 majflt), 或者直接置 0, 或者直接略过)
+4. 建立映射关系(虚拟地址 -> 物理地址)
+
+进程分配主要有两种方式: brk 和 mmap(不考虑共享内存):
+1. brk 是将数据段 (`.data`) 的最高地址指针 `_edata` 往高地址推
+2. mmap 是在进程的虚拟地址空间中(堆和栈的文件映射区域)找一块空闲的虚拟内存
+
+这两种方式分配的都是虚拟内存, 没有分配物理内存
+
+#### 内存结构
+
+![内存结构](Meterpreter-memorymap.png)
+
+- 内核态/Kernel virtual memory:
+  - 共享部分
+    - Physical memory
+    - Kernel code and data
+  - 非共享部分
+    - `task_struct`, `mm_struct`, kernel stack
+- 用户态/Process virtual memory:
+  - 栈/User stack
+  - `%esp`
+  -
 
 ### 物理内存分配
 
@@ -37,10 +115,10 @@ CPU 优化:
 
 - 页面交换
   - 将硬盘空间作为扩展内存
-  
+
 - 页面回收
   - 用于将内存映射被修改的内容与底层的块设备同步
-  
+
 #### 页类型
 
 可供分配的页有以下类型:
@@ -65,7 +143,7 @@ static int fallbacks[MIGRATE_TYPES][MIGRATE_TYPES-1] = {
 	[MIGRATE_RESERVE]     = { MIGRATE_RESERVE,     MIGRATE_RESERVE,   MIGRATE_RESERVE }, /* Never used */
 };
 ```
- 
+
 #### 对象管理与引用计数
 
 在内核中跟踪/记录/管理 C 的结构实例
@@ -110,50 +188,50 @@ struct kref {
 ```c
 struct task_struct {
   volatile long state;  /* -1:不可运行 0:可运行 >0:停止 */
-  void *stack;
-  atomic_t usage;
+  void          *stack;
+  atomic_t      usage;
   unsigned long flags;  /* 进程标志 */
   unsigned long ptrace;
-  int lock_depth;       /* 大内核锁深度 */
-  
+  int           lock_depth;       /* 大内核锁深度 */
+
   int prio, static_prio, normal_prio;
   struct list_head run_list;
   const struct sched_class *sched_class;
   struct sched_entity se;
-  
+
   unsigned short ioprio;
-  
+
   unsigned long policy;
   cpumask_t cpus_allowed;
-  unisgned int time_slice;
-  
+  unsigned int time_slice;
+
 #if defined(CONFIG_SCHEDSTATS) || defined (CONFIG_TASK_DELAY_ACCT)
   struct sched_info sched_info;
 #endif
-  
+
   struct list_head tasks;
-  
+
   /*
     ptrace_list/ptrace_children -- ptrace 观测到的当前进程的子进程列表
   */
-  
+
   struct list_head ptrace_children;
-  
+
   struct list_head ptrace_list;
-  
+
   struct mm_struct *mm, *active_mm;
-  
+
   /* 进程状态 */
   struct linux_binfmt *binfmt;
   long exit_state;
   int exit_code, exit_signal;
   int pdeath_signal; /* 在父进程终止时发送的信号 */
-  
+
   unsigned int personality;
   unsigned did_exec:1;
   pid_t pid;
   pit_t tpid;
-  
+
   /*
    * 分别指向(原)父进程, 最年轻的子进程, 年幼的兄弟进程, 年长的兄弟进程(??在哪)
    */
@@ -166,15 +244,15 @@ struct task_struct {
   struct list_head children;
   struct list_head sibling;
   struct taks_struct *group_leader;
-  
+
   /* PID 与 PID 散列表的联系 */
   struct pid_link pids[PIDTYPE_MAX];
   struct list_head thread_group;
-  
+
   struct completion *vfork_done; /* 用于 vfrok() */
   int __user *set_child_tid; /* CLONE_CHILD_SETTID */
   int __user *clear_child_tid; /* CLONE_CHILD_CLEARTID */
-  
+
   unsigned long rt_priority;
   cputime_t utime, stime, utimescaled, stimescaled;
   unsigned long nvcsw, nivcsw;
@@ -274,7 +352,7 @@ struct task_struct {
   1. 线程组 -- TGID
   2. 进程组 -- PGID
   3. 会话 -- SID
-  
+
 ### 锁与进程间通信
 
 #### 近似的 pre-CPU
@@ -328,18 +406,18 @@ dec_preempt_count
 
 #### 内核正在进行中断操作
 
-_中断_只能被其他(优先级更高的)_中断_中止/抢占, _进程_**不允许**中止/抢占_中断_
+_中断_ 只能被其他(优先级更高的) _中断_ 中止/抢占, _进程_ **不允许**中止/抢占 _中断_
 
 *进程调度函数 schedule() 会对此作出判断, 如果是在中断中调用, 会打印出错信息*
 
 #### 内核正在进行中断上下文的 Bottom Half (中断下部分)处理
 
-硬件中断返回前会执行**软中断**, 此时仍然处于中断上下文
+硬件中断返回前会执行 **软中断**, 此时仍然处于中断上下文
 
 #### 内核的代码段帧持有 spinlock 自旋锁
 
-内核中的锁是为了在 SMP 系统中短时间内保证不同 CPU 上运行的程序并发执行的正确性
-当持有这些锁时, 内核不能被抢占
+- 内核中的锁是为了在 SMP 系统中短时间内保证不同 CPU 上运行的程序并发执行的正确性
+- 当持有这些锁时, 内核不能被抢占
 
 #### 内核正在执行调度程序 Scheduler
 

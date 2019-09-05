@@ -3,7 +3,8 @@
 <!-- TOC -->
 
 - [TLS-TCP-IP](#tls-tcp-ip)
-	- [以太帧](#以太帧)
+	- [OSI](#osi)
+	- [以太帧(Ether Frame)](#以太帧ether-frame)
 	- [IPV4](#ipv4)
 	- [ICMP](#icmp)
 	- [TCP](#tcp)
@@ -32,7 +33,48 @@
 
 <!-- /TOC -->
 
-## 以太帧
+## OSI
+
+![OSI](020e66f0f736afc34c4d9019b819ebc4b64512cd.png)
+
+从下到上
+- 物理层
+  - 光纤
+  - 中继器
+  - CAN bus/USB 物理层
+- 链路层
+  - LLC/逻辑链路控制
+  - MAC/介质访问控制: 以太帧
+  - PPP: **EtherType: 0x880D**
+    - 点到点协议, 用于拨号连接
+    - 支持 TCP/IP
+- 网络层
+  - Ethernet/IP: **EtherType: 0x0800(IPv4) 0x86DD(IPv6)**
+    - IPv4: 0x0100; IPv6: 0x0110
+  - ICMP
+  - EtherCAT: **EtherType: 0x88A4**
+  - TSN: **EtherType: 0x22F0**
+    - 带优先级以供抢占调度
+  - ARP: **EtherType: 0x0806**
+    - 地址解析协议
+	- IP(x.x.x.x) -> MAC (x-x-x-x-x-x)
+  - RARP: **EtherType: 0x8035**
+    - 反向地址解析协议
+	- 无盘系统, 用于声明自己的 MAC 地址并且请求任何收到此请求的 RARP 服务器的 ARP 分配一个 IP 地址
+  - RFR: **EtherType: 0x6559**
+    - 原始帧中继
+- 传输层
+  - TCP
+  - UDP
+- 会话层
+  - SSH(SecureShell)
+- 表示层
+- 应用层
+  - HTTP
+
+## 以太帧(Ether Frame)
+
+MAC 子层的实现
 
 ![以太帧](20160428103116706.jpeg)
 
@@ -46,7 +88,7 @@
 
 `Length`: 长度, 2 bytes, 指明该帧数据字段(`Data and Pad`)的长度, 但不代表数据字段长度能够达到(2^16)bytes
 
-`Type`: 类型, 2 bytes, 指明帧中数据的协议类型, 比如常见的 IPv4 中 ip 协议采用 0x0800
+`Type`/`EtherType`: 类型, 2 bytes, 指明帧中数据的协议类型, 比如常见的 IPv4 中 ip 协议采用 0x0800
 
 `Data and Pad`: 数据与填充, 46~1500 bytes, 包含了上层协议传递下来的数据, 如果加入数据字段后帧长度不够 64 bytes, 会在数据字段加入 "填充" 至达到 64 bytes
 
@@ -80,7 +122,7 @@
 
 `Destination Address`: 目的ip地址, 32 bits, 如(192.168.1.3)
 
-`Option`: 选项, `n*32 bits`; 用来定义一些可选项: 如记录路径、时间戳等; 但这些选项很少被使用, 同时并不是所有主机和路由器都支持这些选项; 可选项字段的长度必须是 32bits 的整数倍, 如果不足, 必须填充0以达到此长度要求; 根据IHL可以得到option的长度
+`Option`: 选项, `n*32 bits`; 用来定义一些可选项: 如记录路径、时间戳等; 但这些选项很少被使用, 同时并不是所有主机和路由器都支持这些选项; 可选项字段的长度必须是 32bits 的整数倍, 如果不足, 必须填充0以达到此长度要求; 根据 IHL 可以得到 option 的长度
 
 `Data`: 数据, 不定长度, 但受限于数据报的最大长度(65536/2^16 bytes); 这是在数据报中要传输的数据; 它是一个完整的较高层报文或报文的一个分片
 
@@ -133,12 +175,54 @@
 
 ### Linux 的 TCP 状态
 
-- ESTABLISHED
-- SYN_SENT
-- SYN_RECV
-- FIN_WAIT1
-- FIN_WAIT2
-- TIME_WAIT
+- `LISTEN`: server 绑定一个 socket , 进行监听
+- `SYN_SENT`: client 通过 connect 发送一个 SYN 以请求连接, 期间 client 被设为 `SYN_SEND`
+- `SYN_RECV`: server 发出 SYN+ACK 表示确认连接并向 client 发起 连接请求, server 设为 `SYN_RECV`
+
+- `ESTABLISHED`: 连接确定, 双方正常通信, 双方进入 `ESTABLISHED`
+
+- `FIN_WAIT1`: active clone (调用 close() 等) 发出带 FIN 的 TCP 帧, 进入 `FIN_WAIT1`
+- `CLOSE_WAIT`: passive close 收到 FIN 帧, 返回 ACK 帧, 随后进入 `CLOSE_WAIT`
+- `FIN_WAIT2`: active close 接到 ACK 后, 进入 `FIN_WAIT2`
+- `LAST_ACK`: passive close 主动调用 close(), 向 active close 发送 FIN, 随后进入 `LAST_ACK`
+- `TIME_WAIT`: active close 接收 FIN , 并发送 ACK, 随后进入 `TIME_WAIT`
+  - 在 active close 进入 `TIME_WAIT` 后, 需要 `2*MSL` 时间才会设置为 `CLOSED`
+  - 主要是保证了在 passive close 触发重发 FIN 后, **重发 ACK**
+  - Maximum Segment Lifetime/MSL: 是一个数据报在 internetwork 中能存在的最长时间
+- `CLOSING`:
+- `CLOSED`: passive close 受到 ACK 后, 状态设置为 `CLOSED`, 连接结束
+
+通过 `setsockopt` 解决 `TIME_WAIT` 状态:
+- `SO_LINGER`: 发送 RST 以略过 `TIME_WAIT` , 直接进入 `CLOSED`; 强制关闭
+- `SO_REUSEADDR`/`SO_REUSEPORT`: 套接字重用
+  - `SO_REUSEADDR`: 内核在处理一个设置了 `SO_REUSEADDR` 的 socketB 绑定时, 如果其绑定的 ip 和 port 和一个处于 `TIME_WAIT` 状态的 socketA 冲突时, 内核将忽略这种冲突(但是 socketB 真正生效的时间在 socketA `CLOSED` 之后)
+  - `SO_REUSEPORT`(3.9): **负载均衡**, 允许将多个 socket 绑定到相同的地址和端口, 前提是: **每个 socket 绑定前都需设置`SO_REUSEPORT`**
+
+```c
+struct linger {
+	int l_onoff,  // 0=off, nonzero=on(开关)
+	int l_linger, // linger time(延迟时间)
+}
+```
+
+| `l_onoff` | `l_linger` | closesocket 行为                                                     | 发送队列                                     | 底层行为                                                              |
+| :-        | :-         | :-                                                                   | :-                                           | :-                                                                    |
+| 零        | 忽略       | 立即返回                                                             | 保持直至发送完成                             | 系统接管套接字并保证将数据发送至对端                                  |
+| 非零      | 零         | 立即返回                                                             | 立即放弃                                     | 直接发送 RST 包, 自身立即复位, 不用经过 2MSL 状态; 对端收到复位错误号 |
+| 非零      | 非零       | 阻塞直到 l_linger 时间超时或数据发送完成; (套接字必须设置为阻塞状态) | 在超时时间段内保持尝试发送(FIN), 若超时则立即放弃(RST) | 超时则同第二种情况, 除非正常行为                                      |
+
+`SO_REUSEADDR` 行为
+
+| SO_REUSEADDR | 先绑定 socketA | 后绑定 socketB | 绑定 socketB 的结果 |
+| :-           |             :- |             :- | :-                  |
+| 无关         | 192.168.0.1:21 | 192.168.0.1:21 | Error (EADDRINUSE)  |
+| 无关         |     0.0.0.0:21 |     0.0.0.0:21 | Error (EADDRINUSE)  |
+| 无关         | 192.168.0.1:21 |    10.0.0.1:21 | OK                  |
+| 无关         |    10.0.0.1:21 | 192.168.0.1:21 | OK                  |
+| disable      |     0.0.0.0:21 | 192.168.1.0:21 | Error (EADDRINUSE)  |
+| disable      | 192.168.1.0:21 |     0.0.0.0:21 | Error (EADDRINUSE)  |
+| enable       |     0.0.0.0:21 | 192.168.1.0:21 | OK                  |
+| enable       | 192.168.1.0:21 |     0.0.0.0:21 | OK                  |
 
 ## UDP
 
