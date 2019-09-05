@@ -71,7 +71,7 @@ ps -o majflt,minflt -C $program
 
 当某进程发生缺页中断, 进程陷入内核态:
 1. 检查要访问的虚拟地址是否合法
-2. 查找/分配一个物理页
+2. (通过 MMU)查找/分配一个物理页
 3. 填充物理页内容(读取磁盘(如果需要读取磁盘, 那么这次缺页中断就是 majflt), 或者直接置 0, 或者直接略过)
 4. 建立映射关系(虚拟地址 -> 物理地址)
 
@@ -94,7 +94,16 @@ ps -o majflt,minflt -C $program
 - 用户态/Process virtual memory:
   - 栈/User stack
   - `%esp`
-  -
+  - Memory mapped(shared)
+  - `brk`
+  - Runtime heap(malloc/free)
+  - `.bss` 段: 可读写, 未初始化/初始化为 0 的全局变量/静态变量
+  - `.data` 段: 可读写, 已初始化的全局变量
+  - `.text` 段: 代码段, 只读, 执行代码/只读的常数变量
+
+```shell
+size a.out
+```
 
 ### 物理内存分配
 
