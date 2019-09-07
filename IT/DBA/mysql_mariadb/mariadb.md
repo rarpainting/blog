@@ -226,7 +226,7 @@
 			- [Simple Nested Loop Join 的性能问题](#simple-nested-loop-join-的性能问题)
 			- [distinct 和 group by 的异同](#distinct-和-group-by-的异同)
 			- [备库自增主键](#备库自增主键)
-		- [自增主键用完](#自增主键用完)
+		- [如果自增主键用完](#如果自增主键用完)
 			- [表定义自增键](#表定义自增键)
 			- [InnoDB 系统自增 row_id](#innodb-系统自增-row_id)
 			- [Server XID](#server-xid)
@@ -254,6 +254,7 @@
 		- [触发器/存储过程](#触发器存储过程)
 		- [`sql_mode`](#sql_mode)
 			- [`ONLY_FULL_GROUP_BY`](#only_full_group_by)
+		- [InnoDB 与 B+ Tree](#innodb-与-b-tree)
 
 <!-- /TOC -->
 
@@ -2620,7 +2621,7 @@ SET INSERT_ID=CURRENT_ID;
 
 ---
 
-### 自增主键用完
+### 如果自增主键用完
 
 #### 表定义自增键
 
@@ -2876,3 +2877,27 @@ The FIX Rules 规定:
 
 - 窗口函数仅将结果附加到当前的结果, 即输入输出的行数不变
 - 每个 Group 仅保留一行聚合结果
+
+### InnoDB 与 B+ Tree
+
+数据存储单位:
+- 磁盘扇区: 512bytes
+- 文件系统页: 4Kbytes
+- InnoDB 页: `innodb_page_size`, 16Kbytes
+
+- 在 InnoDB 中, 叶子节点存放数据, 中间节点存放数据的元数据
+- 指针(数据偏移)在 InnoDB 中为 6 bytes
+
+获得 B+ 树的高度(`<8.0`):
+- 在 InnoDB 表空间文件(.frm) 中, 约定 **页序号/page number == 3** 的代表主键索引的根页
+- 根页偏移量为 64 的地方存放了该 B+ 树的 `page_level=(int)(*(void *)(16384*3+64)[:2])=(int)(*(void *)(49216)[:2])`
+- `tree_height=page_level+1`
+
+`>=8.0`:
+TODO:
+
+![select info_schema](v2-ab72e4b446d501dabae2b373d0fd46ce_r.jpg)
+![result](v2-442458eba8e4776eb1f919799337c158_r.jpg)
+
+问题: 为什么 MySQL 的索引要使用 B+ 树而不是 B 树:
+因为 B 树不管在叶子节点还是非叶子节点都保存数据, 以至于在非叶子节点存储的扇出指针少于 B+ 树; 在同等规模的数据下, 树的高度增加, IO 数也随之增加
