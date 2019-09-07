@@ -147,9 +147,9 @@ FROM sales
   - `RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
 
 窗口函数的分类:
-聚合(Aggregate): `AVG()`, `COUNT()`, `MIN()`, `MAX()`, `SUM()` ...
-取值(Value): `FIRST_VALUE()`, `LAST_VALUE()`, `LEAD()`, `LAG()` ...
-排序(Ranking): `RANK()`, `DENSE_RANK()`, `ROW_NUMBER()`, `NTILE()` ...
+- 聚合(Aggregate): `AVG()`, `COUNT()`, `MIN()`, `MAX()`, `SUM()` ...
+- 取值(Value): `FIRST_VALUE()`, `LAST_VALUE()`, `LEAD()`, `LAG()` ...
+- 排序(Ranking): `RANK()`, `DENSE_RANK()`, `ROW_NUMBER()`, `NTILE()` ...
 
 > 注: Frame 定义并非所有窗口函数都适用; 比如 `ROW_NUMBER()`、`RANK()`、`LEAD()` 等; 这些函数总是应用于整个分区, 而非当前 Frame
 
@@ -188,3 +188,9 @@ Frame 的处理逻辑:
 
 - $O(n\log{n})$ 时间内构造
 - $O(\log{n})$ 时间内查询任意区间的聚合结果
+
+### 范式
+
+- 第一范式/1NF: 每列都是不可分割的原子值
+- 第二范式/2NF: 每个属性都是和主键完全相关的, 而不是和其他列相关的
+- 第三范式/3NF: 每个属性都是和主键直接相关, 而不是间接相关

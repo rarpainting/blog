@@ -1,12 +1,12 @@
 # 一致性
 
-## Innodb 一致性
+## InnoDB 一致性
 
 ### 事务的隔离级别
 
-- 未提交读(URC - read uncommit) -- 一个事务可以读取另一个**未提交**的数据
-- 提交读(RC - read commit) -- 在一个事务提交后, 另外的事务才能够读取到提交的变化; 可能同时出现事务读取操作前后的不一致, 即**幻读**
-- 可重复读(RR - read repeatable) -- 在该事务操作的整个过程中, 读取的数据都是一致的; 但**不保障**实际的数据不被修改
+- 未提交读(URC - read uncommit) -- 一个事务可以读取另一个 **未提交** 的数据
+- 提交读(RC - read commit) -- 在一个事务提交后, 另外的事务才能够读取到提交的变化; 可能同时出现事务读取操作前后的不一致, 即 **幻读**
+- 可重复读(RR - read repeatable) -- 在该事务操作的整个过程中, 读取的数据都是一致的; 但 **不保障** 实际的数据不被修改
   - 通过 `mysqldump --single-transaction` 设置事务为 RR 模式
   - `mysqldump --single-transaction` 期间 **不能执行 `alter table/drop table/rename table/truncate table` 等 DDL 语句**, 因为它们会导致无法使用 undo 构造出正确的一致性读, 同时返回错误-`ER_TABLE_DEF_CHANGED` :
     - `DROP TABLE` 会根本的破坏该表
@@ -14,12 +14,22 @@
     - `CREATE TABLE` 在事务中 *重新* 发出一致性读时, 新表中的行不可见, 因为在执行事务时这些行不存在
 - 序列化(serializable) -- 所有的事务操作串行处理; 牺牲了效率
 
-Innodb 默认是**可重复读**级别
-但是提供了以下手段, 以避免幻读:
+不同隔离级别下, 可能的问题:
+- 脏读: 读到没有提交的数据, 不符合事务上的一致性
+- 非重复读: 重复读但是结果不完全一致
+- 幻读: select 读到的数据和 update 修改时的搜索到的数据不一致
+
+| 隔离级别     | 脏读 | 非重复读 | 幻读 |
+| :-:          | :-:  | :-:      | :-:  |
+| 未提交读 URC | Y    | Y        | Y    |
+| 提交读 RC    |      | Y        | Y    |
+| 可重复读 RR  |      |          | Y    |
+
+Innodb 默认是 **可重复读** 级别, 提供了以下手段, 以避免幻读:
 - select * from table for update; (排他写锁)
-  - 使用 Innodb 提供的 **next-key locks** 锁定被操作的表, 令该表获得该事务期间的**序列化**
+  - 使用 Innodb 提供的 **next-key locks** 锁定被操作的表, 令该表获得该事务期间的 **序列化**
 - select * from table lock in share mode; (共享读锁)
-  - **next-key locks**获得**加锁读**
+  - **next-key locks** 获得 **加锁读**
 
 在没有 `with consistent snapshot` 的事务中, 视图生成的时间是第一个实际操作(`select` `update`, `delete`, `insert`)的时间; 因此在对一致性要求严格的场景建议添加 `with consistent snapshot` 显式生成视图
 
@@ -28,10 +38,10 @@ Innodb 默认是**可重复读**级别
 1. 更新(update)数据都是先读后写, 而这个读, 只能读 *当前(最新已提交事务, 无论这个事务(`row trx_id`)是否在当前事务的 数据版本 中)* 的值, 即 `当前读--current read`, 应对:
     - 添加 `lock in share mode` 读锁(S 锁, 共享锁) 或者 `for update` 写锁(X 锁, 排他锁)
 
-### MVCC -- Innodb 的多版本并发控制
+### MVCC -- InnoDB 的多版本并发控制
 
 - 每行记录后面都会由两个隐藏的列
-- 这两列分别保存该行的**创建时间**和**删除时间**对应的系统版本号
+- 这两列分别保存该行的 **创建时间** 和 **删除时间** 对应的系统版本号
 - 系统版本号随操作(update, insert, delete)的进行而递增
 - 设该事务版本号为 X , 无锁操作下会查找 创建版本号 <=X 且 删除版本号 >X(或 undefined) 的行
 

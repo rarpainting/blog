@@ -3,6 +3,7 @@
 <!-- TOC -->
 
 - [MariaDB](#mariadb)
+	- [ACID](#acid)
 	- [数据库语言](#数据库语言)
 		- [DDL(Data Definition Language) -- 数据定义语言](#ddldata-definition-language----数据定义语言)
 		- [DML(Data Manipulation Language) -- 数据操作语言](#dmldata-manipulation-language----数据操作语言)
@@ -250,10 +251,18 @@
 			- [源码](#源码)
 		- [一致性与隔离级别的关系](#一致性与隔离级别的关系)
 		- [JSON](#json)
+		- [触发器/存储过程](#触发器存储过程)
 		- [`sql_mode`](#sql_mode)
 			- [`ONLY_FULL_GROUP_BY`](#only_full_group_by)
 
 <!-- /TOC -->
+
+## ACID
+
+- 原子性(Atomicity): undo log
+- 隔离性(Isolation): next-key lock 和 MVCC
+- 持久性(Durability): InnoDB 的 redo log 和 binlog 的 2PL 规则
+- 一致性(Consistency): 由以上三者保证
 
 ## 数据库语言
 
@@ -2685,7 +2694,7 @@ do {
 
 ### NULL
 
-NULL 跟任何值执行等值判断和不等值判断的结果, 都是 NULL
+NULL 跟任何值执行等值判断和不等值判断的结果, **都是 NULL**
 
 ### 为什么 `add column` 不指定位置
 
@@ -2807,7 +2816,6 @@ The FIX Rules 规定:
 - Write-Ahead Log 保证了单个数据页的一致性, 但是不保证事务的一致性
 - Force-log-at-commit 要求当一个事务提交时, 其生成的所有 mini-transaction 日志必须持久到设备上
 
-
 #### 源码
 
 ![mtr_t 内存结构](20141203164837968.jpeg)
@@ -2853,6 +2861,10 @@ The FIX Rules 规定:
 | 1    | lnmp                  |
 +------|-----------------------+
 ```
+
+### 触发器/存储过程
+
+触发器是被动执行的, 存储过程是主动执行(通过名称调用)的
 
 ### `sql_mode`
 

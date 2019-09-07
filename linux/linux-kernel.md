@@ -85,12 +85,18 @@ ps -o majflt,minflt -C $program
 
 ![内存结构](Meterpreter-memorymap.png)
 
+
+![内核分布](20180802151008142.png)
+
 - 内核态/Kernel virtual memory:
+  - 非共享部分: `task_struct`(进程), `mm_struct`(虚拟地址空间结构), kernel stack, 128M
+    - vmalloc area:
+    - 持久化内核映射区: kernel 代码, GDT, IDT, PGD
+    - 临时内核映射区: 用户数据, 页表(PT)
   - 共享部分
     - Physical memory
-    - Kernel code and data
-  - 非共享部分
-    - `task_struct`, `mm_struct`, kernel stack
+    - Kernel code and data/Kernel image
+    - kernel image 下的 16M 的内核空间用于 DMA
 - 用户态/Process virtual memory:
   - 栈/User stack
   - `%esp`
@@ -108,6 +114,10 @@ size a.out
 ### 物理内存分配
 
 #### 伙伴系统
+
+```shell
+cat /proc/buddyinfo
+```
 
 - 系统中的空闲内存块总是两两分组, 每组中的俩个内存块称为伙伴
 - 内核对大小相同的伙伴(1, 2, 4, 8, 16...), 都放置到同一个列表中管理
