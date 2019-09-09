@@ -2,8 +2,6 @@
 
 ## Happens Before
 
-**应该以通信作为手段来共享内存**
-
 如果要让一个对变量 v 的写操作 w 所产生的结果能够被对该变量的读操作 r 观察到, 那么需要同时满足如下两个条件
 
 - 读操作 r 未先于写操作 w 发生
@@ -17,7 +15,7 @@
 
 ## channel
 
-CSP 思想
+> CSP 思想
 
 ![channel](channel-tricks.png)
 
@@ -26,7 +24,6 @@ channel 的 happen before 规则:
 - 对于 capacity 为 m 的 channel, 第 n 个 `receive` 一定 `happen before` 第 (n+m) `send finished`
 - m=0 unbuffered. 第 n 个 `receive` 一定 `happen before` 第 n 个 `send finished`
 - channel 的 close 一定 `happen before` receive 端得到通知, 得到通知意味着 receive 收到一个 channel close 后的零值, 而 close 之后的 send 则发生 panic
-
 
 ## go runtime
 
@@ -73,6 +70,22 @@ channel 的 happen before 规则:
 | stopnote   | Note     |                                                          |
 | sysmonwait | uint32   | 作为系统检测任务被执行期间的停止计数和通知机制           |
 | sysmonnote | Note     |                                                          |
+
+### M/P/G 状态转换
+
+![线程模型](006.png)
+
+#### M/Machine
+
+- 与内核线程 1:1 对应
+
+#### P/Processor
+
+![P 状态转换](008.png)
+
+#### G/Goroutine
+
+![G 状态转换](009.png)
 
 ## Go Ast
 
