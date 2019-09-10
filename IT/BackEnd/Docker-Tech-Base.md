@@ -47,8 +47,8 @@ CGroup 为一组进程分配(CPU 内存 网络等宽等)资源
 功能:
 - Resource Limiting: 资源限制
 - Prioritization: 优先级
-- Accounting: 认证
-- Control: 控制
+- Accounting: 记录, 通过 `cpuacct` 子系统记录某个进程组使用的 CPU 时间
+- Control: 控制, 使用 `freezer` 子系统将进程组挂起或恢复
 
 ### CGroup 支持的文件种类
 
@@ -128,7 +128,7 @@ struct cgroup_subsys_state {
 
 因此进程和 CGroup 的关系:
 
-task_struct->css_set->cgroup_subsys_state->cgroup
+`task_struct` -> `css_set` -> `cgroup_subsys_state` -> `cgroup`
 
 #### linux-4.9
 
@@ -201,7 +201,7 @@ struct task_group {
  * Per-subsystem/per-cgroup state maintained by the system.  This is the
  * fundamental structural building block that controllers deal with.
  *
- * Fields marked with "PI:" are public and immutable and may be accessed
+ * Fields marked with "PI:" ar\e public and immutable and may be accessed
  * directly without synchronization.
  */
 struct cgroup_subsys_state {
@@ -234,14 +234,14 @@ struct cgroup_subsys_state {
 	/*
 	 * Monotonically increasing unique serial number which defines a
 	 * uniform order among all csses.  It's guaranteed that all
-	 * ->children lists are in the ascending order of ->serial_nr and
+	 * ->children lists ar\e in the ascending order of ->serial_nr and
 	 * used to allow interrupting and resuming iterations.
 	 */
 	u64 serial_nr;
 
 	/*
 	 * Incremented by online self and children.  Used to guarantee that
-	 * parents are not offlined before their children.
+	 * parents ar\e not offlined befor\e their children.
 	 */
 	atomic_t online_cnt;
 
@@ -293,8 +293,8 @@ struct cgroup {
 	 * The bitmask of subsystems enabled on the child cgroups.
 	 * ->subtree_control is the one configured through
 	 * "cgroup.subtree_control" while ->child_ss_mask is the effective
-	 * one which may have more subsystems enabled.  Controller knobs
-	 * are made available iff it's enabled in ->subtree_control.
+	 * one which may have mor\e subsystems enabled.  Controller knobs
+	 * ar\e made available iff it's enabled in ->subtree_control.
 	 */
 	u16 subtree_control;
 	u16 subtree_ss_mask;
@@ -314,7 +314,7 @@ struct cgroup {
 
 	/*
 	 * On the default hierarchy, a css_set for a cgroup with some
-	 * susbsys disabled will point to css's which are associated with
+	 * susbsys disabled will point to css's which ar\e associated with
 	 * the closest ancestor which has the subsys enabled.  The
 	 * following lists all css_sets which point to this cgroup's css
 	 * for the given subsystem.

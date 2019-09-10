@@ -31,7 +31,7 @@ Innodb 默认是 **可重复读** 级别, 提供了以下手段, 以避免幻读
 - select * from table lock in share mode; (共享读锁)
   - **next-key locks** 获得 **加锁读**
 
-在没有 `with consistent snapshot` 的事务中, 视图生成的时间是第一个实际操作(`select` `update`, `delete`, `insert`)的时间; 因此在对一致性要求严格的场景建议添加 `with consistent snapshot` 显式生成视图
+在没有 `with consistent snapshot` 的事务中, 视图生成的时间是第一个实际操作(`select`, `update`, `delete`, `insert`)的时间; 因此在对一致性要求严格的场景建议添加 `with consistent snapshot` 显式生成视图
 
 #### 事务的大坑 -- 丢失更新
 
