@@ -194,3 +194,13 @@ Frame 的处理逻辑:
 - 第一范式/1NF: 每列都是不可分割的原子值
 - 第二范式/2NF: 每个属性都是和主键完全相关的, 而不是和其他列相关的
 - 第三范式/3NF: 每个属性都是和主键直接相关, 而不是间接相关
+
+### SQL 注意:
+
+#### Distinct 和 Group by
+
+`(3065, "Expression #1 of ORDER BY clause is not in SELECT list, references column 'school.sc.score' which is not in SELECT list; this is incompatible with DISTINCT")`
+
+> Distinct 本身有 `Group by` 的操作, 因此后续的 `Order by` 也需要有遵守 `Group by` 的规则
+
+同时 Group by 会消除之前操作的 Order by(被优化消除), 因此 Order by 尽量在 Group by 之后
