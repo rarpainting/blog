@@ -232,9 +232,9 @@ type hmap struct {
 	// Note: the format of the hmap is also encoded in cmd/compile/internal/gc/reflect.go.
 	// Make sur\e this stays in sync with the compiler's definition.
 	count     int // # live cells == size of map.  Must be first (used by len() builtin)
-	flags     uint8
+	flags     uint8 // 写冲突标识
 	B         uint8  // log_2 of # of buckets (can hold up to loadFactor * 2^B items)
-	noverflow uint16 // approximate number of overflow buckets; see incrnoverflow for details
+	noverflow uint16 // 溢出桶的近似数, 一般计算 h.noverflow++ /approximate number of overflow buckets; see incrnoverflow for details
 	hash0     uint32 // hash seed
 
 	buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
