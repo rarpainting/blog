@@ -19,6 +19,7 @@
 				- [引用计数](#引用计数)
 		- [进程管理和调度](#进程管理和调度)
 			- [state](#state)
+				- [僵尸进程](#僵尸进程)
 			- [namespace](#namespace)
 			- [进程 ID](#进程-id)
 		- [锁与进程间通信](#锁与进程间通信)
@@ -33,6 +34,8 @@
 			- [内核的代码段帧持有 spinlock 自旋锁](#内核的代码段帧持有-spinlock-自旋锁)
 			- [内核正在执行调度程序 Scheduler](#内核正在执行调度程序-scheduler)
 			- [内核正在对每个 CPU "私有"的数据结构操作](#内核正在对每个-cpu-私有的数据结构操作)
+		- [Input 子系统](#input-子系统)
+			- [Input 事件与一般 syscall 的区别](#input-事件与一般-syscall-的区别)
 		- [临界区](#临界区)
 		- [文件系统(filesystem)](#文件系统filesystem)
 			- [EXT4](#ext4)
@@ -136,9 +139,9 @@ cat /proc/buddyinfo
 
 对于需要比完整帧小的小内存, 则使用一般性缓存 -- slab 缓存
 
-- 对频繁使用的对象, 内核定义了只包含了所需*类型对象实例*的缓存(slab 自动维护与伙伴系统的交互, 在缓存用尽时会请求新的页帧)
+- 对频繁使用的对象, 内核定义了只包含了所需 *类型对象实例* 的缓存(slab 自动维护与伙伴系统的交互, 在缓存用尽时会请求新的页帧)
 - 对通常情况下的小内存块的分配, 内核针对不同大小的对象定义了一组 slab 缓存, 可以通过 kmalloc/kfree 交互
-- *slab 缓存*一般作为伙伴系统的下一级缓存
+- *slab 缓存* 一般作为伙伴系统的下一级缓存
 
 #### 页面交换和页面回收
 
@@ -365,11 +368,66 @@ struct task_struct {
 
 #### state
 
-- TASK_RUNNING
-- TASK_INTERRUPTIBLE
-- TASK_UNINTERUPTIBLE
-- TASK_STOPPED
-- TASK_TRACED
+- `TASK_RUNNING`/R
+- `TASK_INTERRUPTIBLE`/S
+- `TASK_UNINTERUPTIBLE`/D
+- `TASK_STOPPED`/Z
+- `TASK_DEADEXIT_ZOMBIE`/Z
+- `TASK_TRACED`
+
+```shell
+TASK_UNINTERUPTIBLE/D    uninterruptible sleep (usually IO (read from disk) / vfork 中的 parent process)
+TASK_RUNNING/R           running or runnable (on run queue)
+TASK_INTERUPTIBLE/S      interruptible sleep (waiting for an event to complete)
+TASK_STOPPED/T           stopped by job control signal
+TASK_TRACED/t            stopped by debugger during the tracing
+W                        paging (not valid since the 2.6.xx kernel)
+TASK_DEAD_EXIT_DEAD/X    dead (should never be seen)
+TASK_DEADEXIT_ZOMBIE/Z   defunct ("zombie") process, terminated but not reaped by its parent
+
+formats and when the stat keyword is used, additional characters may be displayed:
+
+<    high-priority (not nice to other users)
+N    low-priority (nice to other users)
+L    has pages locked into memory (for real-time and custom IO)
+s    is a session leader
+l    is multi-threaded (using CLONE_THREAD, like NPTL pthreads do)
++    is in the foreground process group
+```
+
+![进程状态](process-status-transform.gif)
+
+- 可运行状态 TASK_RUNNING/R
+
+- 可中断的睡眠状态 TASK_INTERRUPTIBLE/S
+
+进程由于某事件(socket, IPC, sleep)而挂起, 此时进程的 `task_struct` 被放入对应事件的等待队列中; 事件完成(中断/其他进程触发)后, 被唤醒
+
+- 不可中断的睡眠状态 TASK_UNINTERRUPTIBLE/D
+
+`vfork` 的父进程(Ds)
+
+disk IO
+
+- 暂停状态或跟踪状态 TASK_STOPPED/T TASK_TRACED/t
+
+(除了在 `TASK_UNINTERRUPTIBLE` 不接收信号, )接收到 `SIGSTOP`
+
+调试中(ts)
+
+- 僵尸状态 TASK_DEADEXIT_ZOMBIE/Z
+
+只遗留 `task_struct` 和 PCB 等少量数据
+
+- 退出状态 TASK_DEAD_EXIT_DEAD/X
+
+即将被销毁
+
+##### 僵尸进程
+
+- 子进程在死亡后(PCB 等资源未被释放)需要被父进程 wait 捕获他们的状态
+- 如果父进程没有 wait 而子进程结束, 会导致子进程的资源一直不释放(僵尸态)
+- 如果父进程没有 wait 而结束进程, 子进程会被托管到 pid 为 1 的进程(`/sbin/init` OR `/lib/systemd/systemd`)
 
 以下常量对 state 和 exit_state 字段都有效
 
@@ -433,6 +491,7 @@ dec_preempt_count
 
 ### 什么时候不允许抢占
 
+抢占依据:
 - **preempt_count()** 获取 preempt_count 的值
 - **preemptible()** 判断内核是否可抢占
 
@@ -459,6 +518,15 @@ _中断_ 只能被其他(优先级更高的) _中断_ 中止/抢占, _进程_ **
 
 在 SMP 中, 对于 per-CPU 数据结构未使用 spinlock 保护, 因为这些数据结构隐含的被 CPU 自身保护
 若允许抢占, 可能导致 per-CPU 数据调度到其他 CPU 上
+
+### Input 子系统
+
+![输入子系统](14336242-0cc0ae43b7c25aef.png)
+
+#### Input 事件与一般 syscall 的区别
+
+1. input 需要注册主次设备号
+2. 在核态, input 通过 `event_open`; syscall 通过 `sys_open`
 
 ### 临界区
 

@@ -222,9 +222,122 @@ func First(query string, replicas ...Search) Result {
 
 但是 `range string` 的结果是 []rune 的结果
 
+### Interface
+
+![interface](2835676-ff10962a15ab2676.png)
+
+```golang
+// src/runtime/type.go
+
+type imethod struct {
+  name nameOff
+  ityp typeOff
+}
+
+// 接口类型的定义
+type interfacetype struct {
+  typ     _type
+  pkgpath name
+  mhdr    []imethod
+}
+```
+
+```golang
+// src/runtime/runtime2.go
+
+// 记录成功对应的接口类型和实际类型
+type itab struct {
+  inter *interfacetype // point to interface type
+  _type *_type // point to concrete type
+  hash  uint32 // copy of _type.hash. Used for type switches.
+  _     [4]byte
+  fun   [1]uintptr // _type 中匹配 inter 的方法的地址的数组 {fun[0]==0 means _type does not implement inter.}
+}
+
+type iface struct {
+  tab  *itab
+  data unsafe.Pointer
+}
+```
+
+```golang
+// src/runtime/iface.go
+
+// Note: change the formula in the mallocgc call in itabAdd if you change these fields.
+type itabTableType struct {
+  size    uintptr             // length of entries array. Always a power of 2.
+  count   uintptr             // current number of filled entries.
+  entries [itabInitSize]*itab // really [size] large
+}
+```
+
+在 get 的时候, 不仅仅会从 itabTalbe 中查找, 还可能会创建插入, itabTable 使用容量超过 75% 还会扩容
+
+```golang
+// src/runtime/iface.go
+
+func getitab(inter *interfacetype, typ *_type, canfail bool) *itab {
+  // 先从全局的 itabTable 找 inter 和 typ 的配对记录
+  t := (*itabTableType)(atomic.Loadp(unsafe.Pointer(&itabTable)))
+  if m = t.find(inter, typ); m != nil {}
+
+  // 找不到已有的, 尝试生成新入口
+  m = (*itab)(persistentalloc(unsafe.Sizeof(itab{})+uintptr(len(inter.mhdr)-1)*sys.PtrSize, 0, &memstats.other_sys))
+  m.init()
+
+finish: // 完成
+}
+
+// 尝试匹配 m.inter 和 m._type
+// 如果失败, 设置 m.func[0]=0 , 并返回 缺少/匹配失败的方法
+func (m *itab) init() string {
+  // 获取除了 iface(kindDirectIface) 和 gc(kindGCProg) 外的结构
+  switch t.kind & kindMask {
+  }
+
+  // 匹配两个方法
+  // 由于严格按照字典序匹配, 因此时间复杂度: O(n+m) (type: m, iface: n)
+imethods:
+}
+
+// 把新生成 m 加入到全局的 (itabTable *itabTableType) 中
+func itabAdd(m *itab) {
+  // 已经使用了 75% 的申请空间, 需要扩容
+  if t.count >= 3*(t.size/4) { // 75% load factor
+    t2 := (*itabTableType)(mallocgc((2+2*t.size)*sys.PtrSize, nil, true))
+    // ...
+  }
+  t.add(m)
+}
+
+func (t *itabTableType) add(m *itab) {
+  h := itabHashFunc(m.inter, m._type) & mask
+  for i := uintptr(1); ; i++ {
+		p := (**itab)(add(unsafe.Pointer(&t.entries), h*sys.PtrSize))
+		m2 := *p
+		if m2 == nil {
+			// Use atomic write her\e so if a reader sees m, it also
+			// sees the correctly initialized fields of m.
+			// NoWB is ok because m is not in heap memory.
+			// *p = m
+			atomic.StorepNoWB(unsafe.Pointer(p), unsafe.Pointer(m))
+			t.count++
+			return
+		}
+  }
+}
+
+func itabHashFunc(inter *interfacetype, typ *_type) uintptr {
+	// compiler has provided some good hash codes for us.
+	return uintptr(inter.typ.hash ^ typ.hash)
+}
+```
+
 ### Map
 
 **基于 Golang1.12**
+
+![hmap](2835676-a7c04338cb67866e.png)
 
 ```golang
 // A header for a Go map.
@@ -244,8 +357,8 @@ type hmap struct {
 	extra *mapextra // optional fields
 }
 
-- 基桶 (base buckets): hashmap 定义的存放预申请的桶的类型
-- 溢出桶 (overflow buckets): 存放后续申请的桶的类型
+// 基桶 (base buckets): hmap 定义的存放预申请的桶的类型
+// 溢出桶 (overflow buckets): 存放后续申请的桶的类型
 
 // mapextra holds fields that ar e not present on all maps.
 type mapextra struct {
@@ -286,8 +399,6 @@ type bmap struct {
 	// Followed by an overflow pointer.
 }
 ```
-
-![hashmap-buckets](7515493-7b4fa8bd0db2a5f2.png)
 
 - (新的) buckets 集绑定在 `hmap.buckets`
 - B 的值必须 `B<=15`
