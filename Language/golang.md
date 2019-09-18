@@ -1,5 +1,46 @@
 # Golang
 
+<!-- TOC -->
+
+- [Golang](#golang)
+	- [Happens Before](#happens-before)
+	- [channel](#channel)
+	- [go runtime](#go-runtime)
+		- [线程实现模型基础](#线程实现模型基础)
+		- [go 线程实现模型](#go-线程实现模型)
+		- [调度器字段](#调度器字段)
+		- [M/P/G 状态转换](#mpg-状态转换)
+			- [M/Machine](#mmachine)
+			- [P/Processor](#pprocessor)
+			- [G/Goroutine](#ggoroutine)
+	- [Go Ast](#go-ast)
+		- [ast.Ident](#astident)
+		- [ast.Object](#astobject)
+	- [陷阱](#陷阱)
+		- [返回值](#返回值)
+		- [defer](#defer)
+		- [http 响应](#http-响应)
+		- [失败的类型断言](#失败的类型断言)
+		- [阻塞的 goroutine 和资源泄漏](#阻塞的-goroutine-和资源泄漏)
+		- [使用指针接受方法](#使用指针接受方法)
+		- [String](#string)
+		- [Slice](#slice)
+		- [Interface](#interface)
+		- [Map](#map)
+			- [创建 -- makemap](#创建----makemap)
+			- [访问 -- mapaccess](#访问----mapaccess)
+			- [分配 -- mapassign](#分配----mapassign)
+			- [删除 -- mapdelete](#删除----mapdelete)
+			- [扩容 -- growWork](#扩容----growwork)
+			- [总结](#总结)
+		- [math/rand](#mathrand)
+		- [MySQL](#mysql)
+			- [`go-sql-driver/mysql`](#go-sql-drivermysql)
+			- [github issues](#github-issues)
+		- [Decimal](#decimal)
+
+<!-- /TOC -->
+
 ## Happens Before
 
 如果要让一个对变量 v 的写操作 w 所产生的结果能够被对该变量的读操作 r 观察到, 那么需要同时满足如下两个条件
@@ -222,6 +263,32 @@ func First(query string, replicas ...Search) Result {
 
 但是 `range string` 的结果是 []rune 的结果
 
+### Slice
+
+```golang
+// maxElems is a lookup table containing the maximum capacity for a slice.
+// The index is the size of the slice element.
+var maxElems = [...]uintptr{
+    ^uintptr(0),
+    maxAlloc / 1, maxAlloc / 2, maxAlloc / 3, maxAlloc / 4,
+    maxAlloc / 5, maxAlloc / 6, maxAlloc / 7, maxAlloc / 8,
+    maxAlloc / 9, maxAlloc / 10, maxAlloc / 11, maxAlloc / 12,
+    maxAlloc / 13, maxAlloc / 14, maxAlloc / 15, maxAlloc / 16,
+    maxAlloc / 17, maxAlloc / 18, maxAlloc / 19, maxAlloc / 20,
+    maxAlloc / 21, maxAlloc / 22, maxAlloc / 23, maxAlloc / 24,
+    maxAlloc / 25, maxAlloc / 26, maxAlloc / 27, maxAlloc / 28,
+    maxAlloc / 29, maxAlloc / 30, maxAlloc / 31, maxAlloc / 32,
+}
+```
+
+注意:
+1. 根据类型的大小, 算出最多能申请多少个元素
+2. 对于扩容:
+  1. 如果申请的容量(cap)是老容量(old.cap)的两倍以上`cap>old.cap*2`, 那么就扩成 cap
+  2. 否则, 如果老容量 old.cap 小于 1024, 那么就扩成 old.cap x 2
+  3. 再否则, newcap 初始为 old.cap, 一直循环 `newcap += newcap/4`, 直到不小于 cap, newcap 就是最终扩成的大小(注意这里还有个溢出保护, 如果溢出了, 那么 newcap=cap)
+3. 如果 append 后长度超过了 cap , 那么一定会触发扩容, 以及数据迁移
+
 ### Interface
 
 ![interface](2835676-ff10962a15ab2676.png)
@@ -339,6 +406,10 @@ func itabHashFunc(inter *interfacetype, typ *_type) uintptr {
 
 ![hmap](2835676-a7c04338cb67866e.png)
 
+**golang 使用的 hash 算法根据硬件选择, 如果 cpu 支持 aes, 那么使用 aes hash, 否则使用 memhash(memhash 参考 xxhash、cityhash 实现)**
+
+把 hash 值映射到 bucket 时, golang 会把 bucket 的数量规整为 2 的次幂, 而有 m=2b, 则 n%m=n&(m-1), **用位运算规避 mod 的昂贵代价**
+
 ```golang
 // A header for a Go map.
 type hmap struct {
@@ -400,11 +471,20 @@ type bmap struct {
 }
 ```
 
+注意:
 - (新的) buckets 集绑定在 `hmap.buckets`
-- B 的值必须 `B<=15`
-- `makemap`(??): buckets 带有 `(2^B-1)` 个 base bucket(懒申请)
-- `tooManyOverflowBuckets`: 最多拥有 `(2^B-1)` 个 overflow bucket
-- `overLoadFactor`: base+overflow 总数必须小于 `max(bucketCnt{8}, loadFactorNum{13}*( 1<<B / loadFactorDen{2} ))`
+- B 的值必须 `h.B<=15`
+- `makemap`(??): buckets 带有 `(2^h.B-1)` 个 base bucket(懒申请)
+- `tooManyOverflowBuckets`: 最多拥有 `(2^h.B-1)` 个 overflow bucket; `overLoadFactor`: base+overflow 总数必须小于 `max(bucketCnt{8}, loadFactorNum{13}*( 1<<h.B / loadFactorDen{2} ))`
+- 对于 bmap:
+  - bmap 是数据集的最小颗粒, 结构: `|<- topHash * 8 ->|<- key * 8 ->|<- value * 8 ->|`
+  - `[0, minTopHash)` 里是 topHash 的特殊情况
+  - topHash 是 `hash(key, h.hash0)` 的高 8 bit, 用来命中 bmap; 当 `topHash<minTopHash`, 则 `topHash+=minTopHash`
+  - key 通过 `key&(1<<h.B)` 命中 bucket
+  - 当 key/value 符合 `len(key)>128 byte` , bmap 中存储 key/value 的指针
+- 对于 overflow bucket:
+  - 如果 `h.B>=4` , 就预先分配部分 `overflow bucket`
+  - 一个 `overflow bucket` 串中, non-last overflow bucket: `overflow=nil` ; last overflow bucket: `last.setoverflow(t, (*bmap)(buckets))` 设置为 bucket 的首地址表示到了 overflow 尾
 
 key 的计算公式:
 
@@ -489,6 +569,11 @@ func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 - 与 `mapaccess` 操作相似, 为一个 key 分配槽
 - 添加写保护标志 和 扩容操作
 
+1. hash 表如果正在扩容, 并且这次操作的 bucket 还没搬到新 hash 表中, 那么先进行搬迁(扩容细节下面细说)
+2. 在 bucket 中寻找 key, 同时记录下第一个空位置, 如果找不到, 那么就在空位置中插入数据; 如果找到了, 那么就更新对应的 value
+3. 找不到 key 就看下需不需要扩容, 需要扩容并且没有正在扩容, 那么就进行扩容, 然后回到第一步
+4. 找不到 key , 不需要扩容, 但是没有空 slot, 那么就分配一个 overflow bucket 挂在链表结尾, 用新 bucket 的第一个 slot 放存放数据
+
 ```golang
 func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
   // 写保护
@@ -508,8 +593,10 @@ bucketloop: // 找到合适的 bucket
     // already have a mapping for key. Update it.
     // 空间已有, 尝试替换
     if t.needkeyupdate() {
+      // 需要复写 key
       typedmemmove(t.key, k, key)
     }
+    elem = add(unsafe.Pointer(b), dataOffset+bucketCnt*uintptr(t.keysize)+i*uintptr(t.elemsize))
   }
 
   // Did not find mapping for key. Allocate new cell & add entry.
@@ -625,6 +712,9 @@ search:
 | `xv unsafe.Pointer` | 索引 xi 对应的 value 地址                                      |
 | `yv unsafe.Pointer` | 索引 yi 对应的 value 地址                                      |
 
+注意:
+- growWork 会搬迁两个 bucket, 入参的 bucket 和 h.nevacuate(nevacuate 是一个顺序累加的值)
+
 ```golang
 func growWork(t *maptype, h *hmap, bucket uintptr) {
   // make sur\e we evacuate the oldbucket corr\esponding
@@ -695,11 +785,15 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 }
 ```
 
+注意:
+- 当 `count/bucket>=6.5` 时, 就会进行扩容, `bucket<<=1`
+
 #### 总结
 
-- 通过 hashtop 快速试错加快了查找过程
+- 通过 topHash 快速试错加快了查找过程
 - 检查写保护: `mapaccess`/访问, `mapassign`/分配(赋值), `mapdelete`/删除, `mapiternext`/遍历, `mapclear`/清空
 - 设置写保护: `mapassign`/分配(赋值), `mapdelete`/删除, `mapclear`/清空
+- 触发扩容(growWork): `mapassign`/分配(赋值), `mapdelete`/删除
 - 8键/8值 分别放置减少了 padding 空间
 
 ### math/rand

@@ -48,6 +48,12 @@
 
 ### 页表
 
+![内存分配](2835676-d28d4f217e925648.png)
+
+![完整的 SLAB 流程](2835676-82196d3391f9f935.png)
+
+(上图中其实 `cpu->freelist` 就是 `cpu->page`, 依然是 `cpu->freelist` (page 不足)--> `cpu->partial`)
+
 (内存的)虚拟地址到物理地址的映射一般由**多级页表**完成
 
 1. 第一级称为全局页目录(PGD). PGD 用于索引进程中的一个数组(每个进程中有且仅有一个 PGD 数组), PGD 项指向另一些项的起始地址, 即中间页目录(PMD)
@@ -89,7 +95,6 @@ ps -o majflt,minflt -C $program
 
 ![内存结构](Meterpreter-memorymap.png)
 
-
 ![内核分布](20180802151008142.png)
 
 - 内核态/Kernel virtual memory:
@@ -112,7 +117,7 @@ ps -o majflt,minflt -C $program
   - `.text` 段: 代码段, 只读, 执行代码/只读的常数变量
 
 ```shell
-size a.out
+size $EXE
 ```
 
 ### 物理内存分配
