@@ -247,6 +247,19 @@ mongod \
 --oplogSize <value>
 ```
 
+## 集群
+
+### 集群成员
+
+| 成员      | 说明                                                                                                                                                                                                                                                                                                                              |
+| :-:       | :-:                                                                                                                                                                                                                                                                                                                               |
+| Secondary | 正常情况下, 复制集的 Seconary 会参与 Primary 选举(自身也可能会被选为 Primary), 并从 Primary 同步最新写入的数据, 以保证与 Primary 存储相同的数据; Secondary 可以提供读服务, 增加 Secondary 节点可以提供复制集的读服务能力, 同时提升复制集的可用性; 另外, MongoDB 支持对复制集的 Secondary 节点进行灵活的配置, 以适应多种场景的需求 |
+| Arbiter   | 只参与投票, 不能被选为 Primary, 并且不从 Primary 同步数据; Arbiter 本身不存储数据, 是非常轻量级的服务, 当复制集成员为偶数时, 最好加入一个 Arbiter 节点, 以提升复制集可用性                                                                                                                                                        |
+| Priority0 | Priority0 节点的选举优先级为 0, 不会被选举为 Primary                                                                                                                                                                                                                                                                              |
+| Vote0     | Mongodb 3.0 里, 复制集成员最多 50 个, 参与 Primary 选举投票的成员最多 7 个, 其他成员(Vote0)的 vote 属性必须设置为 0, 即不参与投票                                                                                                                                                                                                 |
+| Hidden    | Hidden 节点不能被选为主(Priority 为 0), 并且对 Driver 不可见; 因 Hidden 节点不会接受 Driver 的请求, 可使用 Hidden 节点做一些数据备份、离线计算的任务, 不会影响复制集的服务                                                                                                                                                        |
+| Delayed   | Delayed 节点必须是 Hidden 节点, 并且其数据落后与 Primary 一段时间(可配置，比如 1 hour); 因 Delayed 节点的数据比 Primary 落后一段时间, 当错误或者无效的数据写入 Primary 时, 可通过 Delayed 节点的数据来恢复到之前的时间点                                                                                                          |
+
 ## 附
 
 ### (一)Mgo 使用记录

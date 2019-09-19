@@ -23,6 +23,7 @@
 		- [失败的类型断言](#失败的类型断言)
 		- [阻塞的 goroutine 和资源泄漏](#阻塞的-goroutine-和资源泄漏)
 		- [使用指针接受方法](#使用指针接受方法)
+		- [reflect](#reflect)
 		- [String](#string)
 		- [Slice](#slice)
 		- [Interface](#interface)
@@ -257,6 +258,8 @@ func First(query string, replicas ...Search) Result {
 
 ### 使用指针接受方法
 
+### reflect
+
 ### String
 
 `len(string)` 的结果是 []byte 的结果
@@ -488,7 +491,7 @@ type bmap struct {
 
 key 的计算公式:
 
-| key | hash                                      | hashtop                                     | bucket index                                            |
+| key | hash                                      | topHash                                     | bucket index                                            |
 | :-: | :-:                                       | :-:                                         | :-:                                                     |
 | key | `hash := alg.hash(key, uintptr(h.hash0))` | `top := uint8(hash >> (sys.PtrSize*8 - 8))` | `bucket := hash & (uintptr(1)<<h.B - 1)`, 即 hash % 2^B |
 
