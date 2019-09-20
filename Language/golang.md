@@ -23,7 +23,7 @@
 		- [失败的类型断言](#失败的类型断言)
 		- [阻塞的 goroutine 和资源泄漏](#阻塞的-goroutine-和资源泄漏)
 		- [使用指针接受方法](#使用指针接受方法)
-		- [reflect](#reflect)
+		- [Reflect](#reflect)
 		- [String](#string)
 		- [Slice](#slice)
 		- [Interface](#interface)
@@ -258,7 +258,51 @@ func First(query string, replicas ...Search) Result {
 
 ### 使用指针接受方法
 
-### reflect
+### Reflect
+
+**reflect 只能拿非匿名函数/字段, 匿名函数/字段需要靠 runtime 获取**
+
+```golang
+// 等同于
+// runtime/type.go^_type
+type rtype struct {
+	size       uintptr
+	ptrdata    uintptr  // number of bytes in the type that can contain pointers
+	hash       uint32   // hash of type; avoids computation in hash tables
+	tflag      tflag    // extra type information flags
+	align      uint8    // alignment of variable with this type
+	fieldAlign uint8    // alignment of struct field with this type
+	kind       uint8    // enumeration for C
+	alg        *typeAlg // algorithm table
+	gcdata     *byte    // garbage collection data
+	str        nameOff  // string form
+	ptrToThis  typeOff  // type for pointer to this type, may be zero
+}
+
+// 示例:
+// *struct
+typ: {
+  size: 8
+  ptrdata: 8
+  hash: 474031097
+  tflag: 0
+  align: 8
+  fieldAlign: 8
+  kind: 54 // 0x36 -- (1)0x36&0x1f=0x16
+  alg: {
+    hash: runtime.aeshash64
+    equal: runtime.memequal64
+  }
+  // ?? 和 gc 有关的 ?
+  gcdata: {
+    1
+  }
+  // rtype.str 字段的偏移是相对于 { rtype 起始地址所在的区间的
+  // 保存 type 信息区块(即 [md.types, md.etypes)）起始地址 }
+  str: 6302
+  ptrToThis: 0
+}
+```
 
 ### String
 
