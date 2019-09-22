@@ -1363,7 +1363,7 @@ redo log 写盘的 具体调用(function call):
 
 ![redo log 组提交](933fdc052c6339de2aa3bf3f65b188cc.png)
 
-![两阶段提交, 组提交细节](5ae7d074c34bc5bd55c82781de670c28.png)
+![两阶段提交细节](5ae7d074c34bc5bd55c82781de670c28.png)
 
 binlog 的 fsync 变量(mysql/mariadb):
 - `binlog_group_commit_sync_delay` / `binlog_commit_wait_usec`: 等待时间
