@@ -71,6 +71,46 @@ Raft 状态机:
 
 ![安装 snapshot](v2-793f4024bfcb648d9aab2a3dfe6b80de_r.jpg)
 
+#### vote
+
+vote 原则:
+- 在任一任期内, 单个节点最多只能投一票(因此单数节点更容易保证 majority vote)
+- 候选人知道的信息不能比自己的少
+- `first-come-first-served` 先来先得
+
+candidate 步骤:
+- 增加节点本地的 `current term`, 切换到 candidate 状态
+- 投自己一票
+- 并行给其他节点发送 RequestVote RPCs
+- 等待其他节点的回复
+
+在选举 leader 中可能出现:
+1. 收到 majority 的投票(含自己的一票), 则赢得选举, 成为 leader
+2. 被告知别人已当选, 那么自行切换到 follower
+3. 一段时间内没有收到 majority 投票, 则保持 candidate 状态, 重新发出选举
+
+#### client 到 leader 的请求过程
+
+- leader append log entry
+- leader issue AppendEntries RPC in parallel
+- leader wait for majority response
+- leader apply entry to state machine
+- leader reply to client
+- leader notify follower apply log
+
+#### 总结
+
+leader election 约束:
+
+1. 同一任期内最多只能投一票, 先来先得
+2. 选举人必须比自己知道的更多(比较 term, log index)
+
+log replication 约束:
+1. 一个 log 被复制到大多数节点(committed), 保证不会回滚
+2. leader 一定包含最新的 committed log, 因此 leader 只会追加日志, 不会删除覆盖日志
+3. 不同节点, 某个位置上日志相同, 那么这个位置之前的所有日志一定是相同的
+4. Raft never commits log entries from previous terms by counting replicas.(通过复制当前 term 的日志并携带旧 term 的日志来保证第 3 点)
+
 ### Gossip
 
 场景: Redis cluster

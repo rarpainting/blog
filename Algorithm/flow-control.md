@@ -1,6 +1,36 @@
+# 流量控制
+
+## 现有控制
+
+假设现在 消费速率(consumption rate) 低于 生产速率(production rate)
+
+### Back-Pressure
+
+- 将当前消费速率通知到生产者, 以降低生产效率
+- cold observable
+
+### Throttling
+
+- 生产, 消费速率都不变
+- 消费者只消费能消费的, 其余丢弃
+
+### Buffer/Window
+
+- 生产者打包发送, 消费者一次性消费
+
+### Reactive Pull
+
+1. 生产者在没有消费者时不生产
+2. 在消费者上线并告知消费效率后, 生产者最多生产满足消费的数据量(withTimeout)
+3. 消费者取到数据, 生产者再次暂停, 等待消费者请求
+
+### Callstack-Blocking
+
+- 以消费者的速率限制整个调用链
+
 # 高并发限流
 
-## 理论
+## 基础算法
 
 ### 漏桶算法
 

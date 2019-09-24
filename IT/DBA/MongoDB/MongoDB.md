@@ -4,7 +4,7 @@
 
 ### 写关注 --- local.system.replset.settings.getLastErrorDefaults
 
-#### w
+#### `w`
 
 - -1: 不使用写关注, 忽略所有网络/socket 错误
 - 0: 不使用写关注, 返回网络/socket 错误
@@ -87,7 +87,7 @@
 
 	db.categories.insert( { _id: "Databases", ancestors: [ "Books", "Programming" ], parent: "Programming" } )
 
-- 快速查询[一节点的所有祖先节点] **OR** [从根节点到某个节点]的路径
+- 快速查询 **一节点的所有祖先节点** OR **从根节点到某个节点** 的路径
 
 #### 4)物化路径
 
@@ -138,8 +138,8 @@
 #### 4)内存使用
 
 - WiredTiger 的系统内存资源缓存分两部分
-	- 内部缓存 -- 1GB **or** 60% of RAM - 1GB, 取两者的较大值
-	- 文件系统缓存 -- 大小不固定, 压缩存储
+  - 内部缓存 -- 1GB **or** 60% of RAM - 1GB, 取两者的较大值
+  - 文件系统缓存 -- 大小不固定, 压缩存储
 - mongod 参数: --wiredTigerCacheSizeGB 内部缓存大小
 
 ##### 5)数据压缩(Data Compression)
@@ -165,6 +165,7 @@
 #### 1)指定 In-Memory 存储引擎
 
 	mongod --storageEngine inMemory --dbpath <path>
+
 - --dbpath: 用于维护少量的元数据和诊断(Diagnostic)日志；创建 Large Index 时, 使用 Disk 存储临时数据
 
 #### 2)文档级别的并发(document-level concurrency)
@@ -251,14 +252,130 @@ mongod \
 
 ### 集群成员
 
-| 成员      | 说明                                                                                                                                                                                                                                                                                                                              |
-| :-:       | :-:                                                                                                                                                                                                                                                                                                                               |
-| Secondary | 正常情况下, 复制集的 Seconary 会参与 Primary 选举(自身也可能会被选为 Primary), 并从 Primary 同步最新写入的数据, 以保证与 Primary 存储相同的数据; Secondary 可以提供读服务, 增加 Secondary 节点可以提供复制集的读服务能力, 同时提升复制集的可用性; 另外, MongoDB 支持对复制集的 Secondary 节点进行灵活的配置, 以适应多种场景的需求 |
-| Arbiter   | 只参与投票, 不能被选为 Primary, 并且不从 Primary 同步数据; Arbiter 本身不存储数据, 是非常轻量级的服务, 当复制集成员为偶数时, 最好加入一个 Arbiter 节点, 以提升复制集可用性                                                                                                                                                        |
-| Priority0 | Priority0 节点的选举优先级为 0, 不会被选举为 Primary                                                                                                                                                                                                                                                                              |
-| Vote0     | Mongodb 3.0 里, 复制集成员最多 50 个, 参与 Primary 选举投票的成员最多 7 个, 其他成员(Vote0)的 vote 属性必须设置为 0, 即不参与投票                                                                                                                                                                                                 |
-| Hidden    | Hidden 节点不能被选为主(Priority 为 0), 并且对 Driver 不可见; 因 Hidden 节点不会接受 Driver 的请求, 可使用 Hidden 节点做一些数据备份、离线计算的任务, 不会影响复制集的服务                                                                                                                                                        |
-| Delayed   | Delayed 节点必须是 Hidden 节点, 并且其数据落后与 Primary 一段时间(可配置，比如 1 hour); 因 Delayed 节点的数据比 Primary 落后一段时间, 当错误或者无效的数据写入 Primary 时, 可通过 Delayed 节点的数据来恢复到之前的时间点                                                                                                          |
+| 成员       | 说明                                                                                                                                                                                                                                                                                                                              |
+| :-:        | :-:                                                                                                                                                                                                                                                                                                                               |
+| Secondary  | 正常情况下, 复制集的 Seconary 会参与 Primary 选举(自身也可能会被选为 Primary), 并从 Primary 同步最新写入的数据, 以保证与 Primary 存储相同的数据; Secondary 可以提供读服务, 增加 Secondary 节点可以提供复制集的读服务能力, 同时提升复制集的可用性; 另外, MongoDB 支持对复制集的 Secondary 节点进行灵活的配置, 以适应多种场景的需求 |
+| Arbiter    | 只参与投票, 不能被选为 Primary, 并且不从 Primary 同步数据; Arbiter 本身不存储数据, 是非常轻量级的服务, 当复制集成员为偶数时, 最好加入一个 Arbiter 节点, 以提升复制集可用性                                                                                                                                                        |
+| Priority:0 | Priority:0 节点的选举优先级为 0, 不会被选举为 Primary                                                                                                                                                                                                                                                                             |
+| Vote:0     | Mongodb 3.0 里, 复制集成员最多 50 个, 参与 Primary 选举投票的成员最多 7 个, 其他成员(Vote:0)的 vote 属性必须设置为 0, 即不参与投票                                                                                                                                                                                                |
+| Hidden     | Hidden 节点不能被选为主(Priority 为 0), 并且对 Driver 不可见; 因 Hidden 节点不会接受 Driver 的请求, 可使用 Hidden 节点做一些数据备份、离线计算的任务, 不会影响复制集的服务                                                                                                                                                        |
+| Delayed    | Delayed 节点必须是 Hidden 节点, 并且其数据落后与 Primary 一段时间(可配置，比如 1 hour); 因 Delayed 节点的数据比 Primary 落后一段时间, 当错误或者无效的数据写入 Primary 时, 可通过 Delayed 节点的数据来恢复到之前的时间点                                                                                                          |
+
+```js
+{
+  _id: <string>,
+  version: <int>,
+  protocolVersion: <number>,
+  writeConcernMajorityJournalDefault: <boolean>,
+  configsvr: <boolean>,
+  members: [
+    {
+      _id: <int>,
+      host: <string>,
+      arbiterOnly: <boolean>,
+      buildIndexes: <boolean>,
+      hidden: <boolean>,
+      priority: <number>,
+      tags: <document>,
+      slaveDelay: <int>,
+      votes: <number>
+    },
+    ...
+  ],
+  settings: {
+    chainingAllowed : <boolean>,
+    heartbeatIntervalMillis : <int>,
+    heartbeatTimeoutSecs: <int>,
+    electionTimeoutMillis : <int>,
+    catchUpTimeoutMillis : <int>,
+    getLastErrorModes : <document>,
+    getLastErrorDefaults : <document>,
+    replicaSetId: <ObjectId>
+  }
+}
+```
+
+MongoDB Replica Set 与 Raft 的相同点:
+- Leader
+- Log
+- Initial sync
+- Heartbeats & Elections
+
+MongoDB Replica Set 与 Raft 的差异点:
+- Apply first, then replicate
+- Pull(mongodb) vs push(raft)
+- writeConcern (durability/持久化)
+- readConcern (isolation/隔离)
+- writeConcernMajorityJournalDefault
+- disk based durability/持久化到磁盘
+- Dry-run elections/pre-vote 预选举 (prevents term inflation/防止 term 号无意义增大)
+- Chained replication/链式复制 (prevents flip flops) (对延迟的妥协)
+- Oplog hash field (adds robustness)
+
+### log replication/日志副本
+
+`w` 选项控制同步/异步复制
+
+#### data flow
+
+`settings.chainingAllowed`:
+- `true`: 链式模式, 允许 MongoDB 根据 距离本身最近/心跳延时最小 选择从 primary/secondary 作为 SyncSource(同步源) 同步数据
+- `false`: 主从复制
+
+#### pull 同步
+
+primary 写数据到 `local.oplog.rs` , secondary 定期从其 SyncSource 同步数据
+
+![oplog 过程](replication.jpg)
+
+pull 方式加剧了 `writeConcern: majority` 的延迟, 该延迟效应由 网络效果更好的 SyncSource 抵消
+
+#### 日志持久化时机
+
+raft 与 MongoDB 的异同
+- Raft: leader 先将 log append 到本地的 `log entries` , 然后等待 majority 节点读取后的回复, 再 apply log 到本地状态机
+- MongoDB: 即使是 `writeconcern: majority` 设置, primary 依然会 apply 到本地状态机, 再写 oplog ; 随后 secondary 主动同步 SyncSource 的 `local.oplog.rs` , 也是优先 apply 到本地, 再写 oplog
+
+即 MongoDB(由于 **先 apply 再写 oplog** 和 **异步复制** 规则, )不会因为无法将数据同步到其他的集群成员而回滚日志
+
+#### catchup
+
+`settings.catchUpTimeoutMillis`:
+- 新选取的 primary 会尝试同步集群中其他成员的更新的 oplog
+- 尝试过程会持续到 **primary 获取到更新的 oplog 或者 超时**
+- 如果同步后依然没有将最新的 oplog 写入到 primary , 那么这部分 oplog 会写入到 rollback 文件(?)中(等待回滚 ??)
+
+### 心跳/选举机制
+
+#### 心跳包
+
+以任意一个节点的 POV(point of view), 在每一次心跳后会尝试将 primary 节点降级, 降级原因:
+- 心跳检测到有其他 primary 节点的优先级高于当前 primary 节点, 则尝试将 primary 节点降级(stepDown) 为 secondary (可用于 热变更 primary 节点)
+- 本节点若是主节点, 但是无法 ping 通集群中超过半数的节点(majority 原则), 则将自身降级为 secondary
+
+#### 选举机制
+
+2PC + 多数派协议
+
+**阶段一**
+
+对于节点本身:
+- 能 ping 通集群的过半数节点
+- priority>0
+- 不能是 arbitor 节点
+
+成功, 则向集群中所有存活节点发送 FreshnessCheck, 其余节点进行同僚仲裁:
+- 集群中有其他节点的 primary 比发起者高
+- primary>0
+- 不能是 arbitor 节点
+- 以冲裁者的 POV, 发起者的 oplog 必须是集群存活节点中 oplog 最新的
+
+**阶段二**
+
+- 发起者向集群中存活节点发送 Elect 请求
+- 仲裁者收到请求的节点会执行一系列合法性检查; 如果检查通过, 则仲裁者给发起者投一票, 并获得 30 秒钟 **选举锁** (保证在持有锁的时间内不给其他发起者投票)
+- 发起者如果或者超过半数的投票, 则选举通过, 自身成为 Primary 节点
+- 选票不足, 随机休眠([0, 1]s)后, 发现集群中自身仍然满足选举条件, 再次尝试选举
 
 ## 附
 

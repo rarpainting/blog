@@ -266,17 +266,17 @@ func First(query string, replicas ...Search) Result {
 // 等同于
 // runtime/type.go^_type
 type rtype struct {
-	size       uintptr
-	ptrdata    uintptr  // number of bytes in the type that can contain pointers
-	hash       uint32   // hash of type; avoids computation in hash tables
-	tflag      tflag    // extra type information flags
-	align      uint8    // alignment of variable with this type
-	fieldAlign uint8    // alignment of struct field with this type
-	kind       uint8    // enumeration for C
-	alg        *typeAlg // algorithm table
-	gcdata     *byte    // garbage collection data
-	str        nameOff  // string form
-	ptrToThis  typeOff  // type for pointer to this type, may be zero
+  size       uintptr
+  ptrdata    uintptr  // number of bytes in the type that can contain pointers
+  hash       uint32   // hash of type; avoids computation in hash tables
+  tflag      tflag    // extra type information flags
+  align      uint8    // alignment of variable with this type
+  fieldAlign uint8    // alignment of struct field with this type
+  kind       uint8    // enumeration for C
+  alg        *typeAlg // algorithm table
+  gcdata     *byte    // garbage collection data
+  str        nameOff  // string form
+  ptrToThis  typeOff  // type for pointer to this type, may be zero
 }
 
 // 示例:
@@ -343,16 +343,16 @@ var maxElems = [...]uintptr{
 ```golang
 // src/runtime/type.go
 
-type imethod struct {
-  name nameOff
-  ityp typeOff
-}
-
 // 接口类型的定义
 type interfacetype struct {
   typ     _type
   pkgpath name
   mhdr    []imethod
+}
+
+type imethod struct {
+  name nameOff
+  ityp typeOff
 }
 ```
 
@@ -427,17 +427,17 @@ func itabAdd(m *itab) {
 func (t *itabTableType) add(m *itab) {
   h := itabHashFunc(m.inter, m._type) & mask
   for i := uintptr(1); ; i++ {
-		p := (**itab)(add(unsafe.Pointer(&t.entries), h*sys.PtrSize))
-		m2 := *p
-		if m2 == nil {
-			// Use atomic write her\e so if a reader sees m, it also
-			// sees the correctly initialized fields of m.
-			// NoWB is ok because m is not in heap memory.
-			// *p = m
-			atomic.StorepNoWB(unsafe.Pointer(p), unsafe.Pointer(m))
-			t.count++
-			return
-		}
+    p := (**itab)(add(unsafe.Pointer(&t.entries), h*sys.PtrSize))
+    m2 := *p
+    if m2 == nil {
+      // Use atomic write her\e so if a reader sees m, it also
+      // sees the correctly initialized fields of m.
+      // NoWB is ok because m is not in heap memory.
+      // *p = m
+      atomic.StorepNoWB(unsafe.Pointer(p), unsafe.Pointer(m))
+      t.count++
+      return
+    }
   }
 }
 
@@ -460,61 +460,62 @@ func itabHashFunc(inter *interfacetype, typ *_type) uintptr {
 ```golang
 // A header for a Go map.
 type hmap struct {
-	// Note: the format of the hmap is also encoded in cmd/compile/internal/gc/reflect.go.
-	// Make sur\e this stays in sync with the compiler's definition.
-	count     int // # live cells == size of map.  Must be first (used by len() builtin)
-	flags     uint8 // 写冲突标识
-	B         uint8  // log_2 of # of buckets (can hold up to loadFactor * 2^B items)
-	noverflow uint16 // 溢出桶的近似数, 一般计算 h.noverflow++ /approximate number of overflow buckets; see incrnoverflow for details
-	hash0     uint32 // hash seed
-
-	buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
-	oldbuckets unsafe.Pointer // previous bucket array of half the size, non-nil only when growing
-	nevacuate  uintptr        // progress counter for evacuation (buckets less than this have been evacuated)
-
-	extra *mapextra // optional fields
+  // Note: the format of the hmap is also encoded in cmd/compile/internal/gc/reflect.go.
+  // Make sur\e this stays in sync with the compiler's definition.
+  count     int // # live cells == size of map.  Must be first (used by len() builtin)
+  flags     uint8 // 写冲突标识
+  // 装载因子: loadFactor=count/2^B
+  // 如果 loadFactor>6.5 , 触发扩容
+  B         uint8  // log_2 of # of buckets (can hold up to loadFactor * 2^B items)
+  noverflow uint16 // 溢出桶的近似数, 一般计算 h.noverflow++ /approximate number of overflow buckets; see incrnoverflow for details
+  hash0     uint32 // hash seed
+  buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
+  oldbuckets unsafe.Pointer // previous bucket array of half the size, non-nil only when growing
+  nevacuate  uintptr        // progress counter for evacuation (buckets less than this have been evacuated)
+  extra *mapextra // optional fields
 }
 
 // 基桶 (base buckets): hmap 定义的存放预申请的桶的类型
 // 溢出桶 (overflow buckets): 存放后续申请的桶的类型
 
 // mapextra holds fields that ar e not present on all maps.
+// mapextra 用于存放非指针数据(用于优化存储和访问)
+// len(key)>8 , map 会存储数据的 ptr 而不是 实际值
 type mapextra struct {
-	// If both key and value do not contain pointers and ar\e inline, then we mark bucket
-	// type as containing no pointers. This avoids scanning such maps.
-	// However, bmap.overflow is a pointer. In order to keep overflow buckets
-	// alive, we stor\e pointers to all overflow buckets in hmap.extra.overflow and hmap.extra.oldoverflow.
-	// overflow and oldoverflow ar e only used if key and value do not contain pointers.
-	// overflow contains overflow buckets for hmap.buckets.
-	// oldoverflow contains overflow buckets for hmap.oldbuckets.
-	// The indirection allows to stor\e a pointer to the slice in hiter.
-	overflow    *[]*bmap
-	oldoverflow *[]*bmap
-
-	// nextOverflow holds a pointer to a free overflow bucket.
-	nextOverflow *bmap
+  // If both key and value do not contain pointers and ar\e inline, then we mark bucket
+  // type as containing no pointers. This avoids scanning such maps.
+  // However, bmap.overflow is a pointer. In order to keep overflow buckets
+  // alive, we stor\e pointers to all overflow buckets in hmap.extra.overflow and hmap.extra.oldoverflow.
+  // overflow and oldoverflow ar e only used if key and value do not contain pointers.
+  // overflow contains overflow buckets for hmap.buckets.
+  // oldoverflow contains overflow buckets for hmap.oldbuckets.
+  // The indirection allows to stor\e a pointer to the slice in hiter.
+  overflow    *[]*bmap
+  oldoverflow *[]*bmap
+  // nextOverflow holds a pointer to a free overflow bucket.
+  nextOverflow *bmap
 }
 
 const (
-	// Maximum number of key/value pairs a bucket can hold.
-	bucketCntBits = 3
-	bucketCnt     = 1 << bucketCntBits // 8
+  // Maximum number of key/value pairs a bucket can hold.
+  bucketCntBits = 3
+  bucketCnt     = 1 << bucketCntBits // 8
 )
 
 // A bucket for a Go map.
 // golang 将 hash 中的 key 和 value 分开存放, 操作更繁琐但是优化了对齐
 type bmap struct {
-	// tophash generally contains the top byte of the hash value
-	// for each key in this bucket. If tophash[0] < minTopHash,
+  // tophash generally contains the top byte of the hash value
+  // for each key in this bucket. If tophash[0] < minTopHash,
   // tophash[0] is a bucket evacuation state instead.
   // 保存每个 hash 结果的顶部字节(8bit)
   // 如果 tophash[0] < minTopHash, 表示 bucket 在迁移过程中
-	tophash [bucketCnt]uint8
-	// Followed by bucketCnt keys and then bucketCnt values.
-	// NOTE: packing all the keys together and then all the values together makes the
-	// code a bit mor e complicated than alternating key/value/key/value/... but it allows
-	// us to eliminate padding which would be needed for, e.g., map[int64]int8.
-	// Followed by an overflow pointer.
+  tophash [bucketCnt]uint8
+  // Followed by bucketCnt keys and then bucketCnt values.
+  // NOTE: packing all the keys together and then all the values together makes the
+  // code a bit mor e complicated than alternating key/value/key/value/... but it allows
+  // us to eliminate padding which would be needed for, e.g., map[int64]int8.
+  // Followed by an overflow pointer.
 }
 ```
 
@@ -712,9 +713,9 @@ search:
     for i := uintptr(0); i < bucketCnt; i++ {
       // 获取实际的 k/v 地址
       k := add(unsafe.Pointer(b), dataOffset+i*uintptr(t.keysize))
-			if !alg.equal(key, k2) {
+        if !alg.equal(key, k2) {
         continue
-			}
+      }
       v := add(unsafe.Pointer(b), dataOffset+bucketCnt*uintptr(t.keysize)+i*uintptr(t.valuesize))
 
       // 如果是 k/v 的指针, 则只删除指针
