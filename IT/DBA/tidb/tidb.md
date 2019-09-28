@@ -709,14 +709,20 @@ func (e *HashJoinExec) Next(ctx context.Context, req *chunk.Chunk) (err error) {
 
 ### Column
 
-`addColumnByFieldType`: 划定 定长 Column 或 不定长 Column
+```go
+// 划定 定长 Column 或 不定长 Column
+func addColumnByFieldType
 
-Column:
-- `length int`: 行数量
-- `nullBitmap []byte`: column 中每个元素是否为 `NULL`; bit 0 is null, 1 is not null
-- `offsets []int64`: 变长 Column ; 每个数据在 data 这个 slice 中的偏移量
-- `data []byte`: 存储具体数据
-- `elemBuf []byte`: 定长 Column ; 用于辅助 encode 或 decode
+// Column stores one column of data in Apache Arrow format.
+// See https://arrow.apache.org/docs/memory_layout.html
+type Column struct {
+	length     int // 行数量
+	nullBitmap []byte // column 中每个元素是否为 `NULL`; bit 0 is null, 1 is not null
+	offsets    []int64 // 变长 Column ; 每个数据在 data 这个 slice 中的偏移量
+	data       []byte // 存储具体数据
+	elemBuf    []byte // 定长 Column ; 用于辅助 encode 或 decode
+}
+```
 
 ---
 
