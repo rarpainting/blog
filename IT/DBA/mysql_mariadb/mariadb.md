@@ -3,6 +3,7 @@
 <!-- TOC -->
 
 - [MariaDB](#mariadb)
+	- [ACID](#acid)
 	- [数据库语言](#数据库语言)
 		- [DDL(Data Definition Language) -- 数据定义语言](#ddldata-definition-language----数据定义语言)
 		- [DML(Data Manipulation Language) -- 数据操作语言](#dmldata-manipulation-language----数据操作语言)
@@ -225,7 +226,7 @@
 			- [Simple Nested Loop Join 的性能问题](#simple-nested-loop-join-的性能问题)
 			- [distinct 和 group by 的异同](#distinct-和-group-by-的异同)
 			- [备库自增主键](#备库自增主键)
-		- [自增主键用完](#自增主键用完)
+		- [如果自增主键用完](#如果自增主键用完)
 			- [表定义自增键](#表定义自增键)
 			- [InnoDB 系统自增 row_id](#innodb-系统自增-row_id)
 			- [Server XID](#server-xid)
@@ -249,8 +250,20 @@
 			- [Force-log-at-commit](#force-log-at-commit)
 			- [源码](#源码)
 		- [一致性与隔离级别的关系](#一致性与隔离级别的关系)
+		- [JSON](#json)
+		- [触发器/存储过程](#触发器存储过程)
+		- [`sql_mode`](#sql_mode)
+			- [`ONLY_FULL_GROUP_BY`](#only_full_group_by)
+		- [InnoDB 与 B+ Tree](#innodb-与-b-tree)
 
 <!-- /TOC -->
+
+## ACID
+
+- 原子性(Atomicity): undo log
+- 隔离性(Isolation): next-key lock 和 MVCC
+- 持久性(Durability): InnoDB 的 redo log 和 binlog 的 2PL 规则
+- 一致性(Consistency): 由以上三者保证
 
 ## 数据库语言
 
@@ -332,7 +345,7 @@ EXPLAIN [extended] SELECT * FROM table;
 - `table`: 这一行的数据是属于那一个 table 的, 如果是临时表也会有临时表的表名称
 - `type`: mysql 在表中找到所需行的方式, 又称 **访问类型**
   - `ALL`: Full Table Scan, MySQL 将遍历全表以找到匹配的行
-  - `index`: Full Index Scan，index 与 ALL 区别为 index 类型只遍历索引树
+  - `index`: Full Index Scan, index 与 ALL 区别为 index 类型只遍历索引树
   - `range`: 只检索给定范围的行, 使用一个索引来选择行
   - `ref`: 表示上述表的连接匹配条件, 即哪些列或常量被用于查找索引列上的值
   - `eq_ref`: 类似 ref, 区别就在使用的索引是唯一索引, 对于每个索引键值, 表中只有一条记录匹配, 简单来说, 就是多表连接中使用 primary key 或者 unique key 作为关联条件
@@ -342,7 +355,7 @@ EXPLAIN [extended] SELECT * FROM table;
 - `key`: mysql 在当前查询中实际使用的索引
 - `key_len`: **索引** 中使用的字节数, 可通过该列计算查询中使用的索引的长度
   - 显示的值为索引字段的 **最大可能长度** , 并非实际使用长度, 即 `key_len` 是根据表定义计算而得, 不是通过表内检索出的
-- `ref`: 表示上述表的连接匹配条件，即哪些列或常量被用于查找索引列上的值
+- `ref`: 表示上述表的连接匹配条件, 即哪些列或常量被用于查找索引列上的值
 - `rows`: 表的行数 -- 根据表统计信息及索引选用情况, 估算(?)的找到所需的记录所需要读取的行数
 - `extra`: 用于表示 mysql 解决查询的详细信息
   - `using where`: 列数据是从仅仅使用了索引中的信息而没有读取实际的行动的表返回的, 这发生在对表的全部的请求列都是同一个索引的部分的时候, 表示 mysql 服务器将在存储引擎检索行后再进行过滤
@@ -357,7 +370,7 @@ EXPLAIN [extended] SELECT * FROM table;
 - `EXPLAIN` 不考虑各种 Cache
 - `EXPLAIN` 不能显示 MySQL 在执行查询时所作的优化工作
 - 部分统计信息是估算的, 并非精确值
-- `EXPALIN` 只能解释 SELECT 操作，其他操作要重写为 SELECT 后查看执行计划
+- `EXPALIN` 只能解释 SELECT 操作, 其他操作要重写为 SELECT 后查看执行计划
 
 ### 获取有关数据库和表的信息
 
@@ -382,9 +395,9 @@ EXPLAIN [extended] SELECT * FROM table;
 
 - `SHOW ENGINE innodb status;` -- 最新一次记录的死锁日志(记录的是 **等待锁的 sql 语句** 记录, 而不是 完整事务 的 sql 记录)
   - 在死锁检查里面:
-    - lock_mode X waiting -- next-key lock
-    - lock_mode X locks rec but not gap -- 行锁
-    - locks gap before rec -- 间隙锁
+    - `lock_mode X waiting` -- next-key lock
+    - `lock_mode X locks rec but not gap` -- 行锁
+    - `locks gap before rec` -- 间隙锁
 
 - `SHOW BINARY LOGS;` -- 当前 Master 未过期的 binlog
 
@@ -688,7 +701,7 @@ log-basename = master1 # mariadb 独有
 
 配置
 
-在主库安装 semisync_master 插件：
+在主库安装 semisync_master 插件:
 
 ```shell
 mysql> INSTALL PLUGIN rpl_semi_sync_master SONAME 'semisync_master.so'; # linux
@@ -850,7 +863,7 @@ redo log 与 binlog 差异:
 ![update 语句执行流程](2e5bff4910ec189fe1ee6e2ecc7b4bbe.png)
 
 WAL 得益于两方面:
-- redo log 和 binlog 都是顺序写, 磁盘的顺序写比随机写速度快
+- redo log 和 binlog 都是顺序写, 基于机械硬盘的顺序写比随机写速度快
 - 组提交机制, 可以大幅度降低磁盘的 IOPS 消耗
 
 **WAL 机制只保证写完了 redo log 和 内存, 不保证写数据到磁盘**
@@ -923,7 +936,7 @@ show index from table;
 - 使用 **业务字段(如身份证)** 作为主键的场景
   - 只有一个索引
   - 该索引必须是唯一索引
-- 回到主键索引树搜索的过程，称为回表
+- 回到主键索引树搜索的过程, 称为回表
 
 #### 索引优化
 
@@ -963,6 +976,47 @@ select count(distinct col)/count(*) as dist from table;
 
 经验:
 - 使用 `str like "STR%"` 可以经过字符串前缀索引(, 其他形式 (`"%STR"`, `"S%TR"`) 无效)
+
+#### 索引失效案例及其起因
+
+##### 索引低区分度的大表
+
+解析: 大表使用 **区分度低** 的索引会导致优化器放弃索引
+
+方案:
+- 取消该索引
+- 定期执行 `ANALYZE TABLE table;`
+
+##### null
+
+- 为 null 单列索引无法储 null 值, 复合索引无法存储全为 null 的值
+- 查询时, 采用 `is null` 条件时, 不能利用到索引, 只能全表扫描
+
+解析: null 值无法比较, 因此无法确定 null 在索引中的位置
+
+##### OR
+
+通过 OR 连接的查询列表里, 相关列必须 **都** 带有 索引 , 否则全表扫描
+
+解析: OR 是并集操作
+
+##### 复合索引
+
+使用复合索引时, 前面的索引要能用上, 后面的索引才有效
+
+解析: 复合索引以索引顺序从前往后有序
+
+##### 函数操作和运算操作
+
+解析: 函数和运算操作都有 可能 破坏索引的 **有序性**
+
+##### like "%any"
+
+解析: 字符串索引是顺序的复合索引
+
+##### 隐式类型转换
+
+解析: 隐式类型转换类似于 函数操作 , 可能破坏索引的 **有序性**
 
 ---
 
@@ -1021,7 +1075,7 @@ RAPAIR TABLE table [option];
 - `USE_FRM`: 只有当 MYI 文件丢失时才使用这个选项, 全面重建整个索引
 
 > 注意:
-> 在重建表的过程中, 页会按照 90% 的比例重新整理页数据(10% 留给 UPDATE 使用)
+> 在重建表的过程中, 页会按照 90% 的比例重新整理页数据(10% 留给 UPDATE 使用);
 > 因此如果该表在重建前利用率已经超过 90% , 重建后反而会导致文件更大
 
 ---
@@ -1113,7 +1167,7 @@ mysql 为排序设置的 sort_buffer 大小
 可通过以下方法确定排序语句是否使用了临时文件(MariaDB 无效)
 
 ```sql
-/* 打开 optimizer_trace，只对本线程有效 */
+/* 打开 optimizer_trace, 只对本线程有效 */
 SET optimizer_trace='enabled=on';
 
 /* @a 保存 Innodb_rows_read 的初始值 */
@@ -1350,7 +1404,7 @@ redo log 写盘的 具体调用(function call):
 
 ![redo log 组提交](933fdc052c6339de2aa3bf3f65b188cc.png)
 
-![两阶段提交, 组提交细节](5ae7d074c34bc5bd55c82781de670c28.png)
+![两阶段提交细节](5ae7d074c34bc5bd55c82781de670c28.png)
 
 binlog 的 fsync 变量(mysql/mariadb):
 - `binlog_group_commit_sync_delay` / `binlog_commit_wait_usec`: 等待时间
@@ -1890,7 +1944,7 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 - 备份脚本: 是对需要变更的数据备份到一张表中, 固定需要操作的数据行, 以便误操作或业务要求进行回滚
 - 执行脚本: 对数据变更的脚本, 为防 Update 错数据, 一般连备份表进行 Update 操作
 - 验证脚本: 验证数据变更或影响行数是否达到预期要求效果
-- 回滚脚本: 将数据回滚到修改前的状态。
+- 回滚脚本: 将数据回滚到修改前的状态;
 
 小 tip:
 **chattr +i**: (无论什么权限)不能 添加/修改/删除/重命名 文件
@@ -2080,7 +2134,7 @@ select * from t1 join t2 on(t1.a=t2.a) join t3 on (t2.b=t3.b) where t1.c>=X and 
   - (调用 innodb 接口,)从 t1 取一行数据, 返回到 server
   - 从 t2 取满足条件的数据, 获得中间结果
   - 从 t3 取满足条件的数据, 和中间结果对比, 并且构成最终结果
-- 如果采用 BKA 进行优化(只有 BKA 可以?), 会提取范围内的数据, 且直接的嵌套查询; 且每多一个 `join` 部分，就多一个 join_buffer
+- 如果采用 BKA 进行优化(只有 BKA 可以?), 会提取范围内的数据, 且直接的嵌套查询; 且每多一个 `join` 部分, 就多一个 join_buffer
 - 如果没有 `straight_join` , 那么第一个驱动表 MySQL 会在经过 `where t1.c>=X and t2.c>=Y and t3.c>=Z` 过滤后, 以数据最少的表(在 t1/t2/t3 中选), 作为第一个驱动表, 此时可能出现以下情况:
   - 如果驱动表是 t1, 则连接顺序是 t1->t2->t3, 则需要在(被驱动表) t2.a 和 t3.b 上创建索引
   - 如果驱动表是 t3, 连接顺序: t3->t2->t1, 则需要在 t2.b 和 t1.a 上创建索引
@@ -2576,7 +2630,7 @@ select * from a join b where a.f2=b.f2 and a.f1=b.f1;
 
 - `left join` 优化为 `join`, 即驱动表是 b , 被驱动表为 a
 
-从以上来看, **如果需要 left join 的语义，就不能把被驱动表的字段放在 where 条件里面做等值判断或不等值判断, 必须都写在 on 里面**
+从以上来看, **如果需要 left join 的语义, 就不能把被驱动表的字段放在 where 条件里面做等值判断或不等值判断, 必须都写在 on 里面**
 
 #### Simple Nested Loop Join 的性能问题
 
@@ -2608,7 +2662,7 @@ SET INSERT_ID=CURRENT_ID;
 
 ---
 
-### 自增主键用完
+### 如果自增主键用完
 
 #### 表定义自增键
 
@@ -2682,7 +2736,7 @@ do {
 
 ### NULL
 
-NULL 跟任何值执行等值判断和不等值判断的结果，都是 NULL
+NULL 跟任何值执行等值判断和不等值判断的结果, **都是 NULL**
 
 ### 为什么 `add column` 不指定位置
 
@@ -2786,6 +2840,8 @@ mysql >= 5.7 后, 默认开启 ssl, 即使用 unixsock 连接, 也会读取 `/et
 
 InnoDB 通过 Mini-transaction 协议实现 redo log , 其中该协议分为三个子协议
 
+TODO:
+
 #### The FIX Rules
 
 The FIX Rules 规定:
@@ -2811,3 +2867,83 @@ The FIX Rules 规定:
 ### 一致性与隔离级别的关系
 
 ![一致性与隔离级别](v2-bb901763533ccc7c043c31b461ba1b5e_hd.jpg)
+
+### JSON
+
+```sql
+
+> CREATE TABLE lnmp (
+    `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+    `category` JSON,
+    `tags` JSON,
+    PRIMARY KEY (`id`)
+  );
+
+> insert into lnmp(category, tags) values ('{"id": 1, "name": "lnmp"}
+    ', '[1, 2, 3]');
+
+> select id,category->'$.name' from lnmp;
++------|----------------------+
+| id   | category->'$.name'   |
+|------|----------------------|
+| 1    | "lnmp"               |
++------|----------------------+
+
+> select id, JSON_UNQUOTE(category->'$.name') from lnmp;
++------|------------------------------------+
+| id   | JSON_UNQUOTE(category->'$.name')   |
+|------|------------------------------------|
+| 1    | lnmp                               |
++------|------------------------------------+
+
+> select id, category->>'$.name' from lnmp;
++------|-----------------------+
+| id   | category->>'$.name'   |
+|------|-----------------------|
+| 1    | lnmp                  |
++------|-----------------------+
+```
+
+### 触发器/存储过程
+
+触发器是被动执行的, 存储过程是主动执行(通过名称调用)的
+
+### `sql_mode`
+
+#### `ONLY_FULL_GROUP_BY`
+
+`select` 的字段只允许 `group by` 后的字段以及聚合函数的结果
+
+关闭后, 获取的其他字段只是该 group 的第一个字段, 无意义
+
+- 窗口函数仅将结果附加到当前的结果, 即输入输出的行数不变
+- 每个 Group 仅保留一行聚合结果
+
+### MySQL 索引结构
+
+TODO:
+
+### InnoDB 与 B+ Tree
+
+数据存储单位:
+- 磁盘扇区: 512bytes
+- 文件系统页: 4Kbytes
+- InnoDB 页: `innodb_page_size`, 16Kbytes
+
+- 在 InnoDB 中, 叶子节点存放数据, 中间节点存放数据的元数据
+- 指针(数据偏移)在 InnoDB 中为 6 bytes
+
+获得 B+ 树的高度(`<8.0`):
+- 在 InnoDB 表空间文件(.frm) 中, 约定 **页序号/page number == 3** 的代表主键索引的根页
+- 根页偏移量为 64 的地方存放了该 B+ 树的 `page_level=(int)(*(void *)(16384*3+64)[:2])=(int)(*(void *)(49216)[:2])`
+- `tree_height=page_level+1`
+
+`>=8.0`:
+TODO:
+
+![select info_schema](v2-ab72e4b446d501dabae2b373d0fd46ce_r.jpg)
+![result](v2-442458eba8e4776eb1f919799337c158_r.jpg)
+
+问题: 为什么 MySQL 的索引要使用 B+ 树而不是 B 树:
+因为 B 树不管在叶子节点还是非叶子节点都保存数据, 以至于在非叶子节点存储的扇出指针少于 B+ 树; 在同等规模的数据下, 树的高度增加, IO 数也随之增加
+

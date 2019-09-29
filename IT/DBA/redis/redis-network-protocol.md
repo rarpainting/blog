@@ -13,7 +13,7 @@ Client 和 Server 基于以下 5 种基本类型:
 
 RESP 的第一个字节表示数据的类型:
 - 简单字符串: 第一个字节是 `+`, `+OK\r\n`
-- bulk string: 第一个字节是 `$`, `$6\r\nfoobar\r\n`
-- 整数: 第一个字节是 `:`, `:1000\r\n`
-- 数组: 第一个字节是 `*`, `*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n`
-- Error: 第一个字节是 `-`, `-Error message\r\n`
+- bulk string: `$`, `$6\r\nfoobar\r\n`
+- 整数: `:`, `:1000\r\n`
+- 数组: `*`, `*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n`
+- Error: `-`, `-Error message\r\n`

@@ -218,8 +218,6 @@ INSERT INTO t VAULES ("pingcap001", "pingcap", 3);
 ```golang
 // .../parser/ast/dml.go
 type InsertStmt {
-  dmlNode
-
   IsReplace   bool
   IgnoreErr   bool
   Table       *TableRefsClause
@@ -403,6 +401,331 @@ TODO:
 
 ## Select 概览
 
+```golang
+// .../parser/ast/dml.go
+type SelectStmt struct {
+	*SelectStmtOpts
+	Distinct    bool
+	From        *TableRefsClause
+	Wher e       ExprNode
+	Fields      *FieldList
+	GroupBy     *GroupByClause
+	Having      *HavingClause
+	WindowSpecs []WindowSpec
+	OrderBy     *OrderByClause
+	Limit       *Limit
+	LockTp      SelectLockType
+	TableHints []*TableOptimizerHint
+	IsAfterUnionDistinct bool
+	IsInBraces  bool
+}
+
+// .../tidb/planner/core/logical_plan_builder.go
+func (b *PlanBuilder) buildSelect(ctx context.Context, sel *ast.SelectStmt) (p LogicalPlan, err error) {
+...
+	if sel.Wher e != nil {
+		p, err = b.buildSelection(ctx, p, sel.Where, nil)
+	}
+...
+}
+func (b *PlanBuilder) buildSelection(ctx context.Context, p LogicalPlan, wher e ast.ExprNode, AggMapper map[*ast.AggregateFuncExpr]int) (LogicalPlan, error)
+
+// .../tidb/planner/core/plan.go
+type LogicalPlan interface {
+	Plan
+	PredicatePushDown([]expression.Expression) ([]expression.Expression, LogicalPlan)
+	PruneColumns([]*expression.Column) error
+	DeriveStats(childStats []*property.StatsInfo) (*property.StatsInfo, error)
+	MaxOneRow() bool
+	Children() []LogicalPlan
+	SetChildren(...LogicalPlan)
+	SetChild(i int, child LogicalPlan)
+}
+
+// .../tidb/planner/core/logical_plans.go
+type LogicalSelection struct {
+	baseLogicalPlan
+	Conditions []expression.Expression
+}
+
+// .../tidb/session/session.go
+func (s *session) Execute(ctx context.Context, sql string) (recordSets []sqlexec.RecordSet, err error) {
+	...
+	func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec.RecordSet, err error) {
+		...
+		stmt, err := compiler.Compile(ctx, stmtNode)
+		==> func (c *Compiler) Compile(ctx context.Context,
+		stmtNode ast.StmtNode) (*ExecStmt, error) {
+			...
+			planner.Optimize()
+			==> func Optimize(ctx context.Context, sctx sessionctx.Context, node ast.Node, is infoschema.InfoSchema) (plannercore.Plan, error) {
+                plannercore.TryFastPlan(sctx, node)
+				...
+				plannercore.DoOptimize(ctx, builder.GetOptFlag(), logic)
+			}
+			...
+		}
+		...
+	}
+	...
+}
+
+
+// .../tidb/planner/core/optimizer.go
+func DoOptimize(ctx context.Context, flag uint64, logic LogicalPlan) (PhysicalPlan, error) {
+	logic, err := logicalOptimize(ctx, flag, logic)
+	...
+	physical, err := physicalOptimize(logic)
+	...
+	finalPlan := postOptimize(physical)
+	...
+}
+
+// 逻辑优化 基于规则的优化
+func logicalOptimize(ctx context.Context, flag uint64, logic LogicalPlan) (LogicalPlan, error)
+// 物理优化 基于代价的优化
+func physicalOptimize(logic LogicalPlan) (PhysicalPlan, error)
+
+// TODO:
+```
+
+以上是 Select 的流程, 下面重点关注 `logicalOptimize`, `physicalOptimize` 的实现流程
+
+### 逻辑优化 -- RBO/rule based optimization
+
+```golang
+var optRuleList = []logicalOptRule{
+	&columnPruner{},
+	&buildKeySolver{},
+	&decorrelateSolver{},
+	&aggregationEliminator{},
+	&projectionEliminater{},
+	&maxMinEliminator{},
+	&ppdSolver{},
+	&outerJoinEliminator{},
+	&partitionProcessor{},
+	&aggregationPushDownSolver{},
+	&pushDownTopNOptimizer{},
+	&joinReOrderSolver{},
+}
+
+// 逻辑优化 基于规则的优化
+func logicalOptimize(ctx context.Context, flag uint64, logic LogicalPlan) (LogicalPlan, error)
+```
+
+以下 RBO 理论部分看 [PostgreSQL](IT/DBA/PostgreSQL.md)
+
+部分重要函数:
+
+```golang
+// 从表达式中提取列及其信息
+func ExtractColumnsFromExpressions(result []*Column, exprs []Expression, filter func(*Column) bool) []*Column
+```
+
+#### 列裁剪
+
+```golang
+func (p *LogicalJoin) PruneColumns(parentUsedCols []*expression.Column) error
+```
+
+#### 最大最小消除
+
+#### 投影消除
+
+```golang
+func (pe *projectionEliminater) eliminate(p LogicalPlan, replace map[string]*expression.Column, canEliminate bool) LogicalPlan
+```
+
+#### 谓词下推
+
+```golang
+func (p *baseLogicalPlan) PredicatePushDown(predicates []expression.Expression) ([]expression.Expression, LogicalPlan)
+```
+
+#### 构建节点属性
+
+主要是构建 `unique key` 和 `MaxOneRow` 属性
+
+如果一个算子满足:
+- 该算子的子节点是 `MaxOneRow` 算子
+- 该算子是 `Limit 1`
+- `Selection`: 且满足 `unique_key = CONSTANT`
+- `Join`: 左右节点是 `MaxOneRow`
+
+以上情况保证了 **该节点的输出肯定只有一行** , 因此可以设置该节点为 `MaxOneRow`
+
+### 物理优化 -- CBO/cost based optimization
+
+![逻辑算子与物理算子对应](2.png)
+
+以以下 SQL 为例:
+
+```sql
+> select sum(s.a),count(t.b) from s join t on s.a = t.a and s.c < 100 and t.c > 10 group bys.a
+```
+
+![前面流程](3.jpeg)
+
+![完整流程](4.jpeg)
+
+#### 代价评估
+
+## Hash Join
+
+### Classic Hash Join
+
+构建哈希表的连接关系称为 "构建(build)" 输入, 而另一个输入称为 "探测(probe)" 输入
+
+1. For each tuple ${\displaystyle r}$ in the build input ${\displaystyle R}$
+  1. Add ${\displaystyle r}$ to the in-memory hash table
+  2. If the size of the hash table equals the maximum in-memory size:
+    1. Scan the probe input ${\displaystyle S}$, and add matching join tuples to the output relation
+    2. Reset the hash table, and continue scanning the build input ${\displaystyle R}$
+2. Do a final scan of the probe input ${\displaystyle S}$ and add the resulting join tuples to the output relation
+
+翻译:
+- 如果 Hash Join 小于 最大可用内存 , 则将 匹配的连续元组 写入到 Hash Join memory 中
+- 如果超过 最大可用内存 , 则在写满可用内存后, 删除已构建的元组, 从当前元组点重新构建(??)
+
+适合于小表写入
+
+### Grace Hash Join
+
+特点:
+- 首先 Hash R 和 S 元组并为此构建分区, 并将分区写入到 template disk file
+
+### TiDB 的 Hash Join
+
+- Build 阶段, 对 Inner 表建哈希表
+- Probe 阶段, 对由 Outer 表驱动执行 Join 过程
+
+Hash Join 实现:
+- Main Thread, 一个; 负责:
+  - 读取所有的 Inner 表数据
+  - 根据 Inner 表数据构造哈希表
+  - 启动 `Outer Fetcher` 和 `Join Worker` 开始后台工作, 生成 Join 结果, 各个 goroutine 的启动过程由 `fetchOuterAndProbeHashTable` 完成
+  - 将 `Join Worker` 计算出的 Join 结果返回给 `NextChunk` 接口的调用方法
+- `Outer Fetcher`: 一个; 负责读取 Outer 表的数据并分发给各个 `Join Worker`
+- `Join Worker`: 多个; 负责查哈希表、Join 匹配的 Inner 和 Outer 表的数据, 并把结果传递给 Main Thread
+
+#### (Main Thread)读 Inner 表数据
+
+读 Inner 表数据 并且 构建 HashTable (MVMap):
+- `fetchInnerRows` 通过 `e.Next` 获得 inner 表
+- 将 inner 表的结果逐个发送给 `buildHashTableForList` 并行处理
+- 启动 `fetchOuterAndProbeHashTable` 完成 probe 工作
+- 将结果通过 result 返回
+
+```golang
+// .../tidb/executor/join.go
+func (e *HashJoinExec) fetchInnerAndBuildHashTable(ctx context.Context)
+
+// fetchInnerRows fetches all rows from inner executor,
+// and append them to e.innerResult.
+func (e *HashJoinExec) fetchInnerRows(ctx context.Context, chkCh chan<- *chunk.Chunk, doneCh <-chan struct{})
+
+// .../tidb/executor/table_reader.go
+func (e *TableReaderExecutor) Next(ctx context.Context, req *chunk.Chunk) error
+
+// buildHashTableForList builds hash table from `list`.
+func (e *HashJoinExec) buildHashTableForList(innerResultCh <-chan *chunk.Chunk) error
+```
+
+#### Outer Fetcher
+
+*这部分代码的逻辑与 `net/rpc.Client` 相似*
+
+![Outer Fetcher 流程](1.png)
+
+`fetchOuterChucks` 不停的读大表数据, 将 Outer 表数据分发到 Join Worker, 其中有两个 channel:
+- `outerResultChs[i]`: 每个 Join Worker 一个, Outer Fetcher 将获取到的 Outer Chunk 写入到 该 channel 的 Join Worker 中
+- `outerChkResourceCh`: 当 Join Worker 用完了当前的 Outer Chunk 后, 它需要该 Chunk 以及自身的 `outerResultChs[i]` 一起写入到 `outerResourceCh` 中, 目的是:
+  - Outer Fetcher 用于申请内存(Chunk)供 Join Worker 使用
+  - 通过 `outerChkResourceCh` 回收 Join Worker 拉取到的 Outer 数据
+
+Outer Fetcher 计算逻辑:
+1. 从 `outerChkResourceCh` 中获取一个 `outerChkResource` , 作为 `outerResource` 中
+2. 从 Child 拉取数据, 将数据写入到 `outerResource` 的 `chk` 字段中
+3. 这个信息记录在了(发送到) `outerResource.dest` 中, (这个 `chk` 发给需要 `Outer` 表的数据的 `Join Worker` 的 `outerResultChs[i]` 中去)
+
+```golang
+// .../tidb/executor/join.go
+func (e *HashJoinExec) fetchOuterAndProbeHashTable(ctx context.Context)
+
+// fetchOuterChunks get chunks from fetches chunks from the big table in a background goroutine
+// and sends the chunks to multiple channels which will be read by multiple join workers.
+func (e *HashJoinExec) fetchOuterChunks(ctx context.Context)
+
+func (e *HashJoinExec) runJoinWorker(workerID uint)
+```
+
+#### Join Worker
+
+相关参数:
+- `tidb_hash_join_concurrency`: session 变量
+
+Join Worker 流程:
+1. 获取一个 Outer Chuck (`outerResult`) 和 一个 Join Check Resource (`outerChkResource`)
+2. 查哈希表, 将匹配的 Outer Row 和 Inner Rows 写到 Join Chunk 中(`e{HashJoinExec}.join2Chunk`)
+3. 同时在 `e{HashJoinExec}.join2Chunk` 中等待取回 Join Chunk, 随后 Join Worker 继续匹配 Outer Row 和 Inner Row
+4. 循环 2, 3 步直到匹配完成, Main Thread 主动关闭通道, Join Worker 结束
+
+![Join Worker 流程](2-2.png)
+
+```golang
+func (e *HashJoinExec) runJoinWorker(workerID uint)
+```
+
+#### Main Thread
+
+```golang
+// step 1. fetch data from inner child and build a hash table;
+// step 2. fetch data from outer child in a background goroutine and probe the hash table in multiple join workers.
+func (e *HashJoinExec) Next(ctx context.Context, req *chunk.Chunk) (err error) {
+	// 只拿一次 ??
+	result, ok := <-e.joinResultCh
+
+	// 交换请求方和结果的数据(被选中的 cols, rows , 以及 0 列的 VirtualRows)
+	req.SwapColumns(result.chk) // result.chk {Join Chuck}
+
+	// 归还 result.chk
+	result.src <- result.chk
+}
+```
+
+#### Hash Join FAQ
+
+[FAQ](https://pingcap.com/blog-cn/tidb-source-code-reading-9/)
+
+## Chuck 和执行框架
+
+`Chuck` 的特点:
+- 只读
+- **不** 支持随机写
+- 只支持追加写
+- **列存储** , 同一列的连续数据在内存中连续存放
+
+`Chunk` 本质上是 `Column` 的集合
+
+### Column
+
+```go
+// 划定 定长 Column 或 不定长 Column
+func addColumnByFieldType
+
+// Column stores one column of data in Apache Arrow format.
+// See https://arrow.apache.org/docs/memory_layout.html
+type Column struct {
+	length     int // 行数量
+	nullBitmap []byte // column 中每个元素是否为 `NULL`; bit 0 is null, 1 is not null
+	offsets    []int64 // 变长 Column ; 每个数据在 data 这个 slice 中的偏移量
+	data       []byte // 存储具体数据
+	elemBuf    []byte // 定长 Column ; 用于辅助 encode 或 decode
+}
+```
+
+---
+
 # [builddatabase](https://github.com/ngaut/builddatabase)
 
 ## TiDB 的异步 schema 变更实现
@@ -498,7 +821,7 @@ TiDB Server 2 流程:
 8. 在执行前面的操作时消耗了一定的时间, 所以这里将更新 owner 的 last update timestamp 为当前时间(防止经常将 owner 角色在不同服务器中切换), 并提交事务
 9. 循环执行步骤 2、 3、 4.a、5、 6、 7 、8, 6 中的状态为 write only
 10. 循环执行步骤 2、 3、 4.a、5、 6、 7 、8, 6 中的状态为 write reorganization
-11. 循环执行步骤 2、 3、 4.a、5，获取当前事务的快照版本, 开始给新添加的列填写数据; 得到对应版本的表的所有 handle (rowID) , 批处理 handle , 然后针对每行新添加的列做数据填充(以下操作都在一个事务中完成):
+11. 循环执行步骤 2、 3、 4.a、5, 获取当前事务的快照版本, 开始给新添加的列填写数据; 得到对应版本的表的所有 handle (rowID) , 批处理 handle , 然后针对每行新添加的列做数据填充(以下操作都在一个事务中完成):
 &emsp;&emsp;a. 用先前取到的 handle 确定对应行存在, 如果不存在则不对此行做任何操作
 &emsp;&emsp;b. 如果存在, 通过 handle 和 新添加的 columnID 拼成的 key 获取对应列; 获取的值不为空, 则不对此行做任何操作
 &emsp;&emsp;c. 如果值为空, 则通过对应的新添加行的信息获取默认值, 并存储到 KV 层
@@ -532,6 +855,8 @@ TiDB Server 1 流程:
 2. 后台 job 也有对应的 owner, 假设本机的 backgroundworker 就是 background owner 角色, 那么他将从 background job queue 中取出第一个 background job, 然后执行对应类型的操作(删除表中具体的数据)
 3. 执行完成, 那么从 background job queue 中将此 job 删除, 并放入 background job history queue 中(步骤 2 和步骤 3 需要在一个事务中执行)
 
+---
+
 ## 附加
 
 ### 概念
@@ -549,3 +874,5 @@ TiDB Server 1 流程:
   - 根据统计学理论, 将 DW 中的数据进行分析, 找出不能直观发现的规律
 - BI(商业智能):
   - 获取了 OLAP 的统计信息, 和 DM 得到的科学规律之后, 对生产进行适当的调整
+
+---

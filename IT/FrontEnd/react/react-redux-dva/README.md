@@ -125,4 +125,7 @@
 
 - [Websocket](https://developer.mozilla.org/zh-CN/docs/Web/API/WebSockets_API) [caniuse](https://caniuse.com/#search=web%20sockets) -- 基于 HTTP 的 长连接 方案
 
-- [OAuth2](https://oauth.net/2/) -- 第三方资源请求 方案
+- [OpenID](https://openid.net/) -- 第三方身份认证(Authentication) -- [Github](https://github.com/coreos/go-oidc)
+
+
+- [OAuth2](https://oauth.net/2/) -- 第三方资源授权(Authorization) 方案 -- [Github](https://github.com/golang/oauth2)
