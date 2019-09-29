@@ -31,6 +31,11 @@
 - [fio](https://github.com/axboe/fio): 磁盘 IOPS 测试
   - `fio -filename=$filename -direct=1 -iodepth 1 -thread -rw=randrw -ioengine=psync -bs=16k -size=500M -numjobs=10 -runtime=10 -group_reporting -name=mytest`
 
+## Apache/Nginx Module
+
+- Apache2
+  - mod_evasive: 防止 DOS 攻击 (限制同一个 IP 在一定秒数内请求一个页面 / 限制同一个 IP 在一秒内只可发出 X 个请求)
+
 ## 服务器系统运维
 - [saltStack](http://docs.saltstack.cn/)
 - [Ansible](http://ansible.com.cn/)
