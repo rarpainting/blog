@@ -13,6 +13,7 @@
 			- [M/Machine](#mmachine)
 			- [P/Processor](#pprocessor)
 			- [G/Goroutine](#ggoroutine)
+	- [编译指示](#编译指示)
 	- [Go Ast](#go-ast)
 		- [ast.Ident](#astident)
 		- [ast.Object](#astobject)
@@ -129,6 +130,13 @@ channel 的 happen before 规则:
 
 ![G 状态转换](009.png)
 
+## 编译指示
+
+- `//go:noinline`: 取消内联
+- `//go:nosplit`: 跳过 溢出栈检测
+- `//go:noescape`: 禁止 逃逸, 且必须指示一个只有声明没有主体的函数
+- `//go:norace`: 跳过 竞态检测
+
 ## Go Ast
 
 ### ast.Ident
@@ -176,7 +184,7 @@ resp, err := http.Get("https://api.ipify.io?format=content")
 当发生 http 的重定向时, err 和 resp 都**不为空**
 因此保险的做法:
 
-```golang
+```go
 resp, err := http.Get("https://api.ipify.io?format=content")
 if resp != nil {
     defer resp.Body.Close()
@@ -198,7 +206,7 @@ if err != nil {
 
 例子:
 
-```golang
+```go
 func First(query string, replicas ...Search) Result {
   c := make(chan Result)
   searchReplicas := func(i int) {c <- replicas[i](query)}
@@ -215,7 +223,7 @@ func First(query string, replicas ...Search) Result {
 
 1. 申请足够的 chan , 缓存所有的结果
 
-```golang
+```go
 func First(query string, replicas ...Search) Result {
   c := make(chan Result, len(replicas))
   //...
@@ -224,7 +232,7 @@ func First(query string, replicas ...Search) Result {
 
 2. 添加一个 default 选项
 
-```golang
+```go
 func First(query string, replicas ...Search) Result {
   //...
   searchReplicas := func(i int) {
@@ -239,7 +247,7 @@ func First(query string, replicas ...Search) Result {
 
 3. 添加另一个特殊的 chan 来终止 goroutine
 
-```golang
+```go
 func First(query string, replicas ...Search) Result {
   //...
   done := make(chan struct())
@@ -262,7 +270,7 @@ func First(query string, replicas ...Search) Result {
 
 **reflect 只能拿非匿名函数/字段, 匿名函数/字段需要靠 runtime 获取**
 
-```golang
+```go
 // 等同于
 // runtime/type.go^_type
 type rtype struct {
@@ -312,7 +320,7 @@ typ: {
 
 ### Slice
 
-```golang
+```go
 // maxElems is a lookup table containing the maximum capacity for a slice.
 // The index is the size of the slice element.
 var maxElems = [...]uintptr{
@@ -332,7 +340,7 @@ var maxElems = [...]uintptr{
 1. 根据类型的大小, 算出最多能申请多少个元素
 2. 对于扩容:
   1. 如果申请的容量(cap)是老容量(old.cap)的两倍以上`cap>old.cap*2`, 那么就扩成 cap
-  2. 否则, 如果老容量 old.cap 小于 1024, 那么就扩成 old.cap x 2
+  2. 否则, 如果老容量 old.cap 小于 1024, 那么就扩成 `old.cap*2`
   3. 再否则, newcap 初始为 old.cap, 一直循环 `newcap += newcap/4`, 直到不小于 cap, newcap 就是最终扩成的大小(注意这里还有个溢出保护, 如果溢出了, 那么 newcap=cap)
 3. 如果 append 后长度超过了 cap , 那么一定会触发扩容, 以及数据迁移
 
@@ -340,7 +348,7 @@ var maxElems = [...]uintptr{
 
 ![interface](2835676-ff10962a15ab2676.png)
 
-```golang
+```go
 // src/runtime/type.go
 
 // 接口类型的定义
@@ -356,7 +364,7 @@ type imethod struct {
 }
 ```
 
-```golang
+```go
 // src/runtime/runtime2.go
 
 // 记录成功对应的接口类型和实际类型
@@ -374,7 +382,7 @@ type iface struct {
 }
 ```
 
-```golang
+```go
 // src/runtime/iface.go
 
 // Note: change the formula in the mallocgc call in itabAdd if you change these fields.
@@ -387,7 +395,7 @@ type itabTableType struct {
 
 在 get 的时候, 不仅仅会从 itabTalbe 中查找, 还可能会创建插入, itabTable 使用容量超过 75% 还会扩容
 
-```golang
+```go
 // src/runtime/iface.go
 
 func getitab(inter *interfacetype, typ *_type, canfail bool) *itab {
@@ -457,7 +465,7 @@ func itabHashFunc(inter *interfacetype, typ *_type) uintptr {
 
 把 hash 值映射到 bucket 时, golang 会把 bucket 的数量规整为 2 的次幂, 而有 m=2b, 则 n%m=n&(m-1), **用位运算规避 mod 的昂贵代价**
 
-```golang
+```go
 // A header for a Go map.
 type hmap struct {
   // Note: the format of the hmap is also encoded in cmd/compile/internal/gc/reflect.go.
@@ -467,7 +475,7 @@ type hmap struct {
   // 装载因子: loadFactor=count/2^B
   // 如果 loadFactor>6.5 , 触发扩容
   B         uint8  // log_2 of # of buckets (can hold up to loadFactor * 2^B items)
-  noverflow uint16 // 溢出桶的近似数, 一般计算 h.noverflow++ /approximate number of overflow buckets; see incrnoverflow for details
+  noverflow uint16 // 溢出桶的近似数, 一般计算 h.noverflow++ / approximate number of overflow buckets; see incrnoverflow for details
   hash0     uint32 // hash seed
   buckets    unsafe.Pointer // array of 2^B Buckets. may be nil if count==0.
   oldbuckets unsafe.Pointer // previous bucket array of half the size, non-nil only when growing
@@ -525,7 +533,7 @@ type bmap struct {
 - `makemap`(??): buckets 带有 `(2^h.B-1)` 个 base bucket(懒申请)
 - `tooManyOverflowBuckets`: 最多拥有 `(2^h.B-1)` 个 overflow bucket; `overLoadFactor`: base+overflow 总数必须小于 `max(bucketCnt{8}, loadFactorNum{13}*( 1<<h.B / loadFactorDen{2} ))`
 - 对于 bmap:
-  - bmap 是数据集的最小颗粒, 结构: `|<- topHash * 8 ->|<- key * 8 ->|<- value * 8 ->|`
+  - bmap 是数据集的最小颗粒, 结构: `|<- topHash(8bit) * 8 ->|<- key * 8 ->|<- value * 8 ->|`
   - `[0, minTopHash)` 里是 topHash 的特殊情况
   - topHash 是 `hash(key, h.hash0)` 的高 8 bit, 用来命中 bmap; 当 `topHash<minTopHash`, 则 `topHash+=minTopHash`
   - key 通过 `key&(1<<h.B)` 命中 bucket
@@ -544,7 +552,7 @@ key 的计算公式:
 
 `make(map[k]v, hint)`
 
-```golang
+```go
 func makemap(t *maptype, hint int, h *hmap) *hmap {
   // Architectur\e  Name              Maximum Value (exclusive)
   // ---------------------------------------------------------------------
@@ -571,7 +579,7 @@ func makemap(t *maptype, hint int, h *hmap) *hmap {
 
 #### 访问 -- mapaccess
 
-```golang
+```go
 // mapaccess1 returns a pointer to h[key], renturn **zero object**
 func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 // func mapaccess2(t *maptype, h *hmap, key unsafe.Pointer) (unsafe.Pointer, bool) {
@@ -622,7 +630,7 @@ func mapaccess1(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
 3. 找不到 key 就看下需不需要扩容, 需要扩容并且没有正在扩容, 那么就进行扩容, 然后回到第一步
 4. 找不到 key , 不需要扩容, 但是没有空 slot, 那么就分配一个 overflow bucket 挂在链表结尾, 用新 bucket 的第一个 slot 放存放数据
 
-```golang
+```go
 func mapassign(t *maptype, h *hmap, key unsafe.Pointer) unsafe.Pointer {
   // 写保护
   if h.flags&hashWriting != 0 {
@@ -695,7 +703,7 @@ func (h *hmap) newoverflow(t *maptype, b *bmap) *bmap {
 
 #### 删除 -- mapdelete
 
-```golang
+```go
 func mapdelete(t *maptype, h *hmap, key unsafe.Pointer) {
   // 扩容
   bucket := hash & bucketMask(h.B)
@@ -763,7 +771,7 @@ search:
 注意:
 - growWork 会搬迁两个 bucket, 入参的 bucket 和 h.nevacuate(nevacuate 是一个顺序累加的值)
 
-```golang
+```go
 func growWork(t *maptype, h *hmap, bucket uintptr) {
   // make sur\e we evacuate the oldbucket corr\esponding
   // to the bucket we'r\e about to use
@@ -786,11 +794,13 @@ func growWork(t *maptype, h *hmap, bucket uintptr) {
 // Otherwise, ther\e ar\e too many overflow buckets,
 // so keep the same number of buckets and "grow" laterally.
 func hashGrow(t *maptype, h *hmap) {
-  // a^=B , 取反 B 中为 "1" 的位
-  // a&^=B , 取消 B 中为 "1" 的位
+  // a^=mask , 取反 a 中相对 mask 为 "1" 的位
+  // a&^=mask , 取消 a 中相对 mask 为 "1" 的位
+
+  // !(h.count > 6.5*(1<<h.B))
 	if !overLoadFactor(h.count+1, h.B) {
     bigger = 0
-    // map 的 总数过多, 后续只需要 same size grow 就行了
+    // map 的 count 并没有过多, 后续只需要 same size grow/整理 就行了
 		h.flags |= sameSizeGrow
   }
 
@@ -834,7 +844,7 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 ```
 
 注意:
-- 当 `count/bucket>=6.5` 时, 就会进行扩容, `bucket<<=1`
+- 当 `count/bucket>6.5` 时, 就会进行扩容, `bucket<<=1`
 
 #### 总结
 
@@ -874,7 +884,7 @@ ALTER USER `root`@`%` IDENTIFIED WITH mysql_native_password BY 'password';
 同时修改 Golang-MySQL-URL , 添加 `allowNativePasswords=true` 参数(BUG? 在 go-sql-driver 的文档中, 该参数是默认开启的, 然而需要明文添加)
 
 可选: 修改 mysql config
-```config
+```conf
 [mysqld]
 default-authentication-plugin = mysql_native_password
 ```
