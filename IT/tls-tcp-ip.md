@@ -62,6 +62,7 @@
     - 反向地址解析协议
 	  - 无盘系统, 用于声明自己的 MAC 地址并且请求任何收到此请求的 RARP 服务器的 ARP 分配一个 IP 地址
   - VRRP:
+    - 虚拟路由器冗余协议
   - RFR: **EtherType: 0x6559**
     - 原始帧中继
 - 传输层
@@ -69,6 +70,7 @@
   - UDP
 - 会话层
   - SSH(SecureShell)
+  - RIP: 路由信息协议(Router Information Protocol)
 - 表示层
 - 应用层
   - HTTP
