@@ -408,7 +408,7 @@ type itabTableType struct {
 }
 ```
 
-在 get 的时候, 不仅仅会从 itabTalbe 中查找, 还可能会创建插入, itabTable 使用容量超过 75% 还会扩容
+在 get 的时候, 不仅仅会从 itabTable 中查找, 还可能会创建插入, itabTable 使用容量超过 75% 还会扩容
 
 ```go
 // runtime/iface.go
@@ -908,8 +908,22 @@ func entersyscall() {
 */
 //go:nosplit
 func reentersyscall(pc, sp uintptr) {
+  // 为 M 上锁
+  _g_.m.locks++
   // stackPreempt 为一个极大数
-	_g_.stackguard0 = stackPreempt
+  _g_.stackguard0 = stackPreempt
+  // 保存现场 , goroutine 的现场数据只有 PC/SP
+  save(pc, sp)
+  // CAS 修改 Grunning 到 Gsyscall
+  casgstatus(_g_, _Grunning, _Gsyscall)
+  // 解绑定 P 与 M
+  pp.m = 0
+  _g_.m.p = 0
+  // P 状态转为 Psyscall
+  // (为什么这时候 P 还需要转为 Psyscall , 这时候 P 应该可以继续获取 goroutine 成为 Pidle 吧 ??)
+  atomic.Store(&pp.status, _Psyscall)
+  // M 解锁 (M 可以脱离当前 goroutine ??)
+	_g_.m.locks--
 }
 
 /*
@@ -935,8 +949,28 @@ func reentersyscall(pc, sp uintptr) {
 //go:nowritebarrierrec
 //go:linkname exitsyscall
 func exitsyscall() {
+  _g_.m.locks++
+  // 快速退出 syscall
+	if exitsyscallfast(oldp) {
+    return
+  }
 
+  _g_.m.locks--
+  // 不能立即获取 空闲 P , 将 goroutine 状态转为 Grunnable
+  mcall(exitsyscall0)
+
+  // 清空 stack point
+  _g_.syscallsp = 0
+  // exitsyscall0 后就已经获取到空闲 P , 并将 syscall 标志 +1
+  _g_.m.p.ptr().syscalltick++
 }
+
+func exitsyscallfast(oldp *p) bool {
+}
+
+func exitsyscall0(gp *g) {
+}
+
 ```
 
 ```text
