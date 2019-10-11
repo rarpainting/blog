@@ -1219,6 +1219,20 @@ alter table t add index city_user(city, name, age);
 
 ![(city, name, age) 联合索引后, 查询执行计划](df4b8e445a59c53df1f2e0f115f02cd6.jpg)
 
+#### order by limit 的不稳定输出
+
+在 **无索引** 的列中排序, mysql 有两种方式:
+- 快速排序: 无索引, 需要大量/全部结果
+- 堆排序: 无索引, 需要少量结果(<?)
+
+而 快速排序 和 堆排序 都是不稳定排序, 不能保证 目标列相同值 的排序结果稳定; 解决方案:
+
+```sql
+select column from tablen order by column , id limit count
+```
+
+**通过添加一个唯一属性的列, 保证目标列相同值的稳定(但是这里的唯一属性列没有索引的效果)**
+
 #### 结论
 
 - MySQL 在认为内存足够的情况下, 会多利用内存, 尽量减少磁盘访问
@@ -2939,7 +2953,3 @@ TODO:
 
 问题: 为什么 MySQL 的索引要使用 B+ 树而不是 B 树:
 因为 B 树不管在叶子节点还是非叶子节点都保存数据, 以至于在非叶子节点存储的扇出指针少于 B+ 树; 在同等规模的数据下, 树的高度增加, IO 数也随之增加
-
-### order by limit 输出不稳定
-
-TODO:

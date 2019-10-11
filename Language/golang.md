@@ -13,6 +13,7 @@
 			- [M/Machine](#mmachine)
 			- [P/Processor](#pprocessor)
 			- [G/Goroutine](#ggoroutine)
+			- [抢占式](#抢占式)
 	- [编译指示](#编译指示)
 	- [Go Ast](#go-ast)
 		- [ast.Ident](#astident)
@@ -35,6 +36,8 @@
 			- [删除 -- mapdelete](#删除----mapdelete)
 			- [扩容 -- growWork](#扩容----growwork)
 			- [总结](#总结)
+		- [syscall](#syscall)
+			- [总结](#总结-1)
 		- [math/rand](#mathrand)
 		- [MySQL](#mysql)
 			- [`go-sql-driver/mysql`](#go-sql-drivermysql)
@@ -130,6 +133,18 @@ channel 的 happen before 规则:
 
 ![G 状态转换](009.png)
 
+#### 抢占式
+
+runtime 在初始化时启动 sysmon 线程, 周期性做 epoll 操作和 P 检测:
+- P 处于 Psyscall 并超过一个 sysmon 时间周期(20us) , 且有其他 G 任务, 则切换 P
+- P 为 Prunning , 并运行超过 10ms , 则将 P 的当前运行 G stackguard 设置为 StackPreempt(`(uint64)-1314`) , 通知调度器在 `morestack` 中调度 G
+
+与 **linux 线程** 相比:
+- 没有时间片, 无优先级
+- 调度环节为发生 **函数调用(`morestack`)** 时, 即如果一个 G 长时间没有调用任何函数, 那么该 G 也不会被调度
+- goroutine 2K 的初始栈; linux (1~8)M 的初始栈
+- goroutine 由 runtime 调度, 期间不需要经过 系统调用(syscall) , 切换开销小 ; 半协同半抢占, 因此切换少
+
 ## 编译指示
 
 - `//go:noinline`: 取消内联
@@ -179,7 +194,7 @@ channel 的 happen before 规则:
 
 ### http 响应
 
-resp, err := http.Get("https://api.ipify.io?format=content")
+`resp, err := http.Get("https://api.ipify.io?format=content")`
 
 当发生 http 的重定向时, err 和 resp 都**不为空**
 因此保险的做法:
@@ -349,7 +364,7 @@ var maxElems = [...]uintptr{
 ![interface](2835676-ff10962a15ab2676.png)
 
 ```go
-// src/runtime/type.go
+// runtime/type.go
 
 // 接口类型的定义
 type interfacetype struct {
@@ -365,7 +380,7 @@ type imethod struct {
 ```
 
 ```go
-// src/runtime/runtime2.go
+// runtime/runtime2.go
 
 // 记录成功对应的接口类型和实际类型
 type itab struct {
@@ -383,7 +398,7 @@ type iface struct {
 ```
 
 ```go
-// src/runtime/iface.go
+// runtime/iface.go
 
 // Note: change the formula in the mallocgc call in itabAdd if you change these fields.
 type itabTableType struct {
@@ -396,7 +411,7 @@ type itabTableType struct {
 在 get 的时候, 不仅仅会从 itabTalbe 中查找, 还可能会创建插入, itabTable 使用容量超过 75% 还会扩容
 
 ```go
-// src/runtime/iface.go
+// runtime/iface.go
 
 func getitab(inter *interfacetype, typ *_type, canfail bool) *itab {
   // 先从全局的 itabTable 找 inter 和 typ 的配对记录
@@ -450,8 +465,8 @@ func (t *itabTableType) add(m *itab) {
 }
 
 func itabHashFunc(inter *interfacetype, typ *_type) uintptr {
-	// compiler has provided some good hash codes for us.
-	return uintptr(inter.typ.hash ^ typ.hash)
+  // compiler has provided some good hash codes for us.
+  return uintptr(inter.typ.hash ^ typ.hash)
 }
 ```
 
@@ -853,6 +868,123 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 - 设置写保护: `mapassign`/分配(赋值), `mapdelete`/删除, `mapclear`/清空
 - 触发扩容(growWork): `mapassign`/分配(赋值), `mapdelete`/删除
 - 8键/8值 分别放置减少了 padding 空间
+
+### syscall
+
+下文以 `syscall.Syscall` 为例, [参考博客](https://blog.csdn.net/u010853261/article/details/88312904):
+
+```
+//
+TEXT ·Syscall(SB),NOSPLIT,$0-56
+// ...
+  MOVQ trap+0(FP), AX	// syscall entry
+// ...
+ok:
+// ...
+  CALL runtime·exitsyscall(SB)
+```
+
+```go
+// /runtime/proc.go
+// entersyscall 被两种方式调用: go syscall library & cgocall
+// runtime 的低级系统调用不会触发 entersyscall
+//
+//go:nosplit
+//go:linkname entersyscall
+func entersyscall() {
+  // golang 进入 syscall 时需要检查 pc/sp 寄存器
+  reentersyscall(getcallerpc(), getcallersp())
+}
+
+/*
+流程如下:
+- 设置 _g_.m.locks++ , 禁止 g 被强占
+- 设置 _g_.stackguard0 = stackPreempt, 禁止调用任何会导致栈增长/分裂的函数
+- 保存现场, 在 syscall 之后会依据这些数据恢复现场
+- 更新 G 的状态为 _Gsyscall
+- 释放局部调度器 P: 解绑 P 与 M 的关系
+- 更新 P 状态为 _Psyscall
+- g.m.locks–- 解除禁止强占
+*/
+//go:nosplit
+func reentersyscall(pc, sp uintptr) {
+  // stackPreempt 为一个极大数
+	_g_.stackguard0 = stackPreempt
+}
+
+/*
+流程如下:
+1. 设置 g.m.locks++ 禁止强占
+2. 调用 exitsyscallfast() 快速退出系统调用:
+  1. Try to r\e-acquir\e the last P，如果成功就直接接 r\eturn
+  2. Try to get any other idle P from allIdleP list
+  3. 没有获取到空闲的P
+3. 如果快速获取到了P:
+  1. 更新 G 的状态是 _Grunning
+  2. 与 G 绑定的 M 会在退出系统调用之后继续执行
+4. 没有获取到空闲的 P:
+  1. 调用 mcall() 函数切换到 g0 的栈空间
+  2. 调用 exitsyscall0 函数
+    1. 更新 G 的状态是 _Grunnable
+    2. 调用 dropg(): 解除当前 g 与 M 的绑定关系
+    3. 调用 globrunqput 将 G 插入 global queue 的队尾
+    4. 调用 stopm() 释放 M , 将 M 加入全局的 idle M 列表, 这个调用会阻塞, 知道获取到可用的P
+    5. 如果 4.2.4 中阻塞结束, M获取到了可用的 P, 会调用 schedule() 函数, 执行一次新的调度
+*/
+//go:nosplit
+//go:nowritebarrierrec
+//go:linkname exitsyscall
+func exitsyscall() {
+
+}
+```
+
+```text
+
+                      +-----------------------------------------------------+
+                      |runtime.entersyscall()                               |
+                      |1) save() goroutine Save on site                     |
+user code             |2) casgstatus(_g_, _Grunning, _Gsyscall)             |
+ syscall   ---------->|3) atomic.Store(&_g_.m.p.ptr().status, _Psyscall)    |
+                      |                                                     |
+                      |a) the M is blocking;                                |
+                      |b) the status of P is _Psyscall, So the P can be     |
+                      |schedule to execute other goroutine                  |
+                      +-----------------------------------------------------+
+
+
+
+
+                             +--------------------------+
+     user code               |runtime.exitsyscall()     |
+ syscall finished ---------->|1) disable preemption     |
+                             |                          |
+                             +--+--------------------+--+
+                                |                    |
+                                |                    |
+                                |                    |
+                                v                    v
+                        try to re-acquire   try to get any other
+                            the last P             idle P
+                                |                    |
+                                |                    |
+                                |                    |
+                      success---+--------------------+-----+
+                          |                                |
+                          |                              fail
+                          |                                |
+                          v                                |
+               +---------------------+          +----------+------>------+
+               |there is a P to run G|          |not get P               |
+               |runtime.exexute(G)   |          |1.put G into global tail|
+               |schedule loop        |          |2.idel this M           |
+               |                     |          |                        |
+               +---------------------+          +------------------------+
+```
+
+#### 总结
+
+- G 在进入 Gsyscall(entersyscall) 后会剥离 P , 只与 M 结合, 随后 P 继续找其他的 runnable G
 
 ### math/rand
 
