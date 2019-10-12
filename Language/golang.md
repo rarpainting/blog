@@ -36,6 +36,7 @@
 			- [删除 -- mapdelete](#删除----mapdelete)
 			- [扩容 -- growWork](#扩容----growwork)
 			- [总结](#总结)
+		- [schedule](#schedule)
 		- [syscall](#syscall)
 			- [总结](#总结-1)
 		- [math/rand](#mathrand)
@@ -128,6 +129,9 @@ channel 的 happen before 规则:
 #### P/Processor
 
 ![P 状态转换](008.png)
+
+注:
+- Psyscall 在(退出 syscall)回到 Prunning 期间有极短的 Pidle 时间
 
 #### G/Goroutine
 
@@ -869,6 +873,34 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 - 触发扩容(growWork): `mapassign`/分配(赋值), `mapdelete`/删除
 - 8键/8值 分别放置减少了 padding 空间
 
+### schedule
+
+```go
+// M/P/G 完备的一轮调度
+// One round of scheduler: find a runnable goroutine and execute it.
+func schedule() {
+  // 事前检查
+  if _g_.m.locks != 0 {}
+  // M 没有锁定, 但是绑定了一个 g , 这是什么场景 ?? , syscall ??
+  if _g_.m.lockedg != 0 {
+    // M 与 G 解绑定, G 回到 Grunnable ,
+		stoplockedm()
+  }
+  if _g_.m.incgo {}
+
+  // 一轮调度开始
+top:
+}
+
+
+// 如果 `inheritTime==true`, gp 将继承当前时间片中的剩余时间; 否则该 gp 获得一个全新的时间片
+// 可拥有写屏障
+//
+//go:yeswritebarrierrec
+func execute(gp *g, inheritTime bool) {
+}
+```
+
 ### syscall
 
 下文以 `syscall.Syscall` 为例, [参考博客](https://blog.csdn.net/u010853261/article/details/88312904):
@@ -886,6 +918,7 @@ ok:
 
 ```go
 // /runtime/proc.go
+
 // entersyscall 被两种方式调用: go syscall library & cgocall
 // runtime 的低级系统调用不会触发 entersyscall
 //
@@ -942,8 +975,8 @@ func reentersyscall(pc, sp uintptr) {
     1. 更新 G 的状态是 _Grunnable
     2. 调用 dropg(): 解除当前 g 与 M 的绑定关系
     3. 调用 globrunqput 将 G 插入 global queue 的队尾
-    4. 调用 stopm() 释放 M , 将 M 加入全局的 idle M 列表, 这个调用会阻塞, 知道获取到可用的P
-    5. 如果 4.2.4 中阻塞结束, M获取到了可用的 P, 会调用 schedule() 函数, 执行一次新的调度
+    4. 调用 stopm() 释放 M , 将 M 加入全局的 idle M 列表, 这个调用会阻塞, 直到获取到可用的 P
+    5. 如果 4.2.4 中阻塞结束, M 获取到了可用的 P, 会调用 schedule() 函数, 执行一次新的调度
 */
 //go:nosplit
 //go:nowritebarrierrec
@@ -965,12 +998,50 @@ func exitsyscall() {
   _g_.m.p.ptr().syscalltick++
 }
 
+// 尝试直接获取之前的 P 来回到 Grunning
 func exitsyscallfast(oldp *p) bool {
+  // 即将 stw
+  if sched.stopwait == freezeStopWait {
+  }
+
+  // 旧 P 可用, 先认为 P 获得
+  if oldp != nil && oldp.status == _Psyscall && atomic.Cas(&oldp.status, _Psyscall, _Pidle) {
+    // 旧 P 回到 Prunning
+    wirep(oldp)
+    // syscalltick++
+    exitsyscallfast_reacquired()
+  }
+
+  // 从 sched.pidle 中获得
+  if sched.pidle != 0 {
+    // runs fn on a system stack
+    systemstack(func() {
+      // 获取并唤醒 空闲 P (怎么绑定到 G 和 M ??)
+      ok = exitsyscallfast_pidle()
+    }
+  }
 }
+
+// mcall switches from the g to the **g0** stack and invokes fn(g)
+// mcall saves g's current PC/SP in g->sched
+// fn must not return at all: typically it ends by calling **schedule**
+func mcall(fn func(*g))
 
 func exitsyscall0(gp *g) {
-}
+  casgstatus(gp, _Gsyscall, _Grunnable)
+  // 将 gp 与 M 解绑定
+  dropg()
+  // 将 gp 放到 global g queue
+  if _p_ == nil {
+    globrunqput(gp)
+  }
 
+  // 阻塞
+  // 释放 M , M 进入 midle queue , 持续尝试获取 pidle queue 中的可用空闲 P
+  stopm()
+  // TAG: M/P/G 完备, 开始调度
+  schedule() // Never returns.
+}
 ```
 
 ```text
