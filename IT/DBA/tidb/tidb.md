@@ -215,7 +215,7 @@ Calcite 实现的 Volcano Optimizer 支持以下三种终止条件:
 INSERT INTO t VAULES ("pingcap001", "pingcap", 3);
 ```
 
-```golang
+```go
 // .../parser/ast/dml.go
 type InsertStmt {
   IsReplace   bool
@@ -596,6 +596,50 @@ func (p *baseLogicalPlan) PredicatePushDown(predicates []expression.Expression) 
 
 ### TiDB 的 Hash Join
 
+```go
+// HashJoinExec implements the hash join algorithm.
+type HashJoinExec struct {
+	baseExecutor
+
+	outerExec   Executor
+	innerExec   Executor
+	outerFilter expression.CNFExprs
+	outerKeys   []*expression.Column
+	innerKeys   []*expression.Column
+
+	prepared bool
+	// concurrency is the number of partition, build and join workers.
+	concurrency     uint
+	hashTable       *mvmap.MVMap
+	innerFinished   chan error
+	hashJoinBuffers []*hashJoinBuffer
+	// joinWorkerWaitGroup is for sync multiple join workers.
+	joinWorkerWaitGroup sync.WaitGroup
+	finished            atomic.Value
+	// closeCh add a lock for closing executor.
+	closeCh  chan struct{}
+	joinType plannercore.JoinType
+
+	isOuterJoin  bool
+	requiredRows int64
+
+	// We build individual joiner for each join worker when use chunk-based
+	// execution, to avoid the concurrency of joiner.chk and joiner.selected.
+	joiners []joiner
+
+	outerKeyColIdx     []int
+	innerKeyColIdx     []int
+	innerResult        *chunk.List
+	outerChkResourceCh chan *outerChkResource
+	outerResultChs     []chan *chunk.Chunk
+	joinChkResourceCh  []chan *chunk.Chunk
+	joinResultCh       chan *hashjoinWorkerResult
+	hashTableValBufs   [][][]byte
+
+	memTracker *memory.Tracker // track memory usage.
+}
+```
+
 - Build 阶段, 对 Inner 表建哈希表
 - Probe 阶段, 对由 Outer 表驱动执行 Join 过程
 
@@ -616,7 +660,7 @@ Hash Join 实现:
 - 启动 `fetchOuterAndProbeHashTable` 完成 probe 工作
 - 将结果通过 result 返回
 
-```golang
+```go
 // .../tidb/executor/join.go
 func (e *HashJoinExec) fetchInnerAndBuildHashTable(ctx context.Context)
 
@@ -648,7 +692,7 @@ Outer Fetcher 计算逻辑:
 2. 从 Child 拉取数据, 将数据写入到 `outerResource` 的 `chk` 字段中
 3. 这个信息记录在了(发送到) `outerResource.dest` 中, (这个 `chk` 发给需要 `Outer` 表的数据的 `Join Worker` 的 `outerResultChs[i]` 中去)
 
-```golang
+```go
 // .../tidb/executor/join.go
 func (e *HashJoinExec) fetchOuterAndProbeHashTable(ctx context.Context)
 
@@ -672,13 +716,13 @@ Join Worker 流程:
 
 ![Join Worker 流程](2-2.png)
 
-```golang
+```go
 func (e *HashJoinExec) runJoinWorker(workerID uint)
 ```
 
 #### Main Thread
 
-```golang
+```go
 // step 1. fetch data from inner child and build a hash table;
 // step 2. fetch data from outer child in a background goroutine and probe the hash table in multiple join workers.
 func (e *HashJoinExec) Next(ctx context.Context, req *chunk.Chunk) (err error) {
@@ -721,6 +765,41 @@ type Column struct {
 	offsets    []int64 // 变长 Column ; 每个数据在 data 这个 slice 中的偏移量
 	data       []byte // 存储具体数据
 	elemBuf    []byte // 定长 Column ; 用于辅助 encode 或 decode
+}
+```
+
+TODO:
+
+### Index Lookup Join
+
+```go
+type IndexLookUpJoin struct {
+	baseExecutor
+
+	resultCh   <-chan *lookUpJoinTask
+	cancelFunc context.CancelFunc
+	workerWg   *sync.WaitGroup
+
+	outerCtx outerCtx
+	innerCtx innerCtx
+
+	task       *lookUpJoinTask
+	joinResult *chunk.Chunk
+	innerIter  chunk.Iterator
+
+	joiner      joiner
+	isOuterJoin bool
+
+	requiredRows int64
+
+	indexRanges   []*ranger.Range
+	keyOff2IdxOff []int
+	innerPtrBytes [][]byte
+
+	// lastColHelper store the information for last col if there's complicated filter like col > x_col and col < x_col + 100.
+	lastColHelper *plannercore.ColWithCmpFuncManager
+
+	memTracker *memory.Tracker // track memory usage.
 }
 ```
 
@@ -781,7 +860,7 @@ type Column struct {
 
 ![add columns 具体流程](4.jpg)
 
-```golang
+```go
 type Job struct {
 	ID       int64      `json:"id"`
 	Type     ActionType `json:"type"`
