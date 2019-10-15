@@ -773,6 +773,7 @@ TODO:
 ### Index Lookup Join
 
 ```go
+// .../tidb/executor/index_lookup_join.go
 type IndexLookUpJoin struct {
 	baseExecutor
 
@@ -800,6 +801,54 @@ type IndexLookUpJoin struct {
 	lastColHelper *plannercore.ColWithCmpFuncManager
 
 	memTracker *memory.Tracker // track memory usage.
+}
+
+func (e *IndexLookUpJoin) Open(ctx context.Context) error {
+	err = e.children[0].Open(ctx)
+	// ...
+	e.startWorkers(ctx)
+}
+
+// one outerWorker & `concurrency` innerWorker
+func (e *IndexLookUpJoin) startWorkers(ctx context.Context) {
+	// ...
+	e.workerWg.Add(1)
+	go e.newOuterWorker(resultCh, innerCh).run(workerCtx, e.workerWg)
+
+	e.workerWg.Add(concurrency)
+	for i := 0; i < concurrency; i++ {
+		go e.newInnerWorker(innerCh).run(workerCtx, e.workerWg)
+	}
+}
+
+// outerWorker 工作内容:
+// 1. 按 batch 遍历 Outer 表, 并封装对应的 task
+// 2. 将 task 发送给 Inner Worker 和 Main Thread
+func (ow *outerWorker) run(ctx context.Context, wg *sync.WaitGroup) {
+	defer func() {
+		// error handle
+	}()
+	for {
+		// 封装 task
+		task, err := ow.buildTask(ctx)
+		// task 发送到 Inner Worker
+		if finished := ow.pushToChan(ctx, task, ow.innerCh); finished {
+		}
+		// 发送到 Main Thread
+		if finished := ow.pushToChan(ctx, task, ow.resultCh); finished {
+		}
+	}
+}
+
+func (ow *outerWorker) buildTask(ctx context.Context) (*lookUpJoinTask, error) {
+	if ow.lookup.isOuterJoin { // if is outerJoin, push the requiredRows down
+}
+
+// innerWorker 工作内容:
+// 1. 读取 Outer Worker 构建的 task
+// 2. 根据 task 中的 Outer 表数据, 构建 **Inner 表的扫描范围**, 并构造相应的物理执行算子读取该范围内的 Inner 表数据
+// 3. 对读取的 Inner 表数据创建对应的哈希表并存入 task
+func (iw *innerWorker) run(ctx context.Context, wg *sync.WaitGroup) {
 }
 ```
 
