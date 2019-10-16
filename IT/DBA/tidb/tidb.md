@@ -797,7 +797,7 @@ type IndexLookUpJoin struct {
 	keyOff2IdxOff []int
 	innerPtrBytes [][]byte
 
-	// lastColHelper store the information for last col if there's complicated filter like col > x_col and col < x_col + 100.
+	// lastColHelper stor\e the information for last col if there's complicated filter like col > x_col and col < x_col + 100.
 	lastColHelper *plannercore.ColWithCmpFuncManager
 
 	memTracker *memory.Tracker // track memory usage.
@@ -841,7 +841,21 @@ func (ow *outerWorker) run(ctx context.Context, wg *sync.WaitGroup) {
 }
 
 func (ow *outerWorker) buildTask(ctx context.Context) (*lookUpJoinTask, error) {
+	// 外连接 , 把所有的 requireRows 下推执行
 	if ow.lookup.isOuterJoin { // if is outerJoin, push the requiredRows down
+	}
+	for !task.outerResult.IsFull() {
+		// 将当前执行器切片添加到结果集
+		task.outerResult.Append(ow.executorChk, 0, ow.executorChk.NumRows())
+	}
+
+	if ow.filter != nil {
+		task.outerMatch, err = expression.VectorizedFilter(ow.ctx, ow.filter, chunk.NewIterator4Chunk(task.outerResult), outerMatch)
+	}
+}
+
+// 将 filter 应用到 chunk , 返回一个表示当行是否通过 filter 的结果集
+func VectorizedFilter(ctx sessionctx.Context, filters []Expression, iterator *chunk.Iterator4Chunk, selected []bool) ([]bool, error) {
 }
 
 // innerWorker 工作内容:
@@ -849,6 +863,25 @@ func (ow *outerWorker) buildTask(ctx context.Context) (*lookUpJoinTask, error) {
 // 2. 根据 task 中的 Outer 表数据, 构建 **Inner 表的扫描范围**, 并构造相应的物理执行算子读取该范围内的 Inner 表数据
 // 3. 对读取的 Inner 表数据创建对应的哈希表并存入 task
 func (iw *innerWorker) run(ctx context.Context, wg *sync.WaitGroup) {
+	for ok := true; ok; {
+		select {
+		case task, ok = <-iw.taskCh:
+		}
+
+		err := iw.handleTask(ctx, task)
+	}
+}
+
+func (iw *innerWorker) handleTask(ctx context.Context, task *lookUpJoinTask) error {
+	lookUpContents, err := iw.constructLookupContent(task)
+
+	lookUpContents = iw.sortAndDedupLookUpContents(lookUpContents)
+}
+
+func (iw *innerWorker) constructLookupContent(task *lookUpJoinTask) ([]*indexJoinLookUpContent, error) {
+}
+
+func (iw *innerWorker) sortAndDedupLookUpContents(lookUpContents []*indexJoinLookUpContent) []*indexJoinLookUpContent {
 }
 ```
 
