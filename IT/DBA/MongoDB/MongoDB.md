@@ -42,10 +42,53 @@
 		2. 撤销事务 -- 取消在源和目标的更改
 		3. 设置事务状态为 **canceled**
 
+
+3.x 版本 rollback 的场景与方式:
+
+![回滚处理](v2-20dc2009e7d6b9b41bae68592f95363f_r.jpg)
+
 #### 3)并行处理的控制
 
 - 唯一性 索引
 - 查询断言
+
+#### 4)事务实现
+
+TODO:
+
+孔德雨博客:
+- [MongoDB 4.0 事务实现浅析](http://www.mongoing.com/archives/6102)
+- [事务, 时间戳与混合逻辑时钟](http://www.mongoing.com/archives/25302)
+- [Mongo4.2 分布式事务实现Overview](http://www.mongoing.com/archives/26731)
+
+- [逻辑时钟](/IT/DBA/distribute/logical-lock.md)
+
+- 跨文档事务(`>=4.0`)
+
+MongoDB 在 [WT-3181](https://source.wiredtiger.com/3.0.0/md_changelog.html) 中消除从库回滚 oplog 的全局锁
+
+首先, mongo 在 apply 完一批 oplogs 后, 调用 `setMyLastAppliedOpTimeForward` 方法作为这批 oplogs 中最后一条的 ts:
+
+```cpp
+class ApplyBatchFinalizer {
+    void _recordApplied(const OpTime& newOpTime,
+                        ReplicationCoordinator::DataConsistency consistency) {
+        _replCoord.setMyLastAppliedOpTimeForward(newOpTime, consistency);
+    }
+};
+```
+
+MongoDB 4.0 通过 **读最近一致的 snapshot, 保证从节点的读是不会和并行回放 oplog 相互阻塞, 也不用担心会读到不一致的状态**
+
+`rollback_to_stable`
+
+随着复制的推进, 每个节点虽有延时, 但是(raft 的)commit-timestamp 时间点必然是单调的; 由 raft 协议的保证, commit-timestamp 之前的日志必然不会被回滚; 因此 mongo 的每个节点(通过 setMyLastAppliedOpTimeForward 方法)确定一个 oplog 的 ts 成为 commit-timestamp 之后, 会通过 wt 的 api set_timestamp 设置该 ts 为最新的 **stable-timestamp** , mongodb 主从切换后, 首先通过 wt 的 api  rollback_to_stable 恢复到最近的被(raft)提交的 snapshot, rollback 的动作就完成了
+
+`oldest-timestamp`
+
+`commit as-of timestamp`
+
+- 分布式事务(`>=4.2`)
 
 ### 读隔离, 一致性和时近性
 

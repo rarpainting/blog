@@ -2953,3 +2953,18 @@ TODO:
 
 问题: 为什么 MySQL 的索引要使用 B+ 树而不是 B 树:
 因为 B 树不管在叶子节点还是非叶子节点都保存数据, 以至于在非叶子节点存储的扇出指针少于 B+ 树; 在同等规模的数据下, 树的高度增加, IO 数也随之增加
+
+### 地理信息
+
+#### Geometry
+
+Spatial Indexes:
+```markdown
+MySQL uses **R-Trees with quadratic splitting** for SPATIAL indexes on spatial columns. A SPATIAL index is built using the minimum bounding rectangle (MBR) of a geometry. For most geometries, the MBR is a minimum rectangle that surrounds the geometries. For a horizontal or a vertical linestring, the MBR is a rectangle degenerated into the linestring. For a point, the MBR is a rectangle degenerated into the point.
+
+It is also possible to create normal indexes on spatial columns. In a non-SPATIAL index, you must declare a prefix for any spatial column except for POINT columns.
+
+MyISAM and InnoDB support both SPATIAL and non-SPATIAL indexes.
+```
+
+#### R-Tree
