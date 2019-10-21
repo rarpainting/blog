@@ -1,5 +1,69 @@
 # TIDB
 
+<!-- TOC -->
+
+- [TIDB](#tidb)
+	- [概念](#概念)
+	- [TIDB 基础](#tidb-基础)
+		- [存储](#存储)
+			- [Region](#region)
+			- [事务](#事务)
+		- [计算](#计算)
+			- [数据编码规则](#数据编码规则)
+			- [SQL 运算](#sql-运算)
+			- [SQL 架构](#sql-架构)
+		- [调度](#调度)
+			- [调度需求](#调度需求)
+			- [调度的基本操作(Raft)](#调度的基本操作raft)
+			- [信息收集](#信息收集)
+			- [调度策略](#调度策略)
+		- [事务模式](#事务模式)
+			- [乐观事务(默认):](#乐观事务默认)
+			- [悲观事务](#悲观事务)
+	- [SQL 流程](#sql-流程)
+		- [协议层](#协议层)
+		- [SQL 处理](#sql-处理)
+		- [执行 SQL 计划](#执行-sql-计划)
+			- [Volcano Optimizer](#volcano-optimizer)
+	- [Insert 概览](#insert-概览)
+	- [SQL Parser 的实现](#sql-parser-的实现)
+		- [definitions](#definitions)
+		- [rules](#rules)
+	- [Select 概览](#select-概览)
+		- [逻辑优化 -- RBO/rule based optimization](#逻辑优化----rborule-based-optimization)
+			- [列裁剪](#列裁剪)
+			- [最大最小消除](#最大最小消除)
+			- [投影消除](#投影消除)
+			- [谓词下推](#谓词下推)
+			- [构建节点属性](#构建节点属性)
+		- [物理优化 -- CBO/cost based optimization](#物理优化----cbocost-based-optimization)
+			- [代价评估](#代价评估)
+	- [Hash Join](#hash-join)
+		- [Classic Hash Join](#classic-hash-join)
+		- [Grace Hash Join](#grace-hash-join)
+		- [TiDB 的 Hash Join](#tidb-的-hash-join)
+			- [(Main Thread)读 Inner 表数据](#main-thread读-inner-表数据)
+			- [Outer Fetcher](#outer-fetcher)
+			- [Join Worker](#join-worker)
+			- [Main Thread](#main-thread)
+			- [Hash Join FAQ](#hash-join-faq)
+	- [Chuck 和执行框架](#chuck-和执行框架)
+		- [Column](#column)
+		- [Index Lookup Join](#index-lookup-join)
+- [[builddatabase](https://github.com/ngaut/builddatabase)](#builddatabasehttpsgithubcomngautbuilddatabase)
+	- [TiDB 的异步 schema 变更实现](#tidb-的异步-schema-变更实现)
+		- [概念](#概念-1)
+		- [变更流程](#变更流程)
+			- [模块](#模块)
+			- [基本流程](#基本流程)
+			- [详细流程](#详细流程)
+			- [优化](#优化)
+				- [实现](#实现)
+	- [附加](#附加)
+		- [概念](#概念-2)
+
+<!-- /TOC -->
+
 ## 概念
 
 - Timestamp Oracle (TO)
@@ -33,7 +97,7 @@
   - 存储能力: TiKV
   - 调度能力: PD
 
-## TIDB
+## TIDB 基础
 
 ### 存储
 
@@ -56,7 +120,7 @@ TiKV 写数据到 RocksDB 的过程:
   - 以 Region 为单位, 将数据分散在集群中所有的节点上, 并且尽量保证每个节点上服务的 Region 数量差不多
   - 以 Region 为单位做 Raft 的复制和成员管理
 
-#### 事务 -- Percolator 模型
+#### 事务
 
 Percolator 的两阶段提交
 - `Client.Set()` 数据仅被缓存, 而不做刷写
@@ -158,6 +222,77 @@ TiKV 集群定期向 PD 汇报
 - 数据写入 / 读取的速度
 
 #### 调度策略
+
+### 事务模式
+
+TiDB 3.0 支持两种事务模式: [乐观事务](https://zhuanlan.zhihu.com/p/87608202) 和 [悲观事务](https://zhuanlan.zhihu.com/p/79034576)
+
+#### 乐观事务(默认):
+
+- 乐观事务会在执行 **Commit 时才检查冲突**, 而不是 MySQL 的 **为数据上锁时(X/S lock)检查冲突**, 冲突检查的主要位置不同
+
+![乐观事务](v2-a0be1fb55caf7afe189c1d0f8e2b1c35_r.jpg)
+
+事务流程:
+1. 客户端 begin 了一个事务
+  1. TiDB 从 PD 获取一个全局唯一递增的版本号作为当前事务的开始版本号, 这里我们定义为该事务的 start_ts
+2. 客户端发起读请求
+  1. TiDB 从 PD 获取数据路由信息, 数据具体存在哪个 TiKV 上
+  2. TiDB 向 TiKV 获取 start_ts 版本下对应的数据信息
+3. 客户端发起写请求
+  1. TiDB 对写入数据进行校验, 如数据类型是否正确、是否符合唯一索引约束等, 确保新写入数据事务符合一致性约束, 将检查通过的数据存放在内存里
+4. 客户端发起 commit
+5. TiDB 开始两阶段提交将事务原子地提交, 数据真正落盘
+  1. 从当前要写入的数据中选择一个 Key 作为当前事务的 Primary Key
+  2. 从 PD 获取所有数据的写入路由信息, 并将所有的 Key 按照所有的路由进行分类
+  3. 并发向所有涉及的 TiKV 发起 prewrite 请求, TiKV 收到 prewrite 数据后, 检查数据版本信息是否存在冲突、过期, 符合条件给数据加锁
+  4. 收到所有的 prewrite 成功
+  5. 向 PD 获取第二个全局唯一递增版本, 作为本次事务的 commit_ts
+  6. 向 Primary Key 所在 TiKV 发起第二阶段提交 commit 操作, TiKV 收到 commit 操作后, 检查数据合法性, 清理 prewrite 阶段留下的锁
+  7. 收到 f 成功信息
+6. TiDB 向客户端返回事务提交成功
+7. TiDB 异步清理本次事务遗留的锁信息
+
+鉴于 TiDB 默认的乐观事务和 MySQL 默认的悲观事务之间的冲突, TiDB 对失败的 Commit 操作有额外的 **重试机制**:
+- `tidb_disable_txn_auto_retry`: 默认 1 ; 是否 **关闭** 自动重试
+- `tidb_retry_limit`: 最多重试次数
+
+注意: TiDB 的重试机制会 **重新获取版本号作为 start_ts, 可能会破坏 ReadRepeatable 隔离性**, 该机制不适合依赖查询结果以更新 SQL 的事务
+
+为了减少 TiKV 的 prewrite 阶段冲突回滚, TiDB 会在内存中进行一次 **冲突预检**: 如果 TiDB 本身发现 **写写冲突**, 那么只会发送第一次的写入, 同时取消后续的写入
+
+启用 TiDB 冲突预检 的 **事务内存锁**:
+
+```yaml
+[txn-local-latches]
+enable = false
+capacity = 1024000
+```
+
+capacity: hash 取模值; TiDB 通过 key 的 hash 来检查 TiDB 事务锁(判断冲突)
+
+TiKV 的冲突检查:
+```yaml
+scheduler-concurrency = 2048000
+```
+
+#### 悲观事务
+
+启用悲观事务:
+
+TiDB 配置文件:
+
+```yaml
+[pessimistic-txn]
+enable = false
+```
+
+同时需要在开启 sql 事务语句时修改为:
+
+```sql
+BEGIN PESSIMISTIC
+BEGIN /*!90000 PESSIMISTIC */
+```
 
 ## SQL 流程
 
