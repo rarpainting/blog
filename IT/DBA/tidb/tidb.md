@@ -50,7 +50,10 @@
 	- [Chuck 和执行框架](#chuck-和执行框架)
 		- [Column](#column)
 		- [Index Lookup Join](#index-lookup-join)
-- [[builddatabase](https://github.com/ngaut/builddatabase)](#builddatabasehttpsgithubcomngautbuilddatabase)
+		- [统计信息](#统计信息)
+			- [蓄水池抽样](#蓄水池抽样)
+			- [Count-Min Sketch](#count-min-sketch)
+- [builddatabase](#builddatabase)
 	- [TiDB 的异步 schema 变更实现](#tidb-的异步-schema-变更实现)
 		- [概念](#概念-1)
 		- [变更流程](#变更流程)
@@ -278,9 +281,18 @@ scheduler-concurrency = 2048000
 
 #### 悲观事务
 
-启用悲观事务:
+![悲观事务流程](v2-80a1b4191eced492fb7e360c26fe0f3a_r.jpg)
 
-TiDB 配置文件:
+可以知道, 悲观事务使得 TiDB 支持交互式事务, 但是同时也可能会导致死锁
+
+![死锁检测](v2-4a0218d95f9c7c0a6d62c5db177e8961_r.jpg)
+
+死锁检测实现:
+- TiKV 使用 Region1 所在的 TiKV node 开辟一块内存的记录, 同时检测执行中的事务的依赖关系
+- 悲观事务下, 等锁时会异步进行死锁检测
+- 交互式悲观事务下, 第一个锁不会进行死锁检测
+
+启用悲观事务, TiDB 配置文件:
 
 ```yaml
 [pessimistic-txn]
@@ -1004,6 +1016,9 @@ func (iw *innerWorker) run(ctx context.Context, wg *sync.WaitGroup) {
 		}
 
 		err := iw.handleTask(ctx, task)
+
+		// 完成本次 handleTask
+		task.doneCh <- err
 	}
 }
 
@@ -1011,18 +1026,102 @@ func (iw *innerWorker) handleTask(ctx context.Context, task *lookUpJoinTask) err
 	lookUpContents, err := iw.constructLookupContent(task)
 
 	lookUpContents = iw.sortAndDedupLookUpContents(lookUpContents)
+
+	err = iw.fetchInnerResults(ctx, task, lookUpContents)
+
+	err = iw.buildLookUpMap(task)
+
+	// Inner Worker 向 task.doneCh 中发送数据
 }
 
+// 计算 Outer 表对应的 Join Keys 的值
 func (iw *innerWorker) constructLookupContent(task *lookUpJoinTask) ([]*indexJoinLookUpContent, error) {
 }
 
+// 为 lookupContexts 去重
 func (iw *innerWorker) sortAndDedupLookUpContents(lookUpContents []*indexJoinLookUpContent) []*indexJoinLookUpContent {
+}
+
+// 构建查询执行器 & 将查询结果存储于 `task.innerResult`
+func (iw *innerWorker) fetchInnerResults(ctx context.Context, task *lookUpJoinTask, lookUpContent []*indexJoinLookUpContent) error {
+}
+
+// 对 task.innerResult 按照对应的 Join Keys 构建哈希表 & 存储于 task.lookupMap 中
+func (iw *innerWorker) buildLookUpMap(task *lookUpJoinTask) error {
 }
 ```
 
+![INLJ 流程](2.jpeg)
+
+事例:
+
+```sql
+select /*+ TIDB_INLJ(t) */ * from t left join s on t.a = s.a;
+```
+
+通过添加 `/*+ TIDB_INLJ(t) */` 让优化器尽量选择 Index Lookup Join 算法
+
+### 统计信息
+
+*执行代价, 估计值*
+
+直方图, Count-Min Sketch
+
+#### 蓄水池抽样
+
+从 n 个对象中选择, n 未知
+
+步骤:
+- 总是选择第一个(?)
+- 以 1/2 概率选择第二个, 以 1/3 概率选择第三个, 以此类推
+
+证明:
+第 m 个对象最终被选中的概率 `P=选择 m 的概率 * 其后面所有对象不被选择的概率`
+或者说
+`P=m 数据进入过蓄水池的概率 * 之后第 m 个数据不被替换的概率`
+
+![蓄水池抽样](1338453967_6936.gif)
+
+对应两种操作下的伪代码:
+
+```
+i = 0
+while more input items
+        with probability 1.0 / ++i
+                choice = this input item
+print choice
+```
+
+```cpp
+int[] reservoir = new int[m];
+
+// init
+for (int i = 0; i < reservoir.length; i++)
+{
+    reservoir[i] = dataStream[i];
+}
+
+for (int i = m; i < dataStream.length; i++)
+{
+    // 随机获得一个 [0, i] 内的随机整数
+    int d = rand.nextInt(i + 1);
+    // 如果随机整数落在 [0, m-1] 范围内, 则替换蓄水池中的元素
+    if (d < m)
+    {
+        reservoir[d] = dataStream[i];
+    }
+}
+```
+
+#### Count-Min Sketch
+
+
+
 ---
 
-# [builddatabase](https://github.com/ngaut/builddatabase)
+# builddatabase
+
+[build_database](https://github.com/ngaut/builddatabase)
 
 ## TiDB 的异步 schema 变更实现
 

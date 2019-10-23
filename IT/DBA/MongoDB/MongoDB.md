@@ -88,21 +88,65 @@ MongoDB 4.0 通过 **读最近一致的 snapshot, 保证从节点的读是不会
 
 `commit as-of timestamp`
 
-- 分布式事务(`>=4.2`)
+**分布式事务(`>=4.2`)**
 
 分布式事务按照以下:
-- Mongos conﬁgSvr 不参与, 不处理二阶段提交
+- 基于 [HLC](/IT/DBA/distribute/transaction_timing.md#HLC) 的事务时序
+- Mongos/conﬁgSvr 不参与, 不处理二阶段提交
 - 二阶段提交的工作完全由多个 shard 阶段之间协作完成
 
 ![TX 流程](2.png)
 
-- Oplog 格式更改
+**Oplog 格式更改**
 
 为了支持超过 16M 的事务, 以及一个事务中有多条 Oplog, 添加字段:
 
-TODO:
+```cpp
+prepare: { true | false } // 表示这条 Oplog 是否是分布式事务的 prepare 阶段产生的, 与非事务产生的 oplog 区分
+prevOpTime                // 用以指向本事务内上一条 Oplog , 用于做 prepare 阶段的事务的恢复
+lsid/txnNumber            // 多文档事务特有
+o.commitTimestamp/o.commitTransaction
+```
+
+格式更改后, 每个事务的 Oplog 不再放在一个 OplogEntry 里, 甚至不再连续存放, 而是通过 **prevOpTime** 串起来
+
+**二阶段提交的故障恢复**
+
+Coordinator 故障:
+
+二阶段提交的信息持久化在 transaction_coordinators 表中; TransactionCoordinatorService::onStepUp 从表里恢复所有 pending 状态的事务, 继续执行:
 
 ```cpp
+auto coordinatorDocs = txn::readAllCoordinatorDocs(opCtx);
+for (const auto& doc : coordinatorDocs) {
+    auto coordinator = std::make_shared();
+    coordinator.continueCommit(doc);
+}
+```
+
+Participant 的故障:
+
+此时 prepare 阶段完成, 二阶段提交在 commitLog 写入阶段
+
+```cpp
+for (const auto& doc : config.transactions.find())
+{
+    lastOplogTime = doc.lastOplogTime vector v;
+    // 通过 prevOpTime 遍历本次 Oplog
+    while(auto t = oplog.rs.find(lastOplogTime))
+    {
+        v.push_back(t);
+        lastOplogTime = v.prevOpTime;
+    }
+    // 从起始链恢复
+    reconstructTransaction(v.reverse());
+}
+```
+
+wiredTiger 层:
+
+```cpp
+int ret = wiredTigerPrepareConflictRetry(opCtx, [&] { return c->search(c); });
 ```
 
 ### 读隔离, 一致性和时近性
