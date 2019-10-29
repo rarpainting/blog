@@ -419,7 +419,7 @@ generated column(>=5.7):
 
 - mysql: 系统数据库
   - `columns_stats`: 引擎无关的表统计信息, 基于直方图的统计功能
-  - `columns_priv`: **列** 级权限相关的信息 -- <a href="#permission">权限</a>
+  - `columns_priv`: **列** 级权限相关的信息 -- [权限](#mysqlmariadb-权限)
   - `db`: 与 **数据库** 权限相关的信息
   - `event`
   - `func`
@@ -1296,7 +1296,7 @@ select word from words order by rand() limit 3;
 
 - `tmp_table_size` 这个配置限制了内存临时表的大小, 默认值是 16M
 - 如果临时表大小超过 `tmp_table_size`, 那么内存临时表就会转成磁盘临时表
-- 磁盘临时表使用的默认引擎由 `internal_tmp_disk_storage_engine`(<MySQL?)/`default_tmp_storage_engine`(MySQL8.0/MariaDB) 设置(默认是 InnoDB)
+- 磁盘临时表使用的默认引擎由 `internal_tmp_disk_storage_engine`(`<MySQL?`)/`default_tmp_storage_engine`(`MySQL8.0/MariaDB`) 设置(默认是 InnoDB)
 
 #### 优先队列(最大/最小堆)算法
 
@@ -1618,11 +1618,11 @@ start slave;
 
 #### MySQL 5.7 的并行复制策略
 
-`slave-parallel-type`: 控制并行复制策略:
+`slave_parallel_type`: 控制并行复制策略:
 - `DATABASE`(default): 使用 5.6 的按库并行策略
 - `LOGICAL_CLOCK`: 再两阶段提交中, 只要能达到 redo log perpare 阶段, 就表示事务已经通过锁冲突的检验
   - 同时处于 **prepare** 状态的事务, 再备库执行时是可以并行的
-  - 处于 prepare 状态的事务, 与处于 commit 状态的事务之间, 在备库执行时也是可以并行的(? 如果修改同一行, 也可以吗 ?)
+  - 同一时间, 处于 prepare 状态的事务与处于 commit 状态的事务之间, 在备库执行时也是可以并行的
   - 那么通过组提交的策略, 通过控制 `binlog_group_commit_sync_delay` 和 `binlog_group_commit_sync_no_delay_count`, 提高备库复制的并行度
 
 ```conf
@@ -1639,10 +1639,15 @@ relay_log_recovery        = ON
 
 **注意: 该策略导致该版本的 binlog 不向下兼容**
 
-`binlog_transation_dependency_tracking`: 控制是否开启新策略
-- `COMMIT_ORDER`: 根据 redo log 的规则, 是否同时进入 `prepare` 和 `commit` 来判断是否可以并行的策略
+`binlog_transaction_dependency_tracking`: 控制是否开启新策略, 需要 `slave_parallel_type` 为 `LOGICAL_CLOCK`
+- `COMMIT_ORDER`(5.7): 根据 redo log 的规则, 是否同时进入 `prepare` 和 `commit` 来判断是否可以并行的策略
 - `WRITESET`: 对于事务涉及更新的每一行, 计算出这一行的 hash 值, 组成集合 `writeset`; 如果两个事务的 `writeset` 没有交集, 就认为没有操作相同的行, 可以并行
 - `WRITESET_SESSION`: 在 `WRITESET` 之上, 在主库上 同一个线程(**线程约束**) 先后执行的两个事务, 在备库执行的时候, 要保证相同的先后顺序
+
+`transaction_write_set_extraction`: `WRITESET*` 并行策略的 hash 方法:
+- OFF(default `<8.0.2`)
+- MURMUR32
+- XXHASH64(default `>=8.0.2`)
 
 相比 丁奇版 的 优势:
 - **writeset** 是在主库生成后 **直接写入到 binlog 里**; 那么在备库执行时, 不需要解析 binlog 内容(event 里的数据行) , 节省解析时的计算量
@@ -1953,7 +1958,7 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 - 备份脚本: 是对需要变更的数据备份到一张表中, 固定需要操作的数据行, 以便误操作或业务要求进行回滚
 - 执行脚本: 对数据变更的脚本, 为防 Update 错数据, 一般连备份表进行 Update 操作
 - 验证脚本: 验证数据变更或影响行数是否达到预期要求效果
-- 回滚脚本: 将数据回滚到修改前的状态;
+- 回滚脚本: 将数据回滚到修改前的状态
 
 小 tip:
 **chattr +i**: (无论什么权限)不能 添加/修改/删除/重命名 文件
@@ -2401,7 +2406,7 @@ insert into t values(11,10,10) on duplicate key update d=100;
 ```shell
 mysqldump -h$host -P$port -u$user --add-locks=0 --no-create-info --single-transaction --{set-gtid-purged|gtid}=OFF db1 t --where=$where --result-file=/client_path/result.sql
 ```
-
+- `-d, --no-data`: 只导出表结构, 不导出数据
 - `--single-transaction`: 导出数据时不对目标表加锁, 而是通过 `START TRANSACTION WITH CONSISTENT SNAPSHOT;` 复制视图
   - `WITH CONSISTENT SNAPSHOT`: 生成独立视图
   - `READ WRITE`: 可读写
@@ -2411,6 +2416,7 @@ mysqldump -h$host -P$port -u$user --add-locks=0 --no-create-info --single-transa
 - `--{set-gtid-pureged(mysql)|gtid(mariadb)}=OFF`: 不输出跟 GTID 相关的信息
 - `--result-file`: 输出文件的路径
 - `--{extended-insert|skip-extended-insert}`: 开启|关闭 使用多个 VALUES 列表的多行 INSERT
+- `--skip-column-statistics`: MySQL 8.0 新增 `information_schema.COLUMN_STATISTICS`, 用于关联 schema 和 table 的关系(但是一般不启动 ?)
 
 通过以下命令导入文件
 ```sql
