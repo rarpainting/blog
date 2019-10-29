@@ -189,6 +189,10 @@ Frame 的处理逻辑:
 - $O(n\log{n})$ 时间内构造
 - $O(\log{n})$ 时间内查询任意区间的聚合结果
 
+### SPJ/Select-project-join
+
+> `A select-project-join query block is made up of three basic operations: a selection that extracts rows fulfilling specific predicates,a projection that extracts specific columns from the referenced tables, and a join that puts together data extracted from several tables. Filter and join predicates are based on simple operators like equalities.Example: SELECT t1.id, t2.n FROM t1 JOIN t2 ON t1.id=t2.id WHERE t1.n=42.`
+
 ### 范式
 
 - 第一范式/1NF: 每列都是不可分割的原子值
@@ -204,3 +208,11 @@ Frame 的处理逻辑:
 > Distinct 本身有 `Group by` 的操作, 因此后续的 `Order by` 也需要有遵守 `Group by` 的规则
 
 同时 Group by 会消除之前操作的 Order by(被优化消除), 因此 Order by 尽量在 Group by 之后
+
+### NULL
+
+可能出现 NULL 的场景:
+- SUM 等"集函数"在参数为空(empty)时, 返回 NULL(; COUNT/COUNT 函数会返回 0)
+- 外连接和并连接(union join)
+- CASE 表达式中的 ELSE 字句默认为 ELSE NULL
+- NULLIF(x, y) 在 x=y 为 TRUE 时返回 NULL
