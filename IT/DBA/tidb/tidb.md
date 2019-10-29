@@ -56,8 +56,11 @@
 			- [列直方图](#列直方图)
 			- [索引直方图](#索引直方图)
 		- [索引范围计算](#索引范围计算)
-			- [单列索引](#单列索引)
-			- [多列索引](#多列索引)
+			- [抽取表达式](#抽取表达式)
+				- [单列索引](#单列索引)
+				- [多列索引](#多列索引)
+			- [计算逻辑区间](#计算逻辑区间)
+				- [单列索引](#单列索引-1)
 - [builddatabase](#builddatabase)
 	- [TiDB 的异步 schema 变更实现](#tidb-的异步-schema-变更实现)
 		- [概念](#概念-1)
@@ -1156,16 +1159,49 @@ select * from t where ((a > 1 and a < 5 and b > 2) or (a > 8 and a < 10 and c > 
 
 ![索引逻辑流程](1.jpeg)
 
-#### 单列索引
+#### 抽取表达式
+
+从表达式集合中抽取用于 range 的表达式
+
+##### 单列索引
 
 从条件(where)解析出表达式:
 - AND 表达式: 舍弃无关的 filter , 例如: `a>1 and a<5 and b>2` 中, 舍弃 `b>2`
 - OR 表达式: 每个子项都要可以用来计算 range, 如果有不可以计算 range 的子项, 那么这整个表达式都不可用来计算 range
 
-#### 多列索引
+##### 多列索引
+
+- AND 表达式中, 只有当之前的列均为点查的情况下, 才会考虑下一个列
+  - e.g. 对于索引 `(a, b, c)`, 有条件 `a > 1 and b = 1`, 那么会被选中的只有 a > 1; 对于条件 `a in (1, 2, 3) and b > 1`, 两个条件均会被选到用来计算 range
+  - 由于非点查的部分只会涉及到一个列, 所以可以直接复用 detachColumnCNFConditions
+- OR 表达式中, **每个子项会视为 AND 表达式分开考虑**; 与单列索引的情况一样, 如果其中一个子项无法用来计算索引, 那么该 OR 表达式便完全无法计算索引
+
+#### 计算逻辑区间
+
+从抽取的表达式中填写具体的逻辑区间
+
+##### 单列索引
 
 ```go
+// Point is the end point of range interval.
+type point struct {
+	// types.Datum -- 用于替代 interface{}
+	value types.Datum
+	excl  bool // exclude
+	start bool
+}
+
+// Range represents a range generated in physical plan building phase.
+type Range struct {
+	LowVal  []types.Datum
+	HighVal []types.Datum
+
+	LowExclude  bool // Low value is exclusive.
+	HighExclude bool // High value is exclusive.
+}
 ```
+
+TODO:
 
 ---
 
