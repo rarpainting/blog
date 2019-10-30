@@ -215,4 +215,6 @@ Frame 的处理逻辑:
 - SUM 等"集函数"在参数为空(empty)时, 返回 NULL(; COUNT/COUNT 函数会返回 0)
 - 外连接和并连接(union join)
 - CASE 表达式中的 ELSE 字句默认为 ELSE NULL
-- NULLIF(x, y) 在 x=y 为 TRUE 时返回 NULL
+- `NULLIF(x, y)` 在 x=y 为 TRUE 时返回 NULL
+- 标量子查询(单行+单列), 值为空表, 则空表转为 NULL
+- (多)行子查询, 结果为空表, 则空表转为 NULL 的行集

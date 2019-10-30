@@ -2976,3 +2976,7 @@ MyISAM and InnoDB support both SPATIAL and non-SPATIAL indexes.
 ```
 
 #### R-Tree
+
+### SQL 优化器的局限
+
+#### 关联子查询
