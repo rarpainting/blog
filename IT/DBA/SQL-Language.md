@@ -27,6 +27,8 @@
 ![](5741745-a9cb16a85e234f99.png)
 ![](5741745-4006f30276138875.png)
 
+## 合取范式(CNF)与析取范式(DNF)
+
 ## exists/in/all/any/some
 
 - exists/in

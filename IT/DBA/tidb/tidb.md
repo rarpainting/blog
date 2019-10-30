@@ -49,18 +49,21 @@
 			- [Hash Join FAQ](#hash-join-faq)
 	- [Chuck 和执行框架](#chuck-和执行框架)
 		- [Column](#column)
-		- [Index Lookup Join](#index-lookup-join)
-		- [统计信息](#统计信息)
-			- [蓄水池抽样](#蓄水池抽样)
-			- [Count-Min Sketch](#count-min-sketch)
-			- [列直方图](#列直方图)
-			- [索引直方图](#索引直方图)
-		- [索引范围计算](#索引范围计算)
-			- [抽取表达式](#抽取表达式)
-				- [单列索引](#单列索引)
-				- [多列索引](#多列索引)
-			- [计算逻辑区间](#计算逻辑区间)
-				- [单列索引](#单列索引-1)
+	- [Index Lookup Join](#index-lookup-join)
+	- [统计信息](#统计信息)
+		- [蓄水池抽样](#蓄水池抽样)
+		- [Count-Min Sketch](#count-min-sketch)
+		- [列直方图](#列直方图)
+		- [索引直方图](#索引直方图)
+	- [索引范围计算](#索引范围计算)
+		- [抽取表达式](#抽取表达式)
+			- [单列索引](#单列索引)
+			- [多列索引](#多列索引)
+		- [计算逻辑区间](#计算逻辑区间)
+			- [单列索引](#单列索引-1)
+			- [多列索引](#多列索引-1)
+	- [Sort Merge Join](#sort-merge-join)
+	- [Insert 详解](#insert-详解)
 - [builddatabase](#builddatabase)
 	- [TiDB 的异步 schema 变更实现](#tidb-的异步-schema-变更实现)
 		- [概念](#概念-1)
@@ -725,6 +728,8 @@ func (p *baseLogicalPlan) PredicatePushDown(predicates []expression.Expression) 
 
 #### 代价评估
 
+TODO:
+
 ## Hash Join
 
 ### Classic Hash Join
@@ -925,7 +930,7 @@ type Column struct {
 
 TODO:
 
-### Index Lookup Join
+## Index Lookup Join
 
 ```go
 // .../tidb/executor/index_lookup_join.go
@@ -1069,13 +1074,13 @@ select /*+ TIDB_INLJ(t) */ * from t left join s on t.a = s.a;
 
 通过添加 `/*+ TIDB_INLJ(t) */` 让优化器尽量选择 Index Lookup Join 算法
 
-### 统计信息
+## 统计信息
 
 *执行代价, 估计值*
 
 直方图, Count-Min Sketch
 
-#### 蓄水池抽样
+### 蓄水池抽样
 
 从 n 个对象中选择, n 未知
 
@@ -1121,7 +1126,7 @@ for (int i = m; i < dataStream.length; i++)
 }
 ```
 
-#### Count-Min Sketch
+### Count-Min Sketch
 
 bloom 过滤器在统计方面的变型
 
@@ -1137,16 +1142,18 @@ bloom 过滤器在统计方面的变型
 缺点:
 - hash 数组(w/d 参数)越小, 数值偏大越严重
 
-#### 列直方图
+### 列直方图
 
 - 通过蓄水池抽样排序
 
-#### 索引直方图
+### 索引直方图
 
 - 数据量未知, 有序
 - 设定一个初始的桶数, 将每个桶的初始深度设为 1, 用前面列直方图的创建方法插入数据, 这样如果到某一时刻所需桶的个数超过了当前桶深度, 那么将桶深扩大一倍, 将之前的每两个桶合并为 1 个, 然后继续插入
 
-### 索引范围计算
+TODO:
+
+## 索引范围计算
 
 在使用索引时, TiDB 不直接从索引的头尾开始寻找满足条件的索引, 而是通过 **计算大概的索引范围** , 在从这个索引范围开始寻找满足实际条件的索引; 以下是计算大概的索引范围的方法:
 
@@ -1159,28 +1166,44 @@ select * from t where ((a > 1 and a < 5 and b > 2) or (a > 8 and a < 10 and c > 
 
 ![索引逻辑流程](1.jpeg)
 
-#### 抽取表达式
+### 抽取表达式
 
 从表达式集合中抽取用于 range 的表达式
 
-##### 单列索引
+#### 单列索引
 
 从条件(where)解析出表达式:
 - AND 表达式: 舍弃无关的 filter , 例如: `a>1 and a<5 and b>2` 中, 舍弃 `b>2`
 - OR 表达式: 每个子项都要可以用来计算 range, 如果有不可以计算 range 的子项, 那么这整个表达式都不可用来计算 range
 
-##### 多列索引
+```go
+// DetachCondsForColumn detaches access conditions for specified column from other filter conditions.
+func DetachCondsForColumn(sctx sessionctx.Context, conds []expression.Expression, col *expression.Column) (accessConditions, otherConditions []expression.Expression) {
+	checker := &conditionChecker{
+		colUniqueID: col.UniqueID,
+		length:      types.UnspecifiedLength,
+	}
+	return detachColumnCNFConditions(sctx, conds, checker)
+}
+
+// detachColumnCNFConditions detaches the condition for calculating range from the other conditions.
+// Please make sure that the top level is CNF form.
+func detachColumnCNFConditions(sctx sessionctx.Context, conditions []expression.Expression, checker *conditionChecker) ([]expression.Expression, []expression.Expression) {
+}
+```
+
+#### 多列索引
 
 - AND 表达式中, 只有当之前的列均为点查的情况下, 才会考虑下一个列
   - e.g. 对于索引 `(a, b, c)`, 有条件 `a > 1 and b = 1`, 那么会被选中的只有 a > 1; 对于条件 `a in (1, 2, 3) and b > 1`, 两个条件均会被选到用来计算 range
   - 由于非点查的部分只会涉及到一个列, 所以可以直接复用 detachColumnCNFConditions
 - OR 表达式中, **每个子项会视为 AND 表达式分开考虑**; 与单列索引的情况一样, 如果其中一个子项无法用来计算索引, 那么该 OR 表达式便完全无法计算索引
 
-#### 计算逻辑区间
+### 计算逻辑区间
 
 从抽取的表达式中填写具体的逻辑区间
 
-##### 单列索引
+#### 单列索引
 
 ```go
 // Point is the end point of range interval.
@@ -1201,7 +1224,52 @@ type Range struct {
 }
 ```
 
-TODO:
+各种 `buildFrom*` 函数表示一个具体函数的 range 方法(例如 `buildFromIn` 处理 in 函数)
+
+```go
+func (r *builder) buildFromIn(expr *expression.ScalarFunction) ([]point, bool) {
+}
+```
+
+```go
+// 区间交
+func (r *builder) intersection(a, b []point) []point {
+	return r.merge(a, b, false)
+}
+
+// 区间并
+func (r *builder) union(a, b []point) []point {
+	return r.merge(a, b, true)
+}
+
+func (r *builder) merge(a, b []point, bool) []point {
+
+}
+```
+
+#### 多列索引
+
+- AND: 在多列索引下, "其形式必为 **索引前缀列上的等值条件** 再加上关于 **前缀之后一个列的复杂条件** 组成"
+- OR: 重新实现区间并
+
+```go
+func appendPoints2Ranges(sc *stmtctx.StatementContext, origin []*Range, rangePoints []point,
+	ft *types.FieldType) ([]*Range, error) {
+}
+
+
+func unionRanges(sc *stmtctx.StatementContext, ranges []*Range) ([]*Range, error) {
+}
+
+```
+
+## Sort Merge Join
+
+关键词: Index, Merge
+
+![SMJ 过程](smj.png)
+
+## Insert 详解
 
 ---
 
