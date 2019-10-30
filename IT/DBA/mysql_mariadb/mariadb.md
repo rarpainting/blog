@@ -2058,25 +2058,45 @@ InnoDB 的 LRU 完整流程:
 
 `STRAIGHT_JOIN`: 固定的, 以左边的表作为驱动表, 驱动右表; 强制 优化器 对于 联表查询 的执行顺序
 
-#### NLJ(Index Nested-Loop Join)
+#### INLJ/Index Nested-Loop Join
 
 使用上 被驱动表 的索引
 
-#### Simple Nested-Loop Join
+![INLJ](1166598-20180111155418394-1864597971.png)
+
+伪代码:
+```text
+For each row r in R do      -- 扫描R表
+  lookup s in S index       -- 查询S表的索引（固定3~4次IO，B+树高度）
+    if found s == r         -- 如果 r匹配了索引s
+      Then output the tuple -- 输出结果集
+```
+
+#### SNLJ/Simple Nested-Loop Join
 
 无索引无优化
 
-#### BNL(Block Nested-Loop Join)
+![SNLJ](1166598-20180111155339722-875705260.png)
+
+伪代码:
+```text
+For each row r in R do                     -- 扫描R表
+  Foreach row s in S do                    -- 扫描S表
+    If r and s satisfy the join condition  -- 如果r和s满足join条件
+      Then output the tuple                -- 那就输出结果集
+```
+
+#### BNL/Block Nested-Loop Join
 
 MySQL 无索引优化
 
 ![Block Nested-Loop Join](15ae4f17c46bf71e8349a8f2ef70d573.jpg)
 
-`join_buffer_size`: 设置 join_buffer 的大小
+`join_buffer_size`: 设置 join buffer 的大小
 
 - 如果放不下 驱动表 需要的数据, 那么 驱动表 会被分段放置
-- 把驱动表上的数据需要读到的全部读入到 join_buffer 中
-- 扫描 被驱动表, 把 被驱动表 中的数据和 join_buffer 中的数据对比, 满足 join 条件的, 作为结果集的一部分返回
+- 把驱动表上的数据需要读到的(不是所有列!)以分块的方式读入到 join buffer 中
+- 扫描 被驱动表, 把 被驱动表 中的数据和 join buffer 中的数据对比, 满足 join 条件的, 作为结果集的一部分返回
 
 如果使用 join , 应该选择大表做驱动表还是小表做驱动表
 - 如果是 `Index Nested-Loop Join` , 应该选择小表做驱动表
@@ -2085,12 +2105,27 @@ MySQL 无索引优化
   - 在 `join_buffer_size` 不够大的时候, 应该选择小表做驱动表(避免多次表分段)
 - 小表的判断, 需要考虑到 表行数 和 表列数
 
-#### 课后问题 (BNL 的性能问题)
+![成本比较](1166598-20180111171301894-2066907381.png)
+
+#### Hash Join/HJ
+
+MariaDB 的 Hash Join:
+
+![MariaDB 的 Hash Join](1166598-20180111171747894-316902373.png)
+
+![MariaDB 的 Hash Join 2](1166598-20180111181924097-1552736957.png)
+
+在 Block Join 基础之上, 根据 Join Buffer 中的对象创建哈希表, 内表通过哈希算法进行查找, 减少内外表扫描的次数
+
+MySQL 的 Hash Join:
+TODO:
+
+#### 课后问题(BNL 的性能问题)
 
 如果被驱动表是一张 **大表** , 且是一个 **冷数据库**, 查询中会对 MySQL 服务器产生什么影响
 
 如果 驱动表 太大导致分段, 那么 被驱动表 就会被多次读取:
-- 如果大表的大小 M 页比 old 区域 N 小(M<N), 循环读取间隔很可能超过 `innodb_old_blocks_time` 的时间, 那么该数据会被迁移到 **young** 区域, 把部分 **热点数据被淘汰**, 导致 "Buffer pool hit rate" 命中率极低; 热点数据的请求需要读磁盘, 因此响应慢, 请求被阻塞等
+- 如果大表的大小 M 页比 old 区域 N 小(M < N), 循环读取间隔很可能超过 `innodb_old_blocks_time` 的时间, 那么该数据会被迁移到 **young** 区域, 把部分 **热点数据被淘汰**, 导致 "Buffer pool hit rate" 命中率极低; 热点数据的请求需要读磁盘, 因此响应慢, 请求被阻塞等
 - 如果大表的大小 M 页比 old 区域 N 页大(M>N), 则使得读取一次(M 页)大表后再读, 都需要从头开始读取大表(从第 1 页开始), 影响 缓存(buffer pool) 区域的作用
 
 #### MRR(Multi-Range Read) 优化
@@ -2107,18 +2142,22 @@ set optimizer_switch="mrr=on,mrr_cost_based=off";
 ```
 
 开启 MRR 后, 逻辑:
-- 根据索引, 定位到满足条件的记录, 将 id 值放入到 read_rnd_buffer
-- 将 read_rnd_buffer 中的 id 递增排序
+- 根据索引, 定位到满足条件的记录, 将 id 值放入到 `read_rnd_buffer`
+- 将 `read_rnd_buffer` 中的 id 递增排序
 - 以排序后的 id 序列, 依次到主键 id 索引中查记录, 并作为结果返回
 
 #### BKA(Batched Key Access)
 
-开启 BKA -- NLJ + MRR:
+![BKA](1166598-20180111172052676-1129007687.png)
+
+在 index join 的基础上, 增加 MRR 的功能, *先对索引进行排序(???)*, 然后批量获取 **聚集索引** 中的记录
+
+开启 BKA -- INLJ + MRR:
 ```sql
 -- mysql
 set optimizer_switch="mrr=on,mrr_cost_based=off,batched_key_access=on";
 
--- mariadb TODO
+-- mariadb TODO:
 set optimizer_switch="";
 ```
 
@@ -2976,3 +3015,7 @@ MyISAM and InnoDB support both SPATIAL and non-SPATIAL indexes.
 ```
 
 #### R-Tree
+
+### SQL 优化器的局限
+
+#### 关联子查询

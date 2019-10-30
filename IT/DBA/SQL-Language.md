@@ -72,9 +72,13 @@
 
 `exists/in`
 
+在两表关联时, 当第二个表中存在一个或多个匹配记录时, 返回第一个表的记录且只返回一次
+
 ### anti-join
 
 `not exists/in`
+
+即当在第二张表没有发现匹配记录时, 才会返回第一张表里的记录
 
 ```sql
 SELECT * FROM STUDENT LEFT JOIN SCORE ON STUDENT.sno = SCORE.sno WHERE SCORE.sno IS NULL;
@@ -215,4 +219,6 @@ Frame 的处理逻辑:
 - SUM 等"集函数"在参数为空(empty)时, 返回 NULL(; COUNT/COUNT 函数会返回 0)
 - 外连接和并连接(union join)
 - CASE 表达式中的 ELSE 字句默认为 ELSE NULL
-- NULLIF(x, y) 在 x=y 为 TRUE 时返回 NULL
+- `NULLIF(x, y)` 在 x=y 为 TRUE 时返回 NULL
+- 标量子查询(单行+单列), 值为空表, 则空表转为 NULL
+- (多)行子查询, 结果为空表, 则空表转为 NULL 的行集
