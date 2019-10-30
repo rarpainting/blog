@@ -72,9 +72,13 @@
 
 `exists/in`
 
+在两表关联时, 当第二个表中存在一个或多个匹配记录时, 返回第一个表的记录且只返回一次
+
 ### anti-join
 
 `not exists/in`
+
+即当在第二张表没有发现匹配记录时, 才会返回第一张表里的记录
 
 ```sql
 SELECT * FROM STUDENT LEFT JOIN SCORE ON STUDENT.sno = SCORE.sno WHERE SCORE.sno IS NULL;
