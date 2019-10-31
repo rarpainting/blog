@@ -29,6 +29,9 @@
 
 ## 合取范式(CNF)与析取范式(DNF)
 
+- CNF: 逻辑交/与
+- DNF: 逻辑并/或
+
 ## exists/in/all/any/some
 
 - exists/in

@@ -169,9 +169,9 @@ Value: null
 
 ```go
 var(
-	tablePrefix     = []byte{'t'}
-	recordPrefixSep = []byte("_r")
-	indexPrefixSep  = []byte("_i")
+    tablePrefix     = []byte{'t'}
+    recordPrefixSep = []byte("_r")
+    indexPrefixSep  = []byte("_i")
 )
 ```
 
@@ -390,63 +390,63 @@ type InsertStmt {
 // .../tidb/planner/core/planbuilder.go
 func (b *PlanBuilder) Build(ctx context.Context, node ast.Node) (Plan, error)
 ...
-	case *ast.InsertStmt:
-		return b.buildInsert(ctx, x)
+    case *ast.InsertStmt:
+        return b.buildInsert(ctx, x)
 ...
 
 // .../tidb/planner/core/plan.go
 type Plan interface {
-	// Get the schema.
-	Schema() *expression.Schema
-	// Get the ID.
-	ID() int
-	// Get the ID in explain statement
-	ExplainID() fmt.Stringer
-	// replaceExprColumns replace all the column reference in the plan's expression node.
-	replaceExprColumns(replace map[string]*expression.Column)
+    // Get the schema.
+    Schema() *expression.Schema
+    // Get the ID.
+    ID() int
+    // Get the ID in explain statement
+    ExplainID() fmt.Stringer
+    // replaceExprColumns replace all the column reference in the plan's expression node.
+    replaceExprColumns(replace map[string]*expression.Column)
 
-	context() sessionctx.Context
+    context() sessionctx.Context
 
-	// property.StatsInfo will return the property.StatsInfo for this plan.
-	statsInfo() *property.StatsInfo
+    // property.StatsInfo will return the property.StatsInfo for this plan.
+    statsInfo() *property.StatsInfo
 }
 // .../tidb/planner/core/common_plans.go
 type Insert struct {
-	baseSchemaProducer
+    baseSchemaProducer
 
-	Table       table.Table
-	tableSchema *expression.Schema
-	Columns     []*ast.ColumnName
-	Lists       [][]expression.Expression
-	SetList     []*expression.Assignment
+    Table       table.Table
+    tableSchema *expression.Schema
+    Columns     []*ast.ColumnName
+    Lists       [][]expression.Expression
+    SetList     []*expression.Assignment
 
-	OnDuplicate        []*expression.Assignment
-	Schema4OnDuplicate *expression.Schema
+    OnDuplicate        []*expression.Assignment
+    Schema4OnDuplicate *expression.Schema
 
-	IsReplace bool
+    IsReplace bool
 
-	// NeedFillDefaultValue is true when expr in value list reference other column.
-	NeedFillDefaultValue bool
+    // NeedFillDefaultValue is true when expr in value list reference other column.
+    NeedFillDefaultValue bool
 
-	GenCols InsertGeneratedColumns
+    GenCols InsertGeneratedColumns
 
-	SelectPlan PhysicalPlan
+    SelectPlan PhysicalPlan
 }
 
 // .../tidb/executor/build.go
 func (b *executorBuilder) build(p plannercore.Plan) Executor
 ...
-	case *plannercore.Insert:
-		return b.buildInsert(v)
+    case *plannercore.Insert:
+        return b.buildInsert(v)
 ...
 
 // .../tidb/executor/executor.go
 type Executor interface {
-	base() *baseExecutor
-	Open(context.Context) error
-	Next(ctx context.Context, req *chunk.Chunk) error
-	Close() error
-	Schema() *expression.Schema
+    base() *baseExecutor
+    Open(context.Context) error
+    Next(ctx context.Context, req *chunk.Chunk) error
+    Close() error
+    Schema() *expression.Schema
 }
 // .../tidb/executor/insert.go
 type InsertExec struct {
@@ -463,10 +463,10 @@ func (e *InsertValues) insertRows(ctx context.Context,
 ↓
 insertExec.exec
 ...
-		for _, row := range rows {
-			if _, err := e.addRecord(row); err != nil {
-				return err
-			}
+        for _, row := range rows {
+            if _, err := e.addRecord(row); err != nil {
+                return err
+            }
     }
 ...
 
@@ -487,36 +487,36 @@ type InsertValues struct {
 
 func (e *InsertValues) addRecord(row []types.Datum) (int64, error)
 ...
-	h, err := e.Table.AddRecord(e.ctx, row)
+    h, err := e.Table.AddRecord(e.ctx, row)
 ...
 
 // .../tidb/table/table.go
 type Table interface {
 ...
-	// Indices returns the indices of the table.
+    // Indices returns the indices of the table.
   Indices() []Index
 ...
-	// AddRecord inserts a row which should contain only public columns
+    // AddRecord inserts a row which should contain only public columns
   AddRecord(ctx sessionctx.Context, r []types.Datum, opts ...AddRecordOption) (recordID int64, err error)
 ...
 }
 
 // .../tidb/table/tables/tables.go
 type tableCommon struct {
-	tableID int64
-	// physicalTableID is a unique int64 to identify a physical table.
-	physicalTableID int64
-	Columns         []*table.Column
-	publicColumns   []*table.Column
-	writableColumns []*table.Column
-	writableIndices []table.Index
-	indices         []table.Index
-	meta            *model.TableInfo
-	alloc           autoid.Allocator
+    tableID int64
+    // physicalTableID is a unique int64 to identify a physical table.
+    physicalTableID int64
+    Columns         []*table.Column
+    publicColumns   []*table.Column
+    writableColumns []*table.Column
+    writableIndices []table.Index
+    indices         []table.Index
+    meta            *model.TableInfo
+    alloc           autoid.Allocator
 
   // recordPrefix / indexPrefix -- generated using physicalTableID
-	recordPrefix kv.Key
-	indexPrefix  kv.Key
+    recordPrefix kv.Key
+    indexPrefix  kv.Key
 }
 
 // 索引创建
@@ -545,11 +545,11 @@ tableCommon.AddRecord()
 
 ```yacc
 %union {
-	offset    int // offset
-	item      interface{}
-	ident     string
-	expr      ast.ExprNode
-	statement ast.StmtNode
+    offset    int // offset
+    item      interface{}
+    ident     string
+    expr      ast.ExprNode
+    statement ast.StmtNode
 }
 ```
 
@@ -562,81 +562,81 @@ TODO:
 ```golang
 // .../parser/ast/dml.go
 type SelectStmt struct {
-	*SelectStmtOpts
-	Distinct    bool
-	From        *TableRefsClause
-	Wher e       ExprNode
-	Fields      *FieldList
-	GroupBy     *GroupByClause
-	Having      *HavingClause
-	WindowSpecs []WindowSpec
-	OrderBy     *OrderByClause
-	Limit       *Limit
-	LockTp      SelectLockType
-	TableHints []*TableOptimizerHint
-	IsAfterUnionDistinct bool
-	IsInBraces  bool
+    *SelectStmtOpts
+    Distinct    bool
+    From        *TableRefsClause
+    Wher e       ExprNode
+    Fields      *FieldList
+    GroupBy     *GroupByClause
+    Having      *HavingClause
+    WindowSpecs []WindowSpec
+    OrderBy     *OrderByClause
+    Limit       *Limit
+    LockTp      SelectLockType
+    TableHints []*TableOptimizerHint
+    IsAfterUnionDistinct bool
+    IsInBraces  bool
 }
 
 // .../tidb/planner/core/logical_plan_builder.go
 func (b *PlanBuilder) buildSelect(ctx context.Context, sel *ast.SelectStmt) (p LogicalPlan, err error) {
 ...
-	if sel.Wher e != nil {
-		p, err = b.buildSelection(ctx, p, sel.Where, nil)
-	}
+    if sel.Wher e != nil {
+        p, err = b.buildSelection(ctx, p, sel.Where, nil)
+    }
 ...
 }
 func (b *PlanBuilder) buildSelection(ctx context.Context, p LogicalPlan, wher e ast.ExprNode, AggMapper map[*ast.AggregateFuncExpr]int) (LogicalPlan, error)
 
 // .../tidb/planner/core/plan.go
 type LogicalPlan interface {
-	Plan
-	PredicatePushDown([]expression.Expression) ([]expression.Expression, LogicalPlan)
-	PruneColumns([]*expression.Column) error
-	DeriveStats(childStats []*property.StatsInfo) (*property.StatsInfo, error)
-	MaxOneRow() bool
-	Children() []LogicalPlan
-	SetChildren(...LogicalPlan)
-	SetChild(i int, child LogicalPlan)
+    Plan
+    PredicatePushDown([]expression.Expression) ([]expression.Expression, LogicalPlan)
+    PruneColumns([]*expression.Column) error
+    DeriveStats(childStats []*property.StatsInfo) (*property.StatsInfo, error)
+    MaxOneRow() bool
+    Children() []LogicalPlan
+    SetChildren(...LogicalPlan)
+    SetChild(i int, child LogicalPlan)
 }
 
 // .../tidb/planner/core/logical_plans.go
 type LogicalSelection struct {
-	baseLogicalPlan
-	Conditions []expression.Expression
+    baseLogicalPlan
+    Conditions []expression.Expression
 }
 
 // .../tidb/session/session.go
 func (s *session) Execute(ctx context.Context, sql string) (recordSets []sqlexec.RecordSet, err error) {
-	...
-	func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec.RecordSet, err error) {
-		...
-		stmt, err := compiler.Compile(ctx, stmtNode)
-		==> func (c *Compiler) Compile(ctx context.Context,
-		stmtNode ast.StmtNode) (*ExecStmt, error) {
-			...
-			planner.Optimize()
-			==> func Optimize(ctx context.Context, sctx sessionctx.Context, node ast.Node, is infoschema.InfoSchema) (plannercore.Plan, error) {
+    ...
+    func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec.RecordSet, err error) {
+        ...
+        stmt, err := compiler.Compile(ctx, stmtNode)
+        ==> func (c *Compiler) Compile(ctx context.Context,
+        stmtNode ast.StmtNode) (*ExecStmt, error) {
+            ...
+            planner.Optimize()
+            ==> func Optimize(ctx context.Context, sctx sessionctx.Context, node ast.Node, is infoschema.InfoSchema) (plannercore.Plan, error) {
                 plannercore.TryFastPlan(sctx, node)
-				...
-				plannercore.DoOptimize(ctx, builder.GetOptFlag(), logic)
-			}
-			...
-		}
-		...
-	}
-	...
+                ...
+                plannercore.DoOptimize(ctx, builder.GetOptFlag(), logic)
+            }
+            ...
+        }
+        ...
+    }
+    ...
 }
 
 
 // .../tidb/planner/core/optimizer.go
 func DoOptimize(ctx context.Context, flag uint64, logic LogicalPlan) (PhysicalPlan, error) {
-	logic, err := logicalOptimize(ctx, flag, logic)
-	...
-	physical, err := physicalOptimize(logic)
-	...
-	finalPlan := postOptimize(physical)
-	...
+    logic, err := logicalOptimize(ctx, flag, logic)
+    ...
+    physical, err := physicalOptimize(logic)
+    ...
+    finalPlan := postOptimize(physical)
+    ...
 }
 
 // 逻辑优化 基于规则的优化
@@ -653,18 +653,18 @@ func physicalOptimize(logic LogicalPlan) (PhysicalPlan, error)
 
 ```golang
 var optRuleList = []logicalOptRule{
-	&columnPruner{},
-	&buildKeySolver{},
-	&decorrelateSolver{},
-	&aggregationEliminator{},
-	&projectionEliminater{},
-	&maxMinEliminator{},
-	&ppdSolver{},
-	&outerJoinEliminator{},
-	&partitionProcessor{},
-	&aggregationPushDownSolver{},
-	&pushDownTopNOptimizer{},
-	&joinReOrderSolver{},
+    &columnPruner{},
+    &buildKeySolver{},
+    &decorrelateSolver{},
+    &aggregationEliminator{},
+    &projectionEliminater{},
+    &maxMinEliminator{},
+    &ppdSolver{},
+    &outerJoinEliminator{},
+    &partitionProcessor{},
+    &aggregationPushDownSolver{},
+    &pushDownTopNOptimizer{},
+    &joinReOrderSolver{},
 }
 
 // 逻辑优化 基于规则的优化
@@ -759,44 +759,44 @@ TODO:
 ```go
 // HashJoinExec implements the hash join algorithm.
 type HashJoinExec struct {
-	baseExecutor
+    baseExecutor
 
-	outerExec   Executor
-	innerExec   Executor
-	outerFilter expression.CNFExprs
-	outerKeys   []*expression.Column
-	innerKeys   []*expression.Column
+    outerExec   Executor
+    innerExec   Executor
+    outerFilter expression.CNFExprs
+    outerKeys   []*expression.Column
+    innerKeys   []*expression.Column
 
-	prepared bool
-	// concurrency is the number of partition, build and join workers.
-	concurrency     uint
-	hashTable       *mvmap.MVMap
-	innerFinished   chan error
-	hashJoinBuffers []*hashJoinBuffer
-	// joinWorkerWaitGroup is for sync multiple join workers.
-	joinWorkerWaitGroup sync.WaitGroup
-	finished            atomic.Value
-	// closeCh add a lock for closing executor.
-	closeCh  chan struct{}
-	joinType plannercore.JoinType
+    prepared bool
+    // concurrency is the number of partition, build and join workers.
+    concurrency     uint
+    hashTable       *mvmap.MVMap
+    innerFinished   chan error
+    hashJoinBuffers []*hashJoinBuffer
+    // joinWorkerWaitGroup is for sync multiple join workers.
+    joinWorkerWaitGroup sync.WaitGroup
+    finished            atomic.Value
+    // closeCh add a lock for closing executor.
+    closeCh  chan struct{}
+    joinType plannercore.JoinType
 
-	isOuterJoin  bool
-	requiredRows int64
+    isOuterJoin  bool
+    requiredRows int64
 
-	// We build individual joiner for each join worker when use chunk-based
-	// execution, to avoid the concurrency of joiner.chk and joiner.selected.
-	joiners []joiner
+    // We build individual joiner for each join worker when use chunk-based
+    // execution, to avoid the concurrency of joiner.chk and joiner.selected.
+    joiners []joiner
 
-	outerKeyColIdx     []int
-	innerKeyColIdx     []int
-	innerResult        *chunk.List
-	outerChkResourceCh chan *outerChkResource
-	outerResultChs     []chan *chunk.Chunk
-	joinChkResourceCh  []chan *chunk.Chunk
-	joinResultCh       chan *hashjoinWorkerResult
-	hashTableValBufs   [][][]byte
+    outerKeyColIdx     []int
+    innerKeyColIdx     []int
+    innerResult        *chunk.List
+    outerChkResourceCh chan *outerChkResource
+    outerResultChs     []chan *chunk.Chunk
+    joinChkResourceCh  []chan *chunk.Chunk
+    joinResultCh       chan *hashjoinWorkerResult
+    hashTableValBufs   [][][]byte
 
-	memTracker *memory.Tracker // track memory usage.
+    memTracker *memory.Tracker // track memory usage.
 }
 ```
 
@@ -886,14 +886,14 @@ func (e *HashJoinExec) runJoinWorker(workerID uint)
 // step 1. fetch data from inner child and build a hash table;
 // step 2. fetch data from outer child in a background goroutine and probe the hash table in multiple join workers.
 func (e *HashJoinExec) Next(ctx context.Context, req *chunk.Chunk) (err error) {
-	// 只拿一次 ??
-	result, ok := <-e.joinResultCh
+    // 只拿一次 ??
+    result, ok := <-e.joinResultCh
 
-	// 交换请求方和结果的数据(被选中的 cols, rows , 以及 0 列的 VirtualRows)
-	req.SwapColumns(result.chk) // result.chk {Join Chuck}
+    // 交换请求方和结果的数据(被选中的 cols, rows , 以及 0 列的 VirtualRows)
+    req.SwapColumns(result.chk) // result.chk {Join Chuck}
 
-	// 归还 result.chk
-	result.src <- result.chk
+    // 归还 result.chk
+    result.src <- result.chk
 }
 ```
 
@@ -920,11 +920,11 @@ func addColumnByFieldType
 // Column stores one column of data in Apache Arrow format.
 // See https://arrow.apache.org/docs/memory_layout.html
 type Column struct {
-	length     int // 行数量
-	nullBitmap []byte // column 中每个元素是否为 `NULL`; bit 0 is null, 1 is not null
-	offsets    []int64 // 变长 Column ; 每个数据在 data 这个 slice 中的偏移量
-	data       []byte // 存储具体数据
-	elemBuf    []byte // 定长 Column ; 用于辅助 encode 或 decode
+    length     int // 行数量
+    nullBitmap []byte // column 中每个元素是否为 `NULL`; bit 0 is null, 1 is not null
+    offsets    []int64 // 变长 Column ; 每个数据在 data 这个 slice 中的偏移量
+    data       []byte // 存储具体数据
+    elemBuf    []byte // 定长 Column ; 用于辅助 encode 或 decode
 }
 ```
 
@@ -935,83 +935,83 @@ TODO:
 ```go
 // .../tidb/executor/index_lookup_join.go
 type IndexLookUpJoin struct {
-	baseExecutor
+    baseExecutor
 
-	resultCh   <-chan *lookUpJoinTask
-	cancelFunc context.CancelFunc
-	workerWg   *sync.WaitGroup
+    resultCh   <-chan *lookUpJoinTask
+    cancelFunc context.CancelFunc
+    workerWg   *sync.WaitGroup
 
-	outerCtx outerCtx
-	innerCtx innerCtx
+    outerCtx outerCtx
+    innerCtx innerCtx
 
-	task       *lookUpJoinTask
-	joinResult *chunk.Chunk
-	innerIter  chunk.Iterator
+    task       *lookUpJoinTask
+    joinResult *chunk.Chunk
+    innerIter  chunk.Iterator
 
-	joiner      joiner
-	isOuterJoin bool
+    joiner      joiner
+    isOuterJoin bool
 
-	requiredRows int64
+    requiredRows int64
 
-	indexRanges   []*ranger.Range
-	keyOff2IdxOff []int
-	innerPtrBytes [][]byte
+    indexRanges   []*ranger.Range
+    keyOff2IdxOff []int
+    innerPtrBytes [][]byte
 
-	// lastColHelper stor\e the information for last col if there's complicated filter like col > x_col and col < x_col + 100.
-	lastColHelper *plannercore.ColWithCmpFuncManager
+    // lastColHelper stor\e the information for last col if there's complicated filter like col > x_col and col < x_col + 100.
+    lastColHelper *plannercore.ColWithCmpFuncManager
 
-	memTracker *memory.Tracker // track memory usage.
+    memTracker *memory.Tracker // track memory usage.
 }
 
 func (e *IndexLookUpJoin) Open(ctx context.Context) error {
-	err = e.children[0].Open(ctx)
-	// ...
-	e.startWorkers(ctx)
+    err = e.children[0].Open(ctx)
+    // ...
+    e.startWorkers(ctx)
 }
 
 // one outerWorker & `concurrency` innerWorker
 func (e *IndexLookUpJoin) startWorkers(ctx context.Context) {
-	// ...
-	e.workerWg.Add(1)
-	go e.newOuterWorker(resultCh, innerCh).run(workerCtx, e.workerWg)
+    // ...
+    e.workerWg.Add(1)
+    go e.newOuterWorker(resultCh, innerCh).run(workerCtx, e.workerWg)
 
-	e.workerWg.Add(concurrency)
-	for i := 0; i < concurrency; i++ {
-		go e.newInnerWorker(innerCh).run(workerCtx, e.workerWg)
-	}
+    e.workerWg.Add(concurrency)
+    for i := 0; i < concurrency; i++ {
+        go e.newInnerWorker(innerCh).run(workerCtx, e.workerWg)
+    }
 }
 
 // outerWorker 工作内容:
 // 1. 按 batch 遍历 Outer 表, 并封装对应的 task
 // 2. 将 task 发送给 Inner Worker 和 Main Thread
 func (ow *outerWorker) run(ctx context.Context, wg *sync.WaitGroup) {
-	defer func() {
-		// error handle
-	}()
-	for {
-		// 封装 task
-		task, err := ow.buildTask(ctx)
-		// task 发送到 Inner Worker
-		if finished := ow.pushToChan(ctx, task, ow.innerCh); finished {
-		}
-		// 发送到 Main Thread
-		if finished := ow.pushToChan(ctx, task, ow.resultCh); finished {
-		}
-	}
+    defer func() {
+        // error handle
+    }()
+    for {
+        // 封装 task
+        task, err := ow.buildTask(ctx)
+        // task 发送到 Inner Worker
+        if finished := ow.pushToChan(ctx, task, ow.innerCh); finished {
+        }
+        // 发送到 Main Thread
+        if finished := ow.pushToChan(ctx, task, ow.resultCh); finished {
+        }
+    }
 }
 
 func (ow *outerWorker) buildTask(ctx context.Context) (*lookUpJoinTask, error) {
-	// 外连接 , 把所有的 requireRows 下推执行
-	if ow.lookup.isOuterJoin { // if is outerJoin, push the requiredRows down
-	}
-	for !task.outerResult.IsFull() {
-		// 将当前执行器切片添加到结果集
-		task.outerResult.Append(ow.executorChk, 0, ow.executorChk.NumRows())
-	}
+    // 外连接 , 把所有的 requireRows 下推执行
+    if ow.lookup.isOuterJoin { // if is outerJoin, push the requiredRows down
+    }
+    for !task.outerResult.IsFull() {
+        // 将当前执行器切片添加到结果集
+        task.outerResult.Append(ow.executorChk, 0, ow.executorChk.NumRows())
+    }
 
-	if ow.filter != nil {
-		task.outerMatch, err = expression.VectorizedFilter(ow.ctx, ow.filter, chunk.NewIterator4Chunk(task.outerResult), outerMatch)
-	}
+    if ow.filter != nil {
+        task.outerMatch, err = expression.VectorizedFilter(ow.ctx, ow.filter, chunk.NewIterator4Chunk(task.outerResult), outerMatch)
+    }
 }
 
 // 将 filter 应用到 chunk , 返回一个表示当行是否通过 filter 的结果集
@@ -1023,28 +1023,28 @@ func VectorizedFilter(ctx sessionctx.Context, filters []Expression, iterator *ch
 // 2. 根据 task 中的 Outer 表数据, 构建 **Inner 表的扫描范围**, 并构造相应的物理执行算子读取该范围内的 Inner 表数据
 // 3. 对读取的 Inner 表数据创建对应的哈希表并存入 task
 func (iw *innerWorker) run(ctx context.Context, wg *sync.WaitGroup) {
-	for ok := true; ok; {
-		select {
-		case task, ok = <-iw.taskCh:
-		}
+    for ok := true; ok; {
+        select {
+        case task, ok = <-iw.taskCh:
+        }
 
-		err := iw.handleTask(ctx, task)
+        err := iw.handleTask(ctx, task)
 
-		// 完成本次 handleTask
-		task.doneCh <- err
-	}
+        // 完成本次 handleTask
+        task.doneCh <- err
+    }
 }
 
 func (iw *innerWorker) handleTask(ctx context.Context, task *lookUpJoinTask) error {
-	lookUpContents, err := iw.constructLookupContent(task)
+    lookUpContents, err := iw.constructLookupContent(task)
 
-	lookUpContents = iw.sortAndDedupLookUpContents(lookUpContents)
+    lookUpContents = iw.sortAndDedupLookUpContents(lookUpContents)
 
-	err = iw.fetchInnerResults(ctx, task, lookUpContents)
+    err = iw.fetchInnerResults(ctx, task, lookUpContents)
 
-	err = iw.buildLookUpMap(task)
+    err = iw.buildLookUpMap(task)
 
-	// Inner Worker 向 task.doneCh 中发送数据
+    // Inner Worker 向 task.doneCh 中发送数据
 }
 
 // 计算 Outer 表对应的 Join Keys 的值
@@ -1177,18 +1177,61 @@ select * from t where ((a > 1 and a < 5 and b > 2) or (a > 8 and a < 10 and c > 
 - OR 表达式: 每个子项都要可以用来计算 range, 如果有不可以计算 range 的子项, 那么这整个表达式都不可用来计算 range
 
 ```go
+// .../tidb/util/ranger/detacher.go
 // DetachCondsForColumn detaches access conditions for specified column from other filter conditions.
 func DetachCondsForColumn(sctx sessionctx.Context, conds []expression.Expression, col *expression.Column) (accessConditions, otherConditions []expression.Expression) {
-	checker := &conditionChecker{
-		colUniqueID: col.UniqueID,
-		length:      types.UnspecifiedLength,
-	}
-	return detachColumnCNFConditions(sctx, conds, checker)
+    checker := &conditionChecker{
+        colUniqueID: col.UniqueID,
+        length:      types.UnspecifiedLength,
+    }
+    return detachColumnCNFConditions(sctx, conds, checker)
 }
 
+// 逻辑与 -- 认为最外层是 target_range AND ALL ?
 // detachColumnCNFConditions detaches the condition for calculating range from the other conditions.
-// Please make sure that the top level is CNF form.
+// Please make sur\e that the top level is CNF form.
 func detachColumnCNFConditions(sctx sessionctx.Context, conditions []expression.Expression, checker *conditionChecker) ([]expression.Expression, []expression.Expression) {
+        // 包含逻辑或(OR)表达式
+        if sf, ok := cond.(*expression.ScalarFunction); ok && sf.FuncName.L == ast.LogicOr {
+            // 将 ScalarFunction 分解成 []Expression
+            dnfItems := expression.FlattenDNFConditions(sf)
+            // 解析 OR 表达式
+			colulmnDNFItems, hasResidual := detachColumnDNFConditions(sctx, dnfItems, checker)
+
+            // 重新构建平衡 DNF 树
+			rebuildDNF := expression.ComposeDNFCondition(sctx, colulmnDNFItems...)
+        }
+}
+
+// 逻辑或
+// detachColumnDNFConditions detaches the condition for calculating range from the other conditions.
+// Please make sur\e that the top level is DNF form.
+func detachColumnDNFConditions(sctx sessionctx.Context, conditions []expression.Expression, checker *conditionChecker) ([]expression.Expression, bool) {
+        // 包含逻辑与(AND)表达式
+        if sf, ok := cond.(*expression.ScalarFunction); ok && sf.FuncName.L == ast.LogicAnd {
+            cnfItems := expression.FlattenCNFConditions(sf)
+            columnCNFItems, others := detachColumnCNFConditions(sctx, cnfItems, checker)
+
+            rebuildCNF := expression.ComposeCNFCondition(sctx, columnCNFItems...)
+        } else if checker.check(cond) { // 检查是否为 唯一属性(unique?)的列(因为是单列索引, 因此即使是 unique column 也只有一列) 或者 常量表达式
+        }
+}
+
+func ComposeDNFCondition(ctx sessionctx.Context, conditions ...Expression) Expression {
+	return composeConditionWithBinaryOp(ctx, conditions, ast.LogicOr)
+}
+
+// composeConditionWithBinaryOp composes condition with binary operator into a balance deep tree, which benefits a lot for pb decoder/encoder.
+func composeConditionWithBinaryOp(ctx sessionctx.Context, conditions []Expression, funcName string) Expression {
+	return NewFunctionInternal(ctx, funcName,
+		types.NewFieldType(mysql.TypeTiny),
+		composeConditionWithBinaryOp(ctx, conditions[:length/2], funcName),
+		composeConditionWithBinaryOp(ctx, conditions[length/2:], funcName))
+}
+
+// 以 标量函数/标量值 作为 解析树 叶子层
+// newFunctionImpl creates a new scalar function or constant.
+func newFunctionImpl(ctx sessionctx.Context, fold bool, funcName string, retType *types.FieldType, args ...Expression) (Expression, error) {
 }
 ```
 
@@ -1208,25 +1251,30 @@ func detachColumnCNFConditions(sctx sessionctx.Context, conditions []expression.
 ```go
 // Point is the end point of range interval.
 type point struct {
-	// types.Datum -- 用于替代 interface{}
-	value types.Datum
-	excl  bool // exclude
-	start bool
+    // types.Datum -- 用于替代 interface{}
+    value types.Datum
+    // 是否为开区间
+    excl  bool // exclude
+    // 是否为左端点
+    start bool
 }
 
 // Range represents a range generated in physical plan building phase.
 type Range struct {
-	LowVal  []types.Datum
-	HighVal []types.Datum
+    LowVal  []types.Datum
+    HighVal []types.Datum
 
-	LowExclude  bool // Low value is exclusive.
-	HighExclude bool // High value is exclusive.
+    // 左边界是否为开区间
+    LowExclude  bool // Low value is exclusive.
+    // 右边界是否为开区间
+    HighExclude bool // High value is exclusive.
 }
 ```
 
 各种 `buildFrom*` 函数表示一个具体函数的 range 方法(例如 `buildFromIn` 处理 in 函数)
 
 ```go
+// .../tidb/util/ranger/detacher.go
 func (r *builder) buildFromIn(expr *expression.ScalarFunction) ([]point, bool) {
 }
 ```
@@ -1234,16 +1282,36 @@ func (r *builder) buildFromIn(expr *expression.ScalarFunction) ([]point, bool) {
 ```go
 // 区间交
 func (r *builder) intersection(a, b []point) []point {
-	return r.merge(a, b, false)
+    return r.merge(a, b, false)
 }
 
 // 区间并
 func (r *builder) union(a, b []point) []point {
-	return r.merge(a, b, true)
+    return r.merge(a, b, true)
 }
 
-func (r *builder) merge(a, b []point, bool) []point {
+// TODO: merge 交/并的逻辑顺序 ==>
+//
+func (r *builder) merge(a, b []point, union bool) []point {
+	if union {
+		requiredInRangeCount = 1 // 并集
+	} else {
+		requiredInRangeCount = 2 // 交集
+    }
 
+		if val.start { // 求并集
+			inRangeCount++
+			if inRangeCount == requiredInRangeCount {
+				// just reached the required in range count, a new range started.
+				merged = append(merged, val)
+			}
+		} else { // 求交集
+			if inRangeCount == requiredInRangeCount {
+				// just about to leave the required in range count, the range is ended.
+				merged = append(merged, val)
+			}
+			inRangeCount--
+		}
 }
 ```
 
@@ -1254,9 +1322,8 @@ func (r *builder) merge(a, b []point, bool) []point {
 
 ```go
 func appendPoints2Ranges(sc *stmtctx.StatementContext, origin []*Range, rangePoints []point,
-	ft *types.FieldType) ([]*Range, error) {
+    ft *types.FieldType) ([]*Range, error) {
 }
-
 
 func unionRanges(sc *stmtctx.StatementContext, ranges []*Range) ([]*Range, error) {
 }
@@ -1332,23 +1399,23 @@ func unionRanges(sc *stmtctx.StatementContext, ranges []*Range) ([]*Range, error
 
 ```go
 type Job struct {
-	ID       int64      `json:"id"`
-	Type     ActionType `json:"type"`
-	SchemaID int64      `json:"schema_id"`
-	TableID  int64      `json:"table_id"`
-	State    JobState   `json:"state"`
-	Error    string     `json:"err"`
-	// every time we meet an error when running job, we will increase it
-	ErrorCount int64         `json:"err_count"`
-	Args       []interface{} `json:"-"`
-	// we must use json raw message for delay parsing special args.
-	RawArgs     json.RawMessage `json:"raw_args"`
-	SchemaState SchemaState     `json:"schema_state"`
-	// snapshot version for this job.
-	SnapshotVer uint64 `json:"snapshot_ver"`
-	// unix nano seconds
-	// TODO: use timestamp allocated by TSO
-	LastUpdateTS int64 `json:"last_update_ts"`
+    ID       int64      `json:"id"`
+    Type     ActionType `json:"type"`
+    SchemaID int64      `json:"schema_id"`
+    TableID  int64      `json:"table_id"`
+    State    JobState   `json:"state"`
+    Error    string     `json:"err"`
+    // every time we meet an error when running job, we will increase it
+    ErrorCount int64         `json:"err_count"`
+    Args       []interface{} `json:"-"`
+    // we must use json raw message for delay parsing special args.
+    RawArgs     json.RawMessage `json:"raw_args"`
+    SchemaState SchemaState     `json:"schema_state"`
+    // snapshot version for this job.
+    SnapshotVer uint64 `json:"snapshot_ver"`
+    // unix nano seconds
+    // TODO: use timestamp allocated by TSO
+    LastUpdateTS int64 `json:"last_update_ts"`
 }
 ```
 

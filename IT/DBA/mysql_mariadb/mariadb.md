@@ -90,6 +90,14 @@
 			- [注意事项](#注意事项)
 			- [索引优化](#索引优化)
 			- [字符串索引](#字符串索引)
+			- [索引失效案例及其起因](#索引失效案例及其起因)
+				- [索引低区分度的大表](#索引低区分度的大表)
+				- [null](#null)
+				- [OR](#or)
+				- [复合索引](#复合索引)
+				- [函数操作和运算操作](#函数操作和运算操作)
+				- [like 操作](#like-操作)
+				- [隐式类型转换](#隐式类型转换)
 		- [优化器](#优化器)
 			- [MySQL 优化指令](#mysql-优化指令)
 		- [脏页及其控制处理](#脏页及其控制处理)
@@ -104,6 +112,7 @@
 			- [通过索引优化](#通过索引优化)
 				- [为 (city, name) 建立联合索引](#为-city-name-建立联合索引)
 				- [为 (city, name, age) 建立联合索引, 以使用 *覆盖索引*](#为-city-name-age-建立联合索引-以使用-覆盖索引)
+			- [order by limit 的不稳定输出](#order-by-limit-的不稳定输出)
 			- [结论](#结论)
 		- [随机获取行](#随机获取行)
 			- [内存临时表](#内存临时表)
@@ -111,7 +120,7 @@
 			- [优先队列(最大/最小堆)算法](#优先队列最大最小堆算法)
 		- [函数与索引](#函数与索引)
 			- [条件字段的函数操作](#条件字段的函数操作)
-			- [隐式类型转换](#隐式类型转换)
+			- [隐式类型转换](#隐式类型转换-1)
 			- [隐式字符编码转换](#隐式字符编码转换)
 		- [事务与查询与锁](#事务与查询与锁)
 		- [MySQL 加锁规则](#mysql-加锁规则)
@@ -175,10 +184,11 @@
 			- [全表扫描时, InnoDB 层的影响](#全表扫描时-innodb-层的影响)
 			- [课后问题](#课后问题-2)
 		- [JOIN](#join)
-			- [NLJ(Index Nested-Loop Join)](#nljindex-nested-loop-join)
-			- [Simple Nested-Loop Join](#simple-nested-loop-join)
+			- [INLJ/Index Nested-Loop Join](#inljindex-nested-loop-join)
+			- [SNLJ(Simple Nested-Loop Join)](#snljsimple-nested-loop-join)
 			- [BNL(Block Nested-Loop Join)](#bnlblock-nested-loop-join)
-			- [课后问题 (BNL 的性能问题)](#课后问题-bnl-的性能问题)
+			- [HJ(Hash Join)](#hjhash-join)
+			- [课后问题(BNL 的性能问题)](#课后问题bnl-的性能问题)
 			- [MRR(Multi-Range Read) 优化](#mrrmulti-range-read-优化)
 			- [BKA(Batched Key Access)](#bkabatched-key-access)
 			- [课后问题](#课后问题-3)
@@ -208,7 +218,7 @@
 			- [insert into...on duplicate key update](#insert-intoon-duplicate-key-update)
 		- [复制表](#复制表)
 			- [mysqldump](#mysqldump)
-				- [特点:](#特点)
+				- [特点](#特点)
 			- [导出 CSV 文件](#导出-csv-文件)
 			- [物理拷贝](#物理拷贝)
 		- [Grant](#grant)
@@ -254,7 +264,15 @@
 		- [触发器/存储过程](#触发器存储过程)
 		- [`sql_mode`](#sql_mode)
 			- [`ONLY_FULL_GROUP_BY`](#only_full_group_by)
+		- [MySQL 索引结构](#mysql-索引结构)
 		- [InnoDB 与 B+ Tree](#innodb-与-b-tree)
+		- [地理信息](#地理信息)
+			- [Geometry](#geometry)
+			- [R-Tree](#r-tree)
+		- [Group by 与索引扫描](#group-by-与索引扫描)
+			- [松散索引扫描(Loose Index Scan)](#松散索引扫描loose-index-scan)
+			- [Skip scan range](#skip-scan-range)
+			- [紧凑索引扫描(Tight Index Scan)](#紧凑索引扫描tight-index-scan)
 
 <!-- /TOC -->
 
@@ -1010,9 +1028,9 @@ select count(distinct col)/count(*) as dist from table;
 
 解析: 函数和运算操作都有 可能 破坏索引的 **有序性**
 
-##### like "%any"
+##### like 操作
 
-解析: 字符串索引是顺序的复合索引
+解析: 字符串索引是 **顺序** 的复合索引(MySQL 8.0 似乎添加了 DESC-Index), 能否索引 "%any" 这类?
 
 ##### 隐式类型转换
 
@@ -2072,7 +2090,7 @@ For each row r in R do      -- 扫描R表
       Then output the tuple -- 输出结果集
 ```
 
-#### SNLJ/Simple Nested-Loop Join
+#### SNLJ(Simple Nested-Loop Join)
 
 无索引无优化
 
@@ -2086,7 +2104,7 @@ For each row r in R do                     -- 扫描R表
       Then output the tuple                -- 那就输出结果集
 ```
 
-#### BNL/Block Nested-Loop Join
+#### BNL(Block Nested-Loop Join)
 
 MySQL 无索引优化
 
@@ -2107,7 +2125,7 @@ MySQL 无索引优化
 
 ![成本比较](1166598-20180111171301894-2066907381.png)
 
-#### Hash Join/HJ
+#### HJ(Hash Join)
 
 MariaDB 的 Hash Join:
 
@@ -2462,7 +2480,7 @@ mysqldump -h$host -P$port -u$user --add-locks=0 --no-create-info --single-transa
 source /client_path/to/result.sql
 ```
 
-##### 特点:
+##### 特点
 
 - 能够筛选, 导出部分数据
 - 无法使用 join 等复杂的条件写法
@@ -3016,6 +3034,58 @@ MyISAM and InnoDB support both SPATIAL and non-SPATIAL indexes.
 
 #### R-Tree
 
-### SQL 优化器的局限
+TODO:
 
-#### 关联子查询
+### Group by 与索引扫描
+
+[2016-blog](https://blog.csdn.net/tianlianchao1982/article/details/51565616)
+[group-by-optimization](https://dev.mysql.com/doc/refman/8.0/en/group-by-optimization.html)
+
+#### 松散索引扫描(Loose Index Scan)
+
+Group by 要使用上 Loose Index Scan, 需要满足以下条件:
+- The query is over a single table
+- The GROUP BY names only columns that form a leftmost prefix of the index and no other columns
+- The only aggregate functions used in the select list (if any) are MIN() and MAX(), and all of them refer to the same column. The column must be in the index and must immediately follow the columns in the GROUP BY
+- Any other parts of the index than those from the GROUP BY referenced in the query must be constants (that is, they must be referenced in equalities with constants), except for the argument of MIN() or MAX() functions.
+- For columns in the index, full column values must be indexed, not just a prefix. For example, with c1 VARCHAR(20), INDEX (c1(10)), the index uses only a prefix of c1 values and cannot be used for Loose Index Scan.
+- after **5.5** , AVG(DISTINCT), SUM(DISTINCT), and COUNT(DISTINCT) are supported. AVG(DISTINCT) and SUM(DISTINCT) take a single argument. COUNT(DISTINCT) can have more than one column argument.
+- There must be no GROUP BY or DISTINCT clause in the query.
+
+#### Skip scan range
+
+version: `>=MySQL 8.0.13`
+
+原理:
+- Skip between distinct values of the first index part, f1 (the index prefix).
+- Perform a subrange scan on each distinct prefix value for the f2 > 40 condition on the remaining index part.
+
+假设如下场景:
+`Table T has at least one compound index with key parts of the form ([A_1, ..., A_k,] B_1, ..., B_m, C [, D_1, ..., D_n]). Key parts A and D may be empty, but B and C must be nonempty.`/表 T 存在一个复合索引, 形如 ([A_1, ..., A_k,] B_1, ..., B_m, C [, D_1, ..., D_n]) 其中 A 和 D 可能为空, B 和 C 必然不为空
+
+LSR 适用于以下场景:
+- The query references only one table / 该查询仅引用一个表
+- The query does not use GROUP BY or DISTINCT / 该查询不使用 Group by 和 Distinct
+- The query references only columns in the index / where 部分不能使用非同一索引的列
+- The predicates on A_1, ..., A_k must be equality predicates and they must be constants. This includes the IN() operator / 如果使用 A 列, 那么必须使用 相等谓词且必须是常量 OR IN 运算符(否则那就是单纯前缀索引了)
+- The query must be a conjunctive query; that is, an AND of OR conditions: (cond1(key_part1) OR cond2(key_part1)) AND (cond1(key_part2) OR ...) AND ... / where 最外层必须是一个 CNF 范式(逻辑与)
+- There must be a range condition on C. / 必须使用 C 的范围搜索 (??)
+- Conditions on D columns are permitted. Conditions on D must be in conjunction with the range condition on C. / 如果需要使用 D 列, 则需要配合 C 列一起使用(食用) (??)
+
+#### 紧凑索引扫描(Tight Index Scan)
+
+扫描索引的一个范围 或者 全索引扫描
+
+条件: 在查询中存在常量相等 where 条件字段(索引中的字段), 且该字段在 group by 指定的字段的 **前面或者中间**
+
+示例:
+
+```sql
+-- c2 在 c1 , c3 之前, c2='a' 填充这个坑, 组成一个索引前缀, 因而能够使用紧凑索引扫描
+select c1,c2,c3 from t1 where c2 = 'a' group by c1,c3
+
+-- c1 在索引的最前面, c1=a 和 group by c2, c3 组成一个索引前缀, 因而能够使用紧凑索引扫描
+select c1,c2,c3 from t1 where c1 = 'a' group by c2,c3
+```
+
+松散索引扫描 和 紧凑索引扫描 的最大区别在于: 是否需要扫描 整个索引 或者 整个范围扫描

@@ -15,14 +15,14 @@
 - syslog-ident -- 系统记录器中的身份
 - syslog-facility -- 系统记录器中的级别,  默认 local0
 
-## 快照配置 -- RDB模式
+## 快照配置 -- RDB 模式
 
 - rdbcompression -- redis 保存数据到磁盘时默认进行 LZF 压缩,  通过该设置取消
 - dbfilename/dir -- redis 保存文件名/路径
 
 ## (主从)复制配置
 
-- slaveof [masterip] [masterport] -- 设置 redis 为slav服务,  以及 redis 的同步对象数据库
+- slaveof [masterip] [masterport] -- 设置 redis 为 slave 服务,  以及 redis 的同步对象数据库
 - masterauth [master-password]
 
 - slave-serve-stale-data -- 当 redis 与主数据库的连接断开,  设置是否正常响应客户端的请求: (1)yes-任然响应请求,  而且(*possibly with out of data data, or data set may just be empty if this is the first synchronization*.);(2)no-除了 INFO 和 SLAVEOF 请求, 任何请求返回一个异常
