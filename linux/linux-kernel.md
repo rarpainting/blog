@@ -242,6 +242,7 @@ struct task_struct {
   unsigned short ioprio;
 
   unsigned long policy;
+  // 位数和系统 CPU 线程数相同
   cpumask_t cpus_allowed;
   unsigned int time_slice;
 

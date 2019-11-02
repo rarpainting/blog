@@ -63,6 +63,7 @@
 			- [单列索引](#单列索引-1)
 			- [多列索引](#多列索引-1)
 	- [Sort Merge Join](#sort-merge-join)
+		- [内存 OOM](#内存-oom)
 	- [Insert 详解](#insert-详解)
 - [builddatabase](#builddatabase)
 	- [TiDB 的异步 schema 变更实现](#tidb-的异步-schema-变更实现)
@@ -1334,7 +1335,111 @@ func unionRanges(sc *stmtctx.StatementContext, ranges []*Range) ([]*Range, error
 
 关键词: Index, Merge
 
+假设:
+- 外表为 A, 内表为 B
+- join-key 为 a, 且 A, B 表上的 a 均有索引
+
+执行步骤:
+1. 顺序读取外表 A 直到 join-key 出现不同的值, 把相同的 key 的行放入到数组 a1 , 同样规则读取表 B , 把相同的 key 的行放入到数组 a2 ; 如果外表数据或者内表数组读完, 则退出
+2. 从 a1 读取当前第一行数据, 记为 v1; 从 a2 读取当前第一行数据, 记为 v2
+3. 根据 join-key 比较 v1, v2, 结果为 cmpResult
+  - cmpResult>0 : v1 大于 v2 , 丢弃当前 a2 数据, 从内存中读取下一批数据
+  - cmpResult<0 : v1 小于 v2 , 外表 v1 没有内表相同的值, (如果需要, 例如 outer join)把外表数据输出到 resultGenerator
+  - cmpResult==0 : v1 等于 v2 , 那么遍历 a1 里面的数据, 跟 a2 的数据, 输出给 resultGenerator 作一次连接(Join)
+4. 回到 1 , 直到完成 join
+
 ![SMJ 过程](smj.png)
+
+```go
+// executor/merge_join.go
+// Next implements the Executor Next interface.
+func (e *MergeJoinExec) Next(ctx context.Context, req *chunk.Chunk) error {
+    // 预读取?
+	if !e.prepared {
+		if err := e.prepare(ctx, req.RequiredRows()); err != nil {
+			return err
+		}
+    }
+}
+
+func (e *MergeJoinExec) joinToChunk(ctx context.Context, chk *chunk.Chunk) (hasMor\e bool, err error) {
+    for {
+        // 是否到末尾 ? 末尾的 row 为 chunk.Row{}
+        // ?? 为什么 outerTable 里会有 row 参数
+		if e.outerTable.row == e.outerTable.iter.End() {
+			err = e.fetchNextOuterRows(ctx, chk.RequiredRows()-chk.NumRows())
+        }
+
+		cmpResult := -1
+		if e.outerTable.selected[e.outerTable.row.Idx()] && len(e.innerRows) > 0 {
+            // 比对
+            cmpResult, err = e.compare(e.outerTable.row, e.innerIter4Row.Current())
+        }
+
+		if cmpResult > 0 {
+            err = e.fetchNextInnerRows()
+        }
+
+		if cmpResult < 0 {
+            e.joiner.onMissMatch(false, e.outerTable.row, chk)
+        }
+
+        matched, isNull, err := e.joiner.tryToMatchInners(e.outerTable.row, e.innerIter4Row, chk)
+
+		e.outerTable.hasMatch = e.outerTable.hasMatch || matched
+        e.outerTable.hasNull = e.outerTable.hasNull || isNull
+
+		if e.innerIter4Row.Current() == e.innerIter4Row.End() {
+			if !e.outerTable.hasMatch {
+                // 有 = 的内容但是 MissMatch ?
+				e.joiner.onMissMatch(e.outerTable.hasNull, e.outerTable.row, chk)
+			}
+    }
+}
+
+// fetchNextInnerRows fetches the next join group, within which all the rows
+// have the same join key, from the inner table.
+func (e *MergeJoinExec) fetchNextInnerRows() (err error) {
+    // 获取 key 相同的行
+    e.innerRows, err = e.innerTable.rowsWithSameKey()
+    // 转换为 interator
+	e.innerIter4Row = chunk.NewIterator4Slice(e.innerRows)
+}
+
+// fetchNextOuterRows fetches the next Chunk of outer table. Rows in a Chunk
+// may not all belong to the same join key, but ar\e guaranteed to be sorted
+// according to the join key.
+func (e *MergeJoinExec) fetchNextOuterRows(ctx context.Context, requiredRows int) (err error) {
+	e.outerTable.selected, err = expression.VectorizedFilter(e.ctx, e.outerTable.filter, e.outerTable.iter, e.outerTable.selected)
+}
+
+func (t *mergeJoinInnerTable) rowsWithSameKey() ([]chunk.Row, error) {
+	for {
+        selectedRow, err := t.nextRow()
+        compareResult := compareChunkRow(t.keyCmpFuncs, selectedRow, t.firstRow4Key, t.joinKeys, t.joinKeys)
+    }
+}
+
+func (t *mergeJoinInnerTable) nextRow() (chunk.Row, error) {
+    for {
+			err := Next(t.ctx, t.reader, t.curResult)
+    }
+}
+
+func (e *MergeJoinExec) compare(outerRow, innerRow chunk.Row) (int, error) {
+    for i := range outerJoinKeys {
+        cmp, _, err := e.compareFuncs[i](e.ctx, outerJoinKeys[i], innerJoinKeys[i], outerRow, innerRow)
+    }
+}
+
+func () onMissMatch(hasNull bool, outer chunk.Row, chk *chunk.Chunk)
+```
+
+### 内存 OOM
+
+针对 innerTable/outerTable 一次获取相同 key 导致 OOM 的情况, TiDB 的做法:
+- 外表(outerTable)按次迭代外表数据, 再跟内表逐一对比作连接即可
+- 对于内表, 用 memory.Tracker 这个内存追踪器来记录当前内表已经使用的中间结果的内存大小, 如果它超过已设置的阈值, 我们会采取输出日志或者终止 SQL 继续运行的方法来规避 OOM 的发生
 
 ## Insert 详解
 
