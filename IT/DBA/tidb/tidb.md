@@ -1328,7 +1328,6 @@ func appendPoints2Ranges(sc *stmtctx.StatementContext, origin []*Range, rangePoi
 
 func unionRanges(sc *stmtctx.StatementContext, ranges []*Range) ([]*Range, error) {
 }
-
 ```
 
 ## Sort Merge Join
@@ -1397,6 +1396,18 @@ func (e *MergeJoinExec) joinToChunk(ctx context.Context, chk *chunk.Chunk) (hasM
     }
 }
 
+// fetchNextOuterRows fetches the next Chunk of outer table. Rows in a Chunk
+// may not all belong to the same join key, but ar\e guaranteed to be sorted
+// according to the join key.
+func (e *MergeJoinExec) fetchNextOuterRows(ctx context.Context, requiredRows int) (err error) {
+	e.outerTable.selected, err = expression.VectorizedFilter(e.ctx, e.outerTable.filter, e.outerTable.iter, e.outerTable.selected)
+}
+
+// expression/chunk_executor.go
+// 过滤例如 `t1 left outer join t2 on t1.a=100` 下的 t1
+func VectorizedFilter(ctx sessionctx.Context, filters []Expression, iterator *chunk.Iterator4Chunk, selected []bool) (_ []bool, err error) {
+}
+
 // fetchNextInnerRows fetches the next join group, within which all the rows
 // have the same join key, from the inner table.
 func (e *MergeJoinExec) fetchNextInnerRows() (err error) {
@@ -1404,13 +1415,6 @@ func (e *MergeJoinExec) fetchNextInnerRows() (err error) {
     e.innerRows, err = e.innerTable.rowsWithSameKey()
     // 转换为 interator
 	e.innerIter4Row = chunk.NewIterator4Slice(e.innerRows)
-}
-
-// fetchNextOuterRows fetches the next Chunk of outer table. Rows in a Chunk
-// may not all belong to the same join key, but ar\e guaranteed to be sorted
-// according to the join key.
-func (e *MergeJoinExec) fetchNextOuterRows(ctx context.Context, requiredRows int) (err error) {
-	e.outerTable.selected, err = expression.VectorizedFilter(e.ctx, e.outerTable.filter, e.outerTable.iter, e.outerTable.selected)
 }
 
 func (t *mergeJoinInnerTable) rowsWithSameKey() ([]chunk.Row, error) {
@@ -1432,7 +1436,23 @@ func (e *MergeJoinExec) compare(outerRow, innerRow chunk.Row) (int, error) {
     }
 }
 
-func () onMissMatch(hasNull bool, outer chunk.Row, chk *chunk.Chunk)
+// executor/join.go
+type joiner interface {
+	// On these conditions, the caller calls this function to handle the
+	// unmatched outer rows according to the current join type:
+	//   1. 'SemiJoin': ignores the unmatched outer row.
+	//   2. 'AntiSemiJoin': appends the unmatched outer row to the result buffer.
+	//   3. 'LeftOuterSemiJoin': concats the unmatched outer row with 0 and
+	//      appends it to the result buffer.
+	//   4. 'AntiLeftOuterSemiJoin': concats the unmatched outer row with 1 and
+	//      appends it to the result buffer.
+	//   5. 'LeftOuterJoin': concats the unmatched outer row with a row of NULLs
+	//      and appends it to the result buffer.
+	//   6. 'RightOuterJoin': concats the unmatched outer row with a row of NULLs
+	//      and appends it to the result buffer.
+	//   7. 'InnerJoin': ignores the unmatched outer row.
+    onMissMatch(hasNull bool, outer chunk.Row, chk *chunk.Chunk)
+}
 ```
 
 ### 内存 OOM
