@@ -1406,6 +1406,24 @@ func (e *MergeJoinExec) fetchNextOuterRows(ctx context.Context, requiredRows int
 // expression/chunk_executor.go
 // 过滤例如 `t1 left outer join t2 on t1.a=100` 下的 t1
 func VectorizedFilter(ctx sessionctx.Context, filters []Expression, iterator *chunk.Iterator4Chunk, selected []bool) (_ []bool, err error) {
+	selected, _, err = VectorizedFilterConsiderNull(ctx, filters, iterator, selected, nil)
+}
+
+//
+func VectorizedFilterConsiderNull(ctx sessionctx.Context, filters []Expression, iterator *chunk.Iterator4Chunk, selected []bool, isNull []bool) ([]bool, []bool, error) {
+        // 向量化的 filter
+		if !filter.Vectorized() {
+			canVectorized = false
+			break
+        }
+
+	if canVectorized && ctx.GetSessionVars().EnableVectorizedExpression {
+        // 向量化过滤
+		selected, isNull, err = vectorizedFilter(ctx, filters, iterator, selected, isNull)
+	} else {
+        // 循环过滤
+		selected, isNull, err = rowBasedFilter(ctx, filters, iterator, selected, isNull)
+	}
 }
 
 // fetchNextInnerRows fetches the next join group, within which all the rows
@@ -1438,6 +1456,7 @@ func (e *MergeJoinExec) compare(outerRow, innerRow chunk.Row) (int, error) {
 
 // executor/join.go
 type joiner interface {
+    // 不同的 Jion 对同一 missmatch 有不同的输出
 	// On these conditions, the caller calls this function to handle the
 	// unmatched outer rows according to the current join type:
 	//   1. 'SemiJoin': ignores the unmatched outer row.
@@ -1462,6 +1481,58 @@ type joiner interface {
 - 对于内表, 用 memory.Tracker 这个内存追踪器来记录当前内表已经使用的中间结果的内存大小, 如果它超过已设置的阈值, 我们会采取输出日志或者终止 SQL 继续运行的方法来规避 OOM 的发生
 
 ## Insert 详解
+
+TiDB 支持以下几种 Insert 语法:
+- `Basic INSERT`
+- `INSERT IGNORE`
+- `INSERT ON DUPLICATE KEY UPDATE`
+- `INSERT IGNORE ON DUPLICATE KEY UPDATE`
+- `REPLACE`
+- `LOAD DATA`
+
+以下分析默认 TiDB 未开启悲观锁([pessimistic](https://zhuanlan.zhihu.com/p/79034576))
+
+```go
+// InsertExec represents an insert executor.
+type InsertExec struct {
+	*InsertValues
+	OnDuplicate    []*expression.Assignment
+	evalBuffer4Dup chunk.MutRow
+	curInsertVals  chunk.MutRow
+	row4Update     []types.Datum
+
+	Priority mysql.PriorityEnum
+}
+
+// InsertExec.exec 是执行器的实际操作入口
+func (e *InsertExec) exec(ctx context.Context, rows [][]types.Datum) error {
+	ignoreErr := sessVars.StmtCtx.DupKeyAsWarning
+
+    /* 逻辑:
+    1. 如果使用 IGNORE 关键字, 则在执行 INSERT 语句时发生的重复键错误将被忽略; 例如, 如果没有 IGNORE , 则复制表中现有 UNIQUE 索引或 PRIMARY KEY 值的行会导致重复键错误, 并且该语句将中止; 使用 IGNORE, 该行将被丢弃, 并且不会发生错误(, 同时在 `show warning` 上记录)
+    2. 但是, 如果还指定了 `on duplicate update`, 则重复的行将被更新
+    3. 在将记录添加到表之前, 在 insert ignor\e 中使用 BatchGet 将行标记为重复
+    4. 如果指定了 `ON DUPLICATE KEY UPDATE`, 但未指定 `IGNORE` 关键字, 则将对 重复 插入的键检查要插入的行并更新到新行, 如果更新后的行依然存在冲突, 则报错
+    */
+	if len(e.OnDuplicate) > 0 {
+		err := e.batchUpdateDupRows(ctx, rows)
+		if err != nil {
+			return err
+		}
+	} else if ignoreErr {
+		err := e.batchCheckAndInsert(ctx, rows, e.addRecord)
+		if err != nil {
+			return err
+		}
+	} else {
+		for _, row := range rows {
+			if _, err := e.addRecord(ctx, row); err != nil {
+				return err
+			}
+		}
+	}
+}
+```
 
 ---
 
