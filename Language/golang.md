@@ -44,6 +44,9 @@
 			- [`go-sql-driver/mysql`](#go-sql-drivermysql)
 			- [github issues](#github-issues)
 		- [Decimal](#decimal)
+		- [1.13 的 `sync.Pool`](#113-的-syncpool)
+			- [victim cache](#victim-cache)
+			- [Pool](#pool)
 
 <!-- /TOC -->
 
@@ -1134,3 +1137,133 @@ default-authentication-plugin = mysql_native_password
 ### Decimal
 
 [Go如何精确计算小数](https://imhanjm.com/2017/08/27/go%E5%A6%82%E4%BD%95%E7%B2%BE%E7%A1%AE%E8%AE%A1%E7%AE%97%E5%B0%8F%E6%95%B0-decimal%E7%A0%94%E7%A9%B6/)
+
+### 1.13 的 `sync.Pool`
+
+#### victim cache
+
+受害者缓存(victim cache), 缓存技术:
+
+>牺牲缓存是一种硬件缓存, 旨在减少冲突未命中并改善直接映射缓存的命中延迟
+>
+> 它在 1 级缓存的重新填充路径中使用, 这样将从缓存中逐出的所有缓存行都缓存在受害缓存中。
+因此, 仅当数据从1级缓存中抛出时, 才会填充受害者缓存。
+如果在级别 1 中未命中, 则查找受害者缓存。
+如果结果访问是命中, 则将交换 1 级缓存行和匹配的受害者缓存行的内容
+
+#### Pool
+
+![pool.Get](golang-pool-Get.png)
+
+```go
+type Pool struct{
+  noCopy     noCopy
+  local      unsafe.Pointer
+  localSize  uintptr
+  victim     unsafe.Pointer
+  victimSize uintptr
+  New        func() interface{}
+}
+
+// Local per-P Pool appendix.
+type poolLocalInternal struct {
+	private interface{} // Can be used only by the **respective P**.
+	shared  poolChain   // Local P can pushHead/popHead; any P can popTail.
+}
+
+type poolLocal struct {
+	poolLocalInternal
+
+	// Prevents false sharing on widespread platforms with
+	// 128 mod (cache line size) = 0 .
+	pad [128 - unsafe.Sizeof(poolLocalInternal{})%128]byte
+}
+
+type poolChain struct {
+	// head is the poolDequeue to push to. This is only accessed
+	// by the producer, so doesn't need to be synchronized.
+	head *poolChainElt
+
+	// tail is the poolDequeue to popTail from. This is accessed
+	// by consumers, so reads and writes must be atomic.
+	tail *poolChainElt
+}
+
+// poolChain 环型缓存区
+type poolChainElt struct {
+  poolDequeue
+
+	next, prev *poolChainElt
+}
+
+// poolDequeue is a lock-free fixed-size
+// single-producer, multi-consumer queue.
+// producer can both push and pop from the head,
+// and consumers can pop from the tail.
+type poolDequeue struct {
+  // headTail packs together a 32-bit head index and a 32-bit tail index
+  // Both ar\e indexes into vals modulo len(vals)-1.
+	//
+	// tail = index of **oldest** data in queue
+	// head = index of next slot to fill
+	//
+	// Slots in the range [tail, head) ar\e owned by consumers.
+	//
+	// The head index is stored in the most-significant bits so
+	// that we can atomically *add* to it and the overflow is
+	// harmless.
+	headTail uint64
+
+	// vals is a ring buffer of interface{} values stored in this
+	// dequeue. The size of this must be a power of 2.
+	vals []eface
+}
+```
+
+```go
+func (p *Pool) Get() interface{} {
+  // 将当前的 G 与 P 固定并禁用抢占
+  // 返回 `poolLocal`(如果未初始化则执行初始化)
+  // pool 使用后通过 runtime_procUnpin() 解除固定
+  l, pid := p.pin()
+
+  // 从 p 的本地池中获取缓存
+  x := l.private
+
+	if x == nil {
+    // 本地池中没有缓存, 从 poolChain.head 开始, 从当前链上获取
+    x, _ = l.shared.popHead()
+
+		if x == nil {
+      // 两次没拿到缓存, 遍历各个 pid 获取
+      // 其中会尝试从 p.locals 和 p.victim 的 poolChain 中获取
+      // 如果都没有, 最后会将当前 p.victim 置空
+			x = p.getSlow(pid)
+    }
+  }
+
+  // 解除 G 与 P 的固定
+  runtime_procUnpin()
+
+  // 新建缓存
+	if x == nil && p.New != nil {
+		x = p.New()
+	}
+}
+
+// poolCleanup 在 runtime 中适时调用
+func init() {
+	runtime_registerPoolCleanup(poolCleanup)
+}
+
+func poolCleanup() {
+  // Drop victim caches from all pools.
+}
+```
+
+![pool.Put](golang-pool-Put.png)
+
+```go
+// Put adds x to the pool.
+func (p *Pool) Put(x interface{}) {}
+```

@@ -1482,13 +1482,15 @@ type joiner interface {
 
 ## Insert 详解
 
-TiDB 支持以下几种 Insert 语法:
-- `Basic INSERT`
-- `INSERT IGNORE`
-- `INSERT ON DUPLICATE KEY UPDATE`
-- `INSERT IGNORE ON DUPLICATE KEY UPDATE`
-- `REPLACE`
-- `LOAD DATA`
+TiDB 支持以下几种 Insert 语法, 他们的主要区别:
+| insert 语法                             | 唯一键冲突的处理                                             |
+| :-                                      | :-                                                           |
+| `Basic INSERT`                          | 放弃插入, 所有已插入的行回滚, 报错                           |
+| `INSERT IGNORE`                         | 放弃插入, 不报错, 已检查的行不回滚, 错误暂存在 `show warning` |
+| `INSERT ON DUPLICATE KEY UPDATE`        | 放弃插入, 改成更新冲突的行, 如果更新的值再次冲突则报错       |
+| `INSERT IGNORE ON DUPLICATE KEY UPDATE` | 放弃插入, 改成更新冲突的行, 如果更新的值再次冲突则不报错退出 |
+| `REPLACE`                               | 删除遇到的所有冲突行, 直到没有冲突后再插入数据               |
+| `LOAD DATA`                             |                                                              |
 
 以下分析默认 TiDB 未开启悲观锁([pessimistic](https://zhuanlan.zhihu.com/p/79034576))
 
@@ -1512,7 +1514,7 @@ func (e *InsertExec) exec(ctx context.Context, rows [][]types.Datum) error {
     1. 如果使用 IGNORE 关键字, 则在执行 INSERT 语句时发生的重复键错误将被忽略; 例如, 如果没有 IGNORE , 则复制表中现有 UNIQUE 索引或 PRIMARY KEY 值的行会导致重复键错误, 并且该语句将中止; 使用 IGNORE, 该行将被丢弃, 并且不会发生错误(, 同时在 `show warning` 上记录)
     2. 但是, 如果还指定了 `on duplicate update`, 则重复的行将被更新
     3. 在将记录添加到表之前, 在 insert ignor\e 中使用 BatchGet 将行标记为重复
-    4. 如果指定了 `ON DUPLICATE KEY UPDATE`, 但未指定 `IGNORE` 关键字, 则将对 重复 插入的键检查要插入的行并更新到新行, 如果更新后的行依然存在冲突, 则报错
+    4. 如果指定了 `ON DUPLICATE KEY UPDATE`, 但未指定 `IGNORE` 关键字, 则将对 重复 插入的键检查要插入的行并更新到新行, 如果更新后的行依然存在冲突, 则报错; 否则不报错退出
     */
 	if len(e.OnDuplicate) > 0 {
 		err := e.batchUpdateDupRows(ctx, rows)
@@ -1531,6 +1533,56 @@ func (e *InsertExec) exec(ctx context.Context, rows [][]types.Datum) error {
 			}
 		}
 	}
+}
+
+// `insert ignore` 逻辑
+// 检查重复的行, 忽略并作为警告
+// batchCheckAndInsert checks rows with duplicate errors.
+// All duplicate rows will be ignored and appended as duplicate warnings.
+func (e *InsertValues) batchCheckAndInsert(ctx context.Context, rows [][]types.Datum, addRecord func(ctx context.Context, row []types.Datum) (int64, error)) error {
+    toBeCheckedRows, err := getKeysNeedCheck(ctx, e.ctx, e.Table, rows)
+
+    // 一次查询 存储引擎, 填充非 index 部分
+	if _, err = prefetchUniqueIndices(ctx, txn, toBeCheckedRows); err != nil {}
+}
+
+// ../executor/batch_check.go
+// 从待插入的行中提取出记录键/唯一索引键, 用于检测索引冲突
+// 减少从存储引擎中重复读取的操作
+func getKeysNeedCheck(ctx context.Context, sctx sessionctx.Context, t table.Table, rows [][]types.Datum) ([]toBeCheckedRow, error) {
+	for _, row := range rows {
+        toBeCheckRows, err = getKeysNeedCheckOneRow(sctx, t, row, nUnique, handleCol, toBeCheckRows)
+    }
+}
+
+// `INSERT ON DUPLICATE KEY UPDATE` 的逻辑, 用于批量插入/更新
+// batchUpdateDupRows updates multi-rows in batch if they ar\e duplicate with rows in table.
+func (e *InsertExec) batchUpdateDupRows(ctx context.Context, newRows [][]types.Datum) error {
+    toBeCheckedRows, err := getKeysNeedCheck(ctx, e.ctx, e.Table, newRows)
+
+	for i, r := range toBeCheckedRows {
+        // 一般 index ?
+		if r.handleKey != nil {
+            err = e.updateDupRow(ctx, txn, r, handle, e.OnDuplicate)
+        }
+
+        // unique index
+		for _, uk := range r.uniqueKeys {
+			err = e.updateDupRow(ctx, txn, r, handle, e.OnDuplicate)
+        }
+    }
+}
+
+// 确定有需要 duplicate update 的行
+// updateDupRow updates a duplicate row to a new row.
+func (e *InsertExec) updateDupRow(ctx context.Context, txn kv.Transaction, row toBeCheckedRow, handle int64, onDuplicate []*expression.Assignment) error {
+    oldRow, err := getOldRow(ctx, e.ctx, txn, row.t, handle, e.GenExprs)
+
+    // 和现有行对比, 确定 duplicate update 后是否仍冲突
+    _, _, _, err = e.doDupRowUpdate(ctx, handle, oldRow, row.row, e.OnDuplicate)
+    // duplicate update 的 ignor\e 逻辑 !!!
+	if e.ctx.GetSessionVars().StmtCtx.DupKeyAsWarning && kv.ErrKeyExists.Equal(err) {
+    }
 }
 ```
 
