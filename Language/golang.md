@@ -55,7 +55,6 @@
 如果要让一个对变量 v 的写操作 w 所产生的结果能够被对该变量的读操作 r 观察到, 那么需要同时满足如下两个条件
 
 - 读操作 r 未先于写操作 w 发生
-
 - 没有其他对此变量的写操作后于写操作 w 且 先于读操作 r 发生
 
 即在一轮读写操作中 其他写操作 / 本次写操作 w / 本次读操作 r
@@ -71,9 +70,9 @@
 
 channel 的 happen before 规则:
 - 第 n 个 `send` 一定 `happen before` 第 n 个 `receive finished`, 不管是 buffered channel 还是 unbuffered channel
-- 对于 capacity 为 m 的 channel, 第 n 个 `receive` 一定 `happen before` 第 (n+m) `send finished`
-- m=0 unbuffered. 第 n 个 `receive` 一定 `happen before` 第 n 个 `send finished`
-- channel 的 close 一定 `happen before` receive 端得到通知, 得到通知意味着 receive 收到一个 channel close 后的零值, 而 close 之后的 send 则发生 panic
+- 对于 capacity 为 m 的 buffered channel, 第 n 个 `receive` 一定 `happen before` 第 (n+m) `send finished`
+- m=0 unbuffered channel. 第 n 个 `receive` 一定 `happen before` 第 n 个 `send finished`
+- channel 的 close 一定 `happen before` receive 端得到通知, 得到通知意味着 *receive 收到一个 channel close 后的零值, 而 close 之后的 send 则发生 panic*
 
 ## go runtime
 
@@ -144,13 +143,13 @@ channel 的 happen before 规则:
 
 runtime 在初始化时启动 sysmon 线程, 周期性做 epoll 操作和 P 检测:
 - P 处于 Psyscall 并超过一个 sysmon 时间周期(20us) , 且有其他 G 任务, 则切换 P
-- P 为 Prunning , 并运行超过 10ms , 则将 P 的当前运行 G stackguard 设置为 StackPreempt(`(uint64)-1314`) , 通知调度器在 `morestack` 中调度 G
+- P 为 Prunning , 并运行超过 10ms , 则将 P 的当前运行 G stackguard 设置为 StackPreempt(`(uint64)-1314`) , 通知调度器在 `morestack`(Gcopystack 阶段) 中调度 G
 
 与 **linux 线程** 相比:
-- 没有时间片, 无优先级
+- 初始栈: goroutine 2K 的初始栈; linux (1~8)M 的初始栈
+- 切换开销: goroutine 由 runtime 调度, 期间不需要经过 系统调用(syscall) , 切换开销小 ; 半协同半抢占, 因此切换少
+- 无时间片, 无优先级
 - 调度环节为发生 **函数调用(`morestack`)** 时, 即如果一个 G 长时间没有调用任何函数, 那么该 G 也不会被调度
-- goroutine 2K 的初始栈; linux (1~8)M 的初始栈
-- goroutine 由 runtime 调度, 期间不需要经过 系统调用(syscall) , 切换开销小 ; 半协同半抢占, 因此切换少
 
 ## 编译指示
 
@@ -243,7 +242,7 @@ func First(query string, replicas ...Search) Result {
 
 解决方法:
 
-1. 申请足够的 chan , 缓存所有的结果
+1. 申请足够的 chan , 消费/缓存所有的结果
 
 ```go
 func First(query string, replicas ...Search) Result {
@@ -284,7 +283,7 @@ func First(query string, replicas ...Search) Result {
 }
 ```
 
-4. (??) 指针构成的 "循环引⽤" 加上 runtime.SetFinalizer 会导致内存泄露
+4. (??) 指针构成的 **循环引⽤** 加上 runtime.SetFinalizer 会导致内存泄露
 
 ### 使用指针接受方法
 
@@ -336,9 +335,9 @@ typ: {
 
 ### String
 
-`len(string)` 的结果是 []byte 的结果
-
-但是 `range string` 的结果是 []rune 的结果
+对于 utf8 类型的 string
+- `len(string)` 的结果是 `[]byte` 的结果
+- 但是 `range string` 的结果是 `[]rune` 的结果
 
 ### Slice
 
@@ -389,7 +388,7 @@ type imethod struct {
 ```go
 // runtime/runtime2.go
 
-// 记录成功对应的接口类型和实际类型
+// 记录成功配对的接口类型和实际类型
 type itab struct {
   inter *interfacetype // point to interface type
   _type *_type // point to concrete type
@@ -406,6 +405,7 @@ type iface struct {
 
 ```go
 // runtime/iface.go
+const itabInitSize = 512
 
 // Note: change the formula in the mallocgc call in itabAdd if you change these fields.
 type itabTableType struct {
@@ -944,7 +944,7 @@ func entersyscall() {
 */
 //go:nosplit
 func reentersyscall(pc, sp uintptr) {
-  // 为 M 上锁
+  // 为 M 上锁(可重入锁)
   _g_.m.locks++
   // stackPreempt 为一个极大数
   _g_.stackguard0 = stackPreempt
@@ -956,9 +956,9 @@ func reentersyscall(pc, sp uintptr) {
   pp.m = 0
   _g_.m.p = 0
   // P 状态转为 Psyscall
-  // (为什么这时候 P 还需要转为 Psyscall , 这时候 P 应该可以继续获取 goroutine 成为 Pidle 吧 ??)
+  // TAG: (为什么这时候 P 还需要转为 Psyscall , 这时候 P 应该可以继续获取 goroutine 成为 Pidle 吧 ??)
   atomic.Store(&pp.status, _Psyscall)
-  // M 解锁 (M 可以脱离当前 goroutine ??)
+  // M 解锁
 	_g_.m.locks--
 }
 
@@ -968,8 +968,8 @@ func reentersyscall(pc, sp uintptr) {
 2. 调用 exitsyscallfast() 快速退出系统调用:
   1. Try to r\e-acquir\e the last P，如果成功就直接接 r\eturn
   2. Try to get any other idle P from allIdleP list
-  3. 没有获取到空闲的P
-3. 如果快速获取到了P:
+  3. 没有获取到空闲的 P
+3. 如果快速获取到了 P:
   1. 更新 G 的状态是 _Grunning
   2. 与 G 绑定的 M 会在退出系统调用之后继续执行
 4. 没有获取到空闲的 P:

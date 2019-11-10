@@ -189,7 +189,7 @@ MAC 子层的实现
 - `FIN_WAIT2`: active close 接到 ACK 后, 进入 `FIN_WAIT2`
 - `LAST_ACK`: passive close 主动调用 close(), 向 active close 发送 FIN, 随后进入 `LAST_ACK`
 - `TIME_WAIT`: active close 接收 FIN , 并发送 ACK, 随后进入 `TIME_WAIT`
-  - 在 active close 进入 `TIME_WAIT` 后, 需要 **2*MSL** 时间才会设置为 `CLOSED`
+  - 在 active close 进入 `TIME_WAIT` 后, 需要 **2 x MSL** 时间才会设置为 `CLOSED`
   - Maximum Segment Lifetime/MSL: 是一个数据报在 internetwork 中能存在的最长时间, 作用:
     - 保证了在 passive close 要求重发后, **重发 ACK**
     - (报文在网络中有生命周期, )可保证连接建立时, 不会因为收到旧报文而触发 RST

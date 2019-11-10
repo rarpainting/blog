@@ -273,6 +273,7 @@
 			- [松散索引扫描(Loose Index Scan)](#松散索引扫描loose-index-scan)
 			- [Skip scan range](#skip-scan-range)
 			- [紧凑索引扫描(Tight Index Scan)](#紧凑索引扫描tight-index-scan)
+		- [Insert into ... select 加锁规则](#insert-into--select-加锁规则)
 
 <!-- /TOC -->
 
@@ -3089,3 +3090,7 @@ select c1,c2,c3 from t1 where c1 = 'a' group by c2,c3
 ```
 
 松散索引扫描 和 紧凑索引扫描 的最大区别在于: 是否需要扫描 整个索引 或者 整个范围扫描
+
+### Insert into ... select 加锁规则
+
+select 本身如果加了 `lock in share mode` 或者 `for update` 会按照规则加锁, 但是锁的生命周期/lifecycle 只存在 select 语句期间, 即使开启了交互式事务(begin)也是一样
