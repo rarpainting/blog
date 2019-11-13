@@ -1171,11 +1171,17 @@ select city,name,age from t where city='杭州' order by name limit 1000;
 
 ##### `max_length_for_sort_data`
 
+default: 4096
+
 控制用于排序的行数据长度:
 - `<= max_length_for_sort_data`: 全字段排序
 - `> max_length_for_sort_data`: rowid 排序
 
 ##### `sort_buffer_size`
+
+default:
+- `innodb_sort_buffer_size`: 1048576
+- `sort_buffer_size`: 262144
 
 mysql 为排序设置的 sort_buffer 大小
 
@@ -1205,7 +1211,9 @@ select VARIABLE_VALUE into @b from performance_schema.session_status where varia
 select @b-@a;
 ```
 
-**注意: 如果需要用到临时文件, 则会使用外部排序(仅是临时文件是归并, 还是 sort_buffer 的算法也替换到归并?), 外部排序一般使用归并排序**
+注意
+- 如果需要用到临时文件, 则会使用外部排序, 外部排序一般使用归并排序(k 路归并)
+- 否则通过 堆排序(少量) 或者 快速排序(无 limit)
 
 #### 通过索引优化
 
@@ -1290,7 +1298,7 @@ select word from words order by rand() limit 3;
 ```
 
 内部流程:
-1. 创建一个临时表(为了多出的 rand() 字段); 这个临时表使用的是 memory 引擎, 表里有两个字段, 第一个字段是 *double* 类型(R), 第二个字段是 *varchar(64)* 类型(W); 且该表没有索引
+1. 创建一个临时表(为了多出的 `rand()` 字段); 这个临时表使用的是 memory 引擎, 表里有两个字段, 第一个字段是 *double* 类型(R), 第二个字段是 *varchar(64)* 类型(W); 且该表没有索引
 2. 从 `words` 表中, 按主键顺序取出所有的 word 值, 对于每一个 word 值, 调用 rand() 生成一个大于 0 小于 1 的随机小数(double), 并把这个 随机小数(double) 和 word(varchar) 分别存入临时表的 R 和 W 字段中, 到此, 扫描行数是 10000
 3. 目前临时表中有 10000 行数据, 接下来需要在没有索引的内存临时表中, 按照字段 R(double) 排序
 4. 初始化 sort_buffer, sort_buffer 中有两个字段, double 和 整数
@@ -1307,7 +1315,7 @@ select word from words order by rand() limit 3;
 - 对于有主键的 InnoDB 表来说, 这个 rowid 就是主键 ID
 - 对于没有主键的 InnoDB 表来说, 这个 rowid 就是由 **InnoDB** 生成的长度为 6 byte(48bit)的 rowid
 - memory 引擎不是索引组织表, 在这个例子里面, 你可以认为它就是一个 **数组** , 这个 rowid 其实就是数组的下标(尽管 memory 并没有 rowid)
-- rowid 是对 **InnoDB** 生效, 对 MySQL 透明的, 所以 **优化器** **不能** 利用 rowid 作为主键优化
+- rowid 是对 存储引擎 生效, 对 MySQL 透明的, 所以 **优化器** **不能** 利用 rowid 作为主键优化
 
 即 **order by rand() 使用了内存临时表, 内存临时表排序的时候使用了 rowid 排序方法**
 
@@ -1339,6 +1347,7 @@ DEALLOCATE prepare stmt;
 ### 函数与索引
 
 - sql 语句的索引一般观察的是 **被驱动表** 的索引(select l from table)
+- 其实以下的转换和操作大多准循一个规则: **生成临时表**
 
 #### 条件字段的函数操作
 
@@ -1359,7 +1368,7 @@ DEALLOCATE prepare stmt;
 
 - 在显式事务(`begin`)中, 查询(select) 会使用当前的视图(如果未创建则先以最新的 XID 创建视图) 查询, 且不会添加任何锁
 - 在 `autocommit` 中, 查询(select) 使用最新 XID 来查询
-- 查询(select) 的时候使用 `lock in share mode` 或者 `for update` 会导致该查询放弃该事务的视图, 而转用最新的视图, 如果使用了行锁, 则分别是添加 S 锁 或者 X 锁; 破坏了读可重复性, 但是由于不需要回滚 MVCC 版本, 查询效率更高(尤其是该查询的目标表已经进行了大量的更改)
+- 查询(select) 的时候使用 `lock in share mode` 或者 `for update` 会导致该查询放弃该事务的视图, 而转用最新的视图, 如果使用了行锁, 则分别是添加 S 锁 或者 X 锁; 破坏了读可重复性
 - 间隙锁, 锁的是查询到数据的间隙; **间隙锁之间不冲突**; 间隙锁是 前开后开 区间
 
 ---
@@ -1426,7 +1435,7 @@ redo log 写盘的 具体调用(function call):
 > `sync_binlog` 和 `innodb_flush_log_at_trx_commit` 都为 1:
 > 一个事务完整提交的同时需要经历 redo log (prepare 阶段) 和 binlog 两次写盘
 
-组提交机制:
+组提交(group commit)机制:
 - LSN(log sequence number / 日志逻辑序列号): 单调递增, 对应 redo log 的 **写入点** ; 每次写入 length 的 redo log, LSN 的值就加上 length
 - 并发事务在 perpare 阶段, 写完 redo log buffer , 准备持久化到磁盘; 该组的 leader (一般是第一个写盘的事务)以该组的 LSN 总和的方式写盘
 
@@ -1445,7 +1454,7 @@ binlog 的 fsync 变量(mysql/mariadb):
 #### 为什么 binlog cache 是每个线程独立维护, 而 redo log buffer 是全局共用
 
 - binlog 不能被打断: **一个事务的 binlog 必须连续写** , 因此要整个事务完成后, 再一起写到文件
-- redo log 为了减少写盘次数, 会携带并发时的其他事务一起写盘(LSN 机制)
+- redo log 为了减少写盘次数(IOPS), 会携带并发时的其他事务一起写盘(LSN 机制)
 
 #### binlog 已写盘 , redo log 也 commit 了, 但是因为网络原因, 客户端接受不到响应, 此时仍然是正常情况
 
@@ -1509,7 +1518,7 @@ MySQL 是在 binlog 中记录该命令的 server id, 以解决复制循环的问
 
 双 M 结构规定:
 - 两个库的 server id 必须不同, 如果相同, 则它们之间不能设定为主备关系
-- 一个备库接收到 binlog 并在重放的过程中, 生成于原 binlog 的 server id 相同的 binlog
+- 一个备库接收到 binlog 并在重放的过程中, 生成于原 binlog 的 server id 相同(GTID 相同?)的 binlog
 - 每个库在收到从字节的主库发过来的日志后, 先判断 server id , 如果与自己相同, 表示这个日志是自己生成的, 就直接丢弃这个日志
 
 按照上面逻辑, 如果我们设置了双 M 结构, 日志的执行流程应该是:

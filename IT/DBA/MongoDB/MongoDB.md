@@ -6,16 +6,20 @@
 
 #### `w`
 
-- -1: 不使用写关注, 忽略所有网络/socket 错误
-- 0: 不使用写关注, 返回网络/socket 错误
-- 1: 启用写关注, 但只针对 primary 节点 --- 默认配置
-- >1: 写关注将针对复制集中 n 个节点
+- `-1`: 不使用写关注, 忽略所有网络/socket 错误
+- `0`: 不使用写关注, 返回网络/socket 错误
+- `1`: 启用写关注, 但只针对 primary 节点 --- 默认配置
+- `>1`: 写关注将针对复制集中 n 个节点
 
 #### wtimeout --- 写关注的超时时间
 
 ### 原子性与事务处理
 
 在 mongoDB , 所有操作在 document 级别具有原子性(一个**不可再分**的写操作最多只可以修改一个文档)
+
+MongoDB 的 Oplog 与 MongoDB:
+- oplog 在 MongoDB 里是一个普通的集合, 所以 oplog 的写入与普通集合的写入并无区别
+- 一次写入, 会对应数据、索引, oplog 的修改, 而这 3 个修改, 会对应一条 journal 操作日志
 
 #### 1)`$isolated`
 
@@ -24,6 +28,12 @@
 
 #### 2)类事务处理语句 -- 两阶段提交(:doc: two-phase commit</tutorial/perform-two-phase-commits>)
 
+MongoDB 单行事务保证以下内容的原子性:
+- 将文档数据写入对应的集合
+- 更新集合的所有索引信息
+- 写入一条 oplog 用于同步
+
+MongoDB 事务流程:
 - **两阶段提交**只能提供*类*事务处理的语句
 - 两阶段提交步骤:
 	1. 设置**事务**初始状态 **initial**
@@ -284,7 +294,7 @@ int ret = wiredTigerPrepareConflictRetry(opCtx, [&] { return c->search(c); });
 
 In-Memory 不持久化存储数据
 
-#### 5)记录 Oplog --- (Redis?)
+#### 5)记录 Oplog
 
 	Oplog: In-Memory 记录在硬盘中的<内存中的集合>
 
@@ -323,7 +333,7 @@ Journal File 特定:
 
 #### 4)在异常宕机后恢复数据
 
-在MongoDB实例异常宕机后, 重启mongod实例, MongoDB自动重做(redo)所有的Journal Files, 在还原Journal Files期间, MongoDB数据库是无法访问的
+在 MongoDB 实例异常宕机后, 重启 mongod 实例, MongoDB 自动重做(redo)所有的 Journal Files, 在还原 Journal Files 期间, MongoDB 数据库是无法访问的
 
 ### (四)mongod 存储引擎
 

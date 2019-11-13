@@ -65,6 +65,7 @@
 	- [Sort Merge Join](#sort-merge-join)
 		- [内存 OOM](#内存-oom)
 	- [Insert 详解](#insert-详解)
+	- [DDL 解析](#ddl-解析)
 - [builddatabase](#builddatabase)
 	- [TiDB 的异步 schema 变更实现](#tidb-的异步-schema-变更实现)
 		- [概念](#概念-1)
@@ -1580,11 +1581,15 @@ func (e *InsertExec) updateDupRow(ctx context.Context, txn kv.Transaction, row t
 
     // 和现有行对比, 确定 duplicate update 后是否仍冲突
     _, _, _, err = e.doDupRowUpdate(ctx, handle, oldRow, row.row, e.OnDuplicate)
-    // duplicate update 的 ignor\e 逻辑 !!!
+    // TAG: duplicate update 的 ignor\e 逻辑 !!!
 	if e.ctx.GetSessionVars().StmtCtx.DupKeyAsWarning && kv.ErrKeyExists.Equal(err) {
     }
 }
 ```
+
+## DDL 解析
+
+在 TiDB, DDL 请求只允许由 owner 节点的 worker 串行执行
 
 ---
 
