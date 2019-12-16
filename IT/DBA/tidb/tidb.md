@@ -24,6 +24,8 @@
 		- [协议层](#协议层)
 		- [SQL 处理](#sql-处理)
 		- [执行 SQL 计划](#执行-sql-计划)
+			- [火山模型](#火山模型)
+			- [执行引擎](#执行引擎)
 			- [Volcano Optimizer](#volcano-optimizer)
 	- [Insert 概览](#insert-概览)
 	- [SQL Parser 的实现](#sql-parser-的实现)
@@ -333,6 +335,20 @@ BEGIN /*!90000 PESSIMISTIC */
 
 ### 执行 SQL 计划
 
+#### 火山模型
+
+[数据库查询引擎的进化之路-聿明](https://zhuanlan.zhihu.com/p/41562506)
+
+火山模型: 嵌套模型, 每一个运算符都将下层的输入看成是一张表, next() 接口的一次调用就获取表中的一行数据, 这样设计的优点是:
+- 每个运算符之间的 **代数计算是相互独立的** , 并且运算符可以伴随查询关系的变化出现在查询计划树的任意位置, 这使得运算符的算法实现变得简单并且富有拓展性
+- 数据以 row 的形式在运算符之间流动, 只要没有 sort 之类破坏流水性的运算出现, 每个运算符仅需要很少的 buffer 资源就可以很好的运行起来, 非常的节省内存资源
+
+缺点:
+- 火山模型的流控是一种被动拉取数据的过程, 每行数据流向每一个运算符都需要额外的流控操作, 所以数据在操作符之间的流动带来了很多冗余的流控指令
+- 运算符之间的 next() 调用带来了很深的虚函数嵌套, 编译器无法对虚函数进行 inline 优化, 每一次虚函数的调用都需要查找虚函数表, 同时也带来了更多的分支指令, 复杂的虚函数嵌套对 CPU 的分支预测非常不友好, 很容易因为预测失败而导致 CPU 流水线变得混乱; 这些因素都会导致 CPU 执行效率低下
+
+#### 执行引擎
+
 TiDB 的执行引擎是以 Volcano 模型运行的
 
 如果以下 SQL 语句的执行计划
@@ -376,7 +392,7 @@ INSERT INTO t VAULES ("pingcap001", "pingcap", 3);
 ```
 
 ```go
-// .../parser/ast/dml.go
+// parser/ast/dml.go
 type InsertStmt {
   IsReplace   bool
   IgnoreErr   bool
@@ -389,14 +405,14 @@ type InsertStmt {
   Select      ResultSetNode
 }
 
-// .../tidb/planner/core/planbuilder.go
+// planner/core/planbuilder.go
 func (b *PlanBuilder) Build(ctx context.Context, node ast.Node) (Plan, error)
 ...
     case *ast.InsertStmt:
         return b.buildInsert(ctx, x)
 ...
 
-// .../tidb/planner/core/plan.go
+// planner/core/plan.go
 type Plan interface {
     // Get the schema.
     Schema() *expression.Schema
@@ -412,7 +428,7 @@ type Plan interface {
     // property.StatsInfo will return the property.StatsInfo for this plan.
     statsInfo() *property.StatsInfo
 }
-// .../tidb/planner/core/common_plans.go
+// planner/core/common_plans.go
 type Insert struct {
     baseSchemaProducer
 
@@ -435,14 +451,14 @@ type Insert struct {
     SelectPlan PhysicalPlan
 }
 
-// .../tidb/executor/build.go
+// executor/build.go
 func (b *executorBuilder) build(p plannercore.Plan) Executor
 ...
     case *plannercore.Insert:
         return b.buildInsert(v)
 ...
 
-// .../tidb/executor/executor.go
+// executor/executor.go
 type Executor interface {
     base() *baseExecutor
     Open(context.Context) error
@@ -450,14 +466,14 @@ type Executor interface {
     Close() error
     Schema() *expression.Schema
 }
-// .../tidb/executor/insert.go
+// executor/insert.go
 type InsertExec struct {
         *InsertValues
         OnDuplicate []*expression.Assignment
         Priority    mysql.PriorityEnum
 }
 
-// .../tidb/executor/insert.go
+// executor/insert.go
 insertExec.Next
 ↓
 func (e *InsertValues) insertRows(ctx context.Context,
@@ -472,7 +488,7 @@ insertExec.exec
     }
 ...
 
-// .../tidb/executor/insert_common.go
+// executor/insert_common.go
 type InsertValues struct {
         SelectExec Executor
 
@@ -492,7 +508,7 @@ func (e *InsertValues) addRecord(row []types.Datum) (int64, error)
     h, err := e.Table.AddRecord(e.ctx, row)
 ...
 
-// .../tidb/table/table.go
+// table/table.go
 type Table interface {
 ...
     // Indices returns the indices of the table.
@@ -503,7 +519,7 @@ type Table interface {
 ...
 }
 
-// .../tidb/table/tables/tables.go
+// table/tables/tables.go
 type tableCommon struct {
     tableID int64
     // physicalTableID is a unique int64 to identify a physical table.
@@ -561,13 +577,13 @@ TODO:
 
 ## Select 概览
 
-```golang
-// .../parser/ast/dml.go
+```go
+// parser/ast/dml.go
 type SelectStmt struct {
     *SelectStmtOpts
     Distinct    bool
     From        *TableRefsClause
-    Wher e       ExprNode
+    Where       ExprNode
     Fields      *FieldList
     GroupBy     *GroupByClause
     Having      *HavingClause
@@ -580,7 +596,7 @@ type SelectStmt struct {
     IsInBraces  bool
 }
 
-// .../tidb/planner/core/logical_plan_builder.go
+// planner/core/logical_plan_builder.go
 func (b *PlanBuilder) buildSelect(ctx context.Context, sel *ast.SelectStmt) (p LogicalPlan, err error) {
 ...
     if sel.Wher e != nil {
@@ -590,7 +606,7 @@ func (b *PlanBuilder) buildSelect(ctx context.Context, sel *ast.SelectStmt) (p L
 }
 func (b *PlanBuilder) buildSelection(ctx context.Context, p LogicalPlan, wher e ast.ExprNode, AggMapper map[*ast.AggregateFuncExpr]int) (LogicalPlan, error)
 
-// .../tidb/planner/core/plan.go
+// planner/core/plan.go
 type LogicalPlan interface {
     Plan
     PredicatePushDown([]expression.Expression) ([]expression.Expression, LogicalPlan)
@@ -602,13 +618,13 @@ type LogicalPlan interface {
     SetChild(i int, child LogicalPlan)
 }
 
-// .../tidb/planner/core/logical_plans.go
+// planner/core/logical_plans.go
 type LogicalSelection struct {
     baseLogicalPlan
     Conditions []expression.Expression
 }
 
-// .../tidb/session/session.go
+// session/session.go
 func (s *session) Execute(ctx context.Context, sql string) (recordSets []sqlexec.RecordSet, err error) {
     ...
     func (s *session) execute(ctx context.Context, sql string) (recordSets []sqlexec.RecordSet, err error) {
@@ -631,7 +647,7 @@ func (s *session) Execute(ctx context.Context, sql string) (recordSets []sqlexec
 }
 
 
-// .../tidb/planner/core/optimizer.go
+// planner/core/optimizer.go
 func DoOptimize(ctx context.Context, flag uint64, logic LogicalPlan) (PhysicalPlan, error) {
     logic, err := logicalOptimize(ctx, flag, logic)
     ...
@@ -653,7 +669,7 @@ func physicalOptimize(logic LogicalPlan) (PhysicalPlan, error)
 
 ### 逻辑优化 -- RBO/rule based optimization
 
-```golang
+```go
 var optRuleList = []logicalOptRule{
     &columnPruner{},
     &buildKeySolver{},
@@ -677,14 +693,14 @@ func logicalOptimize(ctx context.Context, flag uint64, logic LogicalPlan) (Logic
 
 部分重要函数:
 
-```golang
+```go
 // 从表达式中提取列及其信息
 func ExtractColumnsFromExpressions(result []*Column, exprs []Expression, filter func(*Column) bool) []*Column
 ```
 
 #### 列裁剪
 
-```golang
+```go
 func (p *LogicalJoin) PruneColumns(parentUsedCols []*expression.Column) error
 ```
 
@@ -692,13 +708,13 @@ func (p *LogicalJoin) PruneColumns(parentUsedCols []*expression.Column) error
 
 #### 投影消除
 
-```golang
+```go
 func (pe *projectionEliminater) eliminate(p LogicalPlan, replace map[string]*expression.Column, canEliminate bool) LogicalPlan
 ```
 
 #### 谓词下推
 
-```golang
+```go
 func (p *baseLogicalPlan) PredicatePushDown(predicates []expression.Expression) ([]expression.Expression, LogicalPlan)
 ```
 
@@ -823,14 +839,14 @@ Hash Join 实现:
 - 将结果通过 result 返回
 
 ```go
-// .../tidb/executor/join.go
+// executor/join.go
 func (e *HashJoinExec) fetchInnerAndBuildHashTable(ctx context.Context)
 
 // fetchInnerRows fetches all rows from inner executor,
 // and append them to e.innerResult.
 func (e *HashJoinExec) fetchInnerRows(ctx context.Context, chkCh chan<- *chunk.Chunk, doneCh <-chan struct{})
 
-// .../tidb/executor/table_reader.go
+// executor/table_reader.go
 func (e *TableReaderExecutor) Next(ctx context.Context, req *chunk.Chunk) error
 
 // buildHashTableForList builds hash table from `list`.
@@ -855,7 +871,7 @@ Outer Fetcher 计算逻辑:
 3. 这个信息记录在了(发送到) `outerResource.dest` 中, (这个 `chk` 发给需要 `Outer` 表的数据的 `Join Worker` 的 `outerResultChs[i]` 中去)
 
 ```go
-// .../tidb/executor/join.go
+// executor/join.go
 func (e *HashJoinExec) fetchOuterAndProbeHashTable(ctx context.Context)
 
 // fetchOuterChunks get chunks from fetches chunks from the big table in a background goroutine
@@ -935,7 +951,7 @@ TODO:
 ## Index Lookup Join
 
 ```go
-// .../tidb/executor/index_lookup_join.go
+// executor/index_lookup_join.go
 type IndexLookUpJoin struct {
     baseExecutor
 
@@ -1179,7 +1195,7 @@ select * from t where ((a > 1 and a < 5 and b > 2) or (a > 8 and a < 10 and c > 
 - OR 表达式: 每个子项都要可以用来计算 range, 如果有不可以计算 range 的子项, 那么这整个表达式都不可用来计算 range
 
 ```go
-// .../tidb/util/ranger/detacher.go
+// util/ranger/detacher.go
 // DetachCondsForColumn detaches access conditions for specified column from other filter conditions.
 func DetachCondsForColumn(sctx sessionctx.Context, conds []expression.Expression, col *expression.Column) (accessConditions, otherConditions []expression.Expression) {
     checker := &conditionChecker{
@@ -1276,7 +1292,7 @@ type Range struct {
 各种 `buildFrom*` 函数表示一个具体函数的 range 方法(例如 `buildFromIn` 处理 in 函数)
 
 ```go
-// .../tidb/util/ranger/detacher.go
+// util/ranger/detacher.go
 func (r *builder) buildFromIn(expr *expression.ScalarFunction) ([]point, bool) {
 }
 ```
@@ -1496,6 +1512,7 @@ TiDB 支持以下几种 Insert 语法, 他们的主要区别:
 以下分析默认 TiDB 未开启悲观锁([pessimistic](https://zhuanlan.zhihu.com/p/79034576))
 
 ```go
+// executor/insert.go
 // InsertExec represents an insert executor.
 type InsertExec struct {
 	*InsertValues
@@ -1589,7 +1606,114 @@ func (e *InsertExec) updateDupRow(ctx context.Context, txn kv.Transaction, row t
 
 ## DDL 解析
 
+![并行 DDL 处理流程](2-3.png)
+
 在 TiDB, DDL 请求只允许由 owner 节点的 worker 串行执行
+
+```go
+// executor/builder.go
+func (b *executorBuilder) buildDDL(v *plannercore.DDL) Executor {
+	e := &DDLExec{
+		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
+		stmt:         v.Statement,
+		is:           b.is,
+	}
+	return e
+}
+
+// executor/ddl.go
+func (e *DDLExec) Next(ctx context.Context, req *chunk.Chunk) (err error) {
+    // 每一个 ddl 操作都需要 **提交前置事务, 开启新事务**
+    if err = e.ctx.NewTxn(ctx); err != nil {}
+
+    // 避免 panic
+	defer func() { e.ctx.GetSessionVars().StmtCtx.IsDDLJobInQueue = false }()
+
+	switch x := e.stmt.(type) {
+        // ...
+	case *ast.CreateTableStmt:
+		err = e.executeCreateTable(x)
+    }
+}
+
+// ddl/ddl.go
+// ddl is used to handle the statements that define the structure or schema of the database.
+type ddl struct {
+	m      sync.RWMutex
+	quitCh chan struct{}
+
+	*ddlCtx
+	workers     map[workerType]*worker
+	sessPool    *sessionPool
+	delRangeMgr delRangeManager
+}
+
+// ddl/ddl_api.go
+func (d *ddl) CreateTable(ctx sessionctx.Context, s *ast.CreateTableStmt) (err error) {
+    // 通过 like 构建新表
+	if s.ReferTable != nil {
+		return d.CreateTableWithLike(ctx, ident, referIdent, s.IfNotExists)
+    }
+    tbInfo, err := buildTableInfoWithCheck(ctx, d, s, schema.Charset)
+	tbInfo.State = model.StatePublic // 表可用于读写
+    err = checkTableInfoValid(tbInfo)
+
+	err = d.doDDLJob(ctx, job)
+}
+
+// 检查表结构是否合规(列过长/sql 约束等), 构建 TableInfo
+func buildTableInfoWithCheck(ctx sessionctx.Context, d *ddl, s *ast.CreateTableStmt, dbCharset string) (*model.TableInfo, error) {}
+
+// 通过构建表达式(ast.ExprNode) 检测表是否合法(, 为什么不直接使用构建后的 table.Table ??)
+func checkTableInfoValid(tblInfo *model.TableInfo) error {}
+
+// ddl/ddl.go
+// 1. 从 addDDLJob 获得全局 job ID, 并将 DDLJob 放入执行队列
+func (d *ddl) doDDLJob(ctx sessionctx.Context, job *model.Job) error {
+	// Get a global job ID and put the DDL job in the queue.
+    err := d.addDDLJob(ctx, job)
+    // 等待 worker 完成进行中的 job
+    d.asyncNotifyWorker(job.Type)
+
+    // job 的状态变更: none -> delete only -> write only -> reorgenization -> public
+    // 每个状态变更以 (2*lease time) 作为租约期, 整个流程即 (10*lease time)
+    // etcd
+    // TODO:
+}
+
+// 将 ddl job 排进执行队列
+func (d *ddl) addDDLJob(ctx sessionctx.Context, job *model.Job) error {
+	err := kv.RunInNewTxn(d.store, true, func(txn kv.Transaction) error {
+        t := newMetaWithQueueTp(txn, job.Type.String())
+        // 排队
+		err = t.EnQueueDDLJob(job)
+    })
+}
+
+// 竞争 owner , 并开始 workers
+func (d *ddl) start(ctx context.Context, ctxPool *pools.ResourcePool) {
+		d.workers[generalWorker] = newWorker(generalWorker, d.store, d.sessPool, d.delRangeMgr)
+		d.workers[addIdxWorker] = newWorker(addIdxWorker, d.store, d.sessPool, d.delRangeMgr)
+		for _, worker := range d.workers {
+			go tidbutil.WithRecovery(
+                func() { w.start(d.ddlCtx) },
+            ...)
+        }
+}
+
+// async online schema change
+// 尝试成为 owner , 并处理 job
+func (w *worker) start(d *ddlCtx) {
+	for {
+        err := w.handleDDLJobQueue(d)
+    }
+}
+
+// ddl/ddl_worker.go
+func (w *worker) handleDDLJobQueue(d *ddlCtx) error {
+    // TODO:
+}
+```
 
 ---
 

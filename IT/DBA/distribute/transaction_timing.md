@@ -1,5 +1,7 @@
 # 事务时序
 
+[分布式数据库中的事务时序 - 天士梦 - 博客园](https://www.cnblogs.com/cchust/p/10591943.html)
+
 逻辑时钟:
 - 只保证有因果关系的事务间有序(因果序)
 - 不能保证全局顺序
@@ -10,7 +12,7 @@
 
 在事务中加入物理时钟时间戳
 
-- 缺点: 依赖一个全局时间分配器
+- 缺点: 依赖一个 **全局** 时间分配器
 
 ## Lamport timestamps
 
@@ -37,7 +39,7 @@
 ![Version vector](116770-20160502183034013-800335383.png)
 
 缺点:
-- 如果使用 client 作为 vector 源, 可能面临 vector 过多的情况(这种情况 Vector clock 也哟)
+- 如果使用 client 作为 vector 源, 可能面临 vector 过多的情况(这种情况 Vector clock 也有)
 
 ## HLC(HybirdLogicClock)
 

@@ -274,6 +274,8 @@
 			- [Skip scan range](#skip-scan-range)
 			- [紧凑索引扫描(Tight Index Scan)](#紧凑索引扫描tight-index-scan)
 		- [Insert into ... select 加锁规则](#insert-into--select-加锁规则)
+	- [技巧](#技巧)
+		- [字符串优化](#字符串优化)
 
 <!-- /TOC -->
 
@@ -3103,3 +3105,10 @@ select c1,c2,c3 from t1 where c1 = 'a' group by c2,c3
 ### Insert into ... select 加锁规则
 
 select 本身如果加了 `lock in share mode` 或者 `for update` 会按照规则加锁, 但是锁的生命周期/lifecycle 只存在 select 语句期间, 即使开启了交互式事务(begin)也是一样
+
+
+## 技巧
+
+### 字符串优化
+
+`instr`: 以下标 1 为起始
