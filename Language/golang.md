@@ -20,6 +20,7 @@
 		- [ast.Object](#astobject)
 	- [陷阱](#陷阱)
 		- [返回值](#返回值)
+		- [`for range`](#for-range)
 		- [defer](#defer)
 		- [http 响应](#http-响应)
 		- [失败的类型断言](#失败的类型断言)
@@ -36,6 +37,8 @@
 			- [删除 -- mapdelete](#删除----mapdelete)
 			- [扩容 -- growWork](#扩容----growwork)
 			- [总结](#总结)
+		- [Chan](#chan)
+	- [make & send](#make--send)
 		- [schedule](#schedule)
 		- [syscall](#syscall)
 			- [总结](#总结-1)
@@ -194,6 +197,12 @@ runtime 在初始化时启动 sysmon 线程, 周期性做 epoll 操作和 P 检�
 `defer` 语句能访问有名返回值
       不能直接访问匿名返回值
 
+### `for range`
+
+- `for i, v := range {array}`: 迭代的是 array 的浅复制副本, 依靠修改 `array[i]` 修改 array 无效
+- `for i, v := range {slice}`: 迭代的是 slice **本身**, 修改 `slice[i]` 修改 slice 有效
+- `for k, v := range {map}`: 迭代 map 本身, 同时设置迭代标志 `mapiterinit - h.flags - iterator|oldIterator` 检查 `mapiternext - h.flags - hashWriting` 写冲突
+
 ### defer
 
 `defer` 的 颗粒度 是 函数级 的, 即 defer 会在函数结束时调用, 而不在 代码块
@@ -202,7 +211,7 @@ runtime 在初始化时启动 sysmon 线程, 周期性做 epoll 操作和 P 检�
 
 `resp, err := http.Get("https://api.ipify.io?format=content")`
 
-当发生 http 的重定向时, err 和 resp 都**不为空**
+当发生 http 的重定向时, err 和 resp 都 **不为空**
 因此保险的做法:
 
 ```go
@@ -874,7 +883,115 @@ func evacuate(t *maptype, h *hmap, oldbucket uintptr) {
 - 检查写保护: `mapaccess`/访问, `mapassign`/分配(赋值), `mapdelete`/删除, `mapiternext`/遍历, `mapclear`/清空
 - 设置写保护: `mapassign`/分配(赋值), `mapdelete`/删除, `mapclear`/清空
 - 触发扩容(growWork): `mapassign`/分配(赋值), `mapdelete`/删除
-- 8键/8值 分别放置减少了 padding 空间
+- 8 键/8 值 分别放置减少了 padding 空间
+
+### Chan
+
+```go
+// runtime/chan.go
+// 用于提供在 make 时的类型映射
+type chantype struct {
+	typ  _type
+	elem *_type
+	dir  uintptr
+}
+
+type hchan struct {
+  qcount   uint           // total data in the queue
+  dataqsiz uint           // size of the circular queue // 申请的循环队列长度
+  buf      unsafe.Pointer // points to an array of dataqsiz elements
+  elemsize uint16
+  closed   uint32
+  elemtype *_type // element type
+  sendx    uint   // send index
+  recvx    uint   // receive index
+  recvq    waitq  // list of recv waiters
+  sendq    waitq  // list of send waiters
+
+  // lock protects all fields in hchan, as well as several
+  // fields in sudogs blocked on this channel.
+  //
+  // Do not change another G's status while holding this lock
+  // (in particular, do not ready a G), as this can deadlock
+  // with stack shrinking.
+  lock mutex
+}
+
+type waitq struct {
+  first *sudog
+  last  *sudog
+}
+```
+
+## make & send
+
+```go
+func makechan(t *chantype, size int) *hchan {
+  elem := t.elem
+  // alloc
+  mem, overflow := math.MulUintptr(elem.size, uintptr(size))
+
+	switch {
+  case mem == 0: // size == 0 || ptrdata == 0
+    // Queue or element size is zero.
+    c = (*hchan)(mallocgc(hchanSize, nil, true)) // 0x60
+    // Race detector uses this location for synchronization.
+    c.buf = c.raceaddr()
+  case elem.ptrdata == 0: // ptrdata == 0
+    // Elements do not contain pointers.
+    // Allocate hchan and buf in one call.
+    c = (*hchan)(mallocgc(hchanSize+mem, nil, true))
+    c.buf = add(unsafe.Pointer(c), hchanSize)
+  default:
+    // Elements contain pointers.
+    c = new(hchan)
+    c.buf = mallocgc(mem, elem, true)
+  }
+}
+
+func MulUintptr(a, b uintptr) (uintptr, bool) {
+  // 申请在 4 字节以下的
+	if a|b < 1<<(4*sys.PtrSize) || a == 0 {
+		return a * b, false
+	}
+	overflow := b > MaxUintptr/a
+	return a * b, overflow
+}
+
+
+func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
+  // 不阻塞 && 未关闭 && (没有 recv || 满了)
+  if !block &&
+  c.closed == 0 &&
+    ((c.dataqsiz == 0 && c.recvq.first == nil)
+    || (c.dataqsiz > 0 && c.qcount == c.dataqsiz)) {
+      return false
+  }
+
+  lock(&c.lock)
+
+  // 有等待接受的 recv
+  if sg := c.recvq.dequeue(); sg != nil {
+    send(c, sg, ep, func() { unlock(&c.lock) }, 3)
+  }
+
+  // 有空余空间, 压进去
+  if c.qcount < c.dataqsiz {
+    // memmove
+    typedmemmove(c.elemtype, qp, ep)
+    unlock(&c.lock)
+  }
+
+  // set goroutine to wait & unlock
+  goparkunlock(&c.lock, waitReasonChanSend, traceEvGoBlockSend, 3)
+
+  // 保活 // 保持 ep 不被回收, 不被执行 finalizer
+  KeepAlive(ep)
+}
+
+func send(c *hchan, sg *sudog, ep unsafe.Pointer, unlockf func(), skip int) {
+}
+```
 
 ### schedule
 
@@ -1172,28 +1289,28 @@ type poolLocalInternal struct {
 }
 
 type poolLocal struct {
-	poolLocalInternal
+  poolLocalInternal
 
-	// Prevents false sharing on widespread platforms with
-	// 128 mod (cache line size) = 0 .
-	pad [128 - unsafe.Sizeof(poolLocalInternal{})%128]byte
+  // Prevents false sharing on widespread platforms with
+  // 128 mod (cache line size) = 0 .
+  pad [128 - unsafe.Sizeof(poolLocalInternal{})%128]byte
 }
 
 type poolChain struct {
-	// head is the poolDequeue to push to. This is only accessed
-	// by the producer, so doesn't need to be synchronized.
-	head *poolChainElt
+  // head is the poolDequeue to push to. This is only accessed
+  // by the producer, so doesn't need to be synchronized.
+  head *poolChainElt
 
-	// tail is the poolDequeue to popTail from. This is accessed
-	// by consumers, so reads and writes must be atomic.
-	tail *poolChainElt
+  // tail is the poolDequeue to popTail from. This is accessed
+  // by consumers, so reads and writes must be atomic.
+  tail *poolChainElt
 }
 
 // poolChain 环型缓存区
 type poolChainElt struct {
   poolDequeue
 
-	next, prev *poolChainElt
+  next, prev *poolChainElt
 }
 
 // poolDequeue is a lock-free fixed-size
@@ -1203,20 +1320,20 @@ type poolChainElt struct {
 type poolDequeue struct {
   // headTail packs together a 32-bit head index and a 32-bit tail index
   // Both ar\e indexes into vals modulo len(vals)-1.
-	//
-	// tail = index of **oldest** data in queue
-	// head = index of next slot to fill
-	//
-	// Slots in the range [tail, head) ar\e owned by consumers.
-	//
-	// The head index is stored in the most-significant bits so
-	// that we can atomically *add* to it and the overflow is
-	// harmless.
-	headTail uint64
+  //
+  // tail = index of **oldest** data in queue
+  // head = index of next slot to fill
+  //
+  // Slots in the range [tail, head) ar\e owned by consumers.
+  //
+  // The head index is stored in the most-significant bits so
+  // that we can atomically *add* to it and the overflow is
+  // harmless.
+  headTail uint64
 
-	// vals is a ring buffer of interface{} values stored in this
-	// dequeue. The size of this must be a power of 2.
-	vals []eface
+  // vals is a ring buffer of interface{} values stored in this
+  // dequeue. The size of this must be a power of 2.
+  vals []eface
 }
 ```
 
@@ -1230,15 +1347,15 @@ func (p *Pool) Get() interface{} {
   // 从 p 的本地池中获取缓存
   x := l.private
 
-	if x == nil {
+  if x == nil {
     // 本地池中没有缓存, 从 poolChain.head 开始, 从当前链上获取
     x, _ = l.shared.popHead()
 
-		if x == nil {
+    if x == nil {
       // 两次没拿到缓存, 遍历各个 pid 获取
       // 其中会尝试从 p.locals 和 p.victim 的 poolChain 中获取
       // 如果都没有, 最后会将当前 p.victim 置空
-			x = p.getSlow(pid)
+      x = p.getSlow(pid)
     }
   }
 
@@ -1246,14 +1363,14 @@ func (p *Pool) Get() interface{} {
   runtime_procUnpin()
 
   // 新建缓存
-	if x == nil && p.New != nil {
-		x = p.New()
-	}
+  if x == nil && p.New != nil {
+    x = p.New()
+  }
 }
 
 // poolCleanup 在 runtime 中适时调用
 func init() {
-	runtime_registerPoolCleanup(poolCleanup)
+  runtime_registerPoolCleanup(poolCleanup)
 }
 
 func poolCleanup() {
