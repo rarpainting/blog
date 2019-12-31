@@ -68,6 +68,13 @@
 		- [内存 OOM](#内存-oom)
 	- [Insert 详解](#insert-详解)
 	- [DDL 解析](#ddl-解析)
+	- [TIKV Client](#tikv-client)
+		- [如何定位 Key 所在的 tikv-server](#如何定位-key-所在的-tikv-server)
+		- [如何建立和维护和 TiKV-server 之间的连接](#如何建立和维护和-tikv-server-之间的连接)
+		- [如何处理错误](#如何处理错误)
+			- [Region 错误](#region-错误)
+			- [网络错误](#网络错误)
+			- [指数退避算法](#指数退避算法)
 - [builddatabase](#builddatabase)
 	- [TiDB 的异步 schema 变更实现](#tidb-的异步-schema-变更实现)
 		- [概念](#概念-1)
@@ -1669,6 +1676,9 @@ func checkTableInfoValid(tblInfo *model.TableInfo) error {}
 
 // ddl/ddl.go
 // 1. 从 addDDLJob 获得全局 job ID, 并将 DDLJob 放入执行队列
+// NOTICE:
+// job 的状态变更: none -> delete only -> write only -> reorgenization -> public
+// 每个状态变更以 (2*lease time) 作为租约期, 整个流程即 (10*lease time)
 func (d *ddl) doDDLJob(ctx sessionctx.Context, job *model.Job) error {
 	// Get a global job ID and put the DDL job in the queue.
     err := d.addDDLJob(ctx, job)
@@ -1714,6 +1724,120 @@ func (w *worker) handleDDLJobQueue(d *ddlCtx) error {
     // TODO:
 }
 ```
+
+## TIKV Client
+
+### 如何定位 Key 所在的 tikv-server
+
+1. TiKV 将自身 Region 的信息上报到 PD , PD 缓存 Region 信息
+2. TiKV-Client 对于无效/失效的 Region , 从这个范围的 StartKey 开始, 多次调用 PD 的 GetRegion 接口, 每次返回的 Region 的EndKey 作为下次请求的 StartKey
+3. TiKV-Client 请求后缓存 Region 为 RegionCache 到本地
+4. 用过期的 Region 信息请求 TiKV-server 会报 Region 错误, 需要清除 RegionCache 并重新请求 Region
+
+### 如何建立和维护和 TiKV-server 之间的连接
+
+- 连接重用: TiDB 与 TiKV-server 通过 connArray 建立连接池
+- 多路复用: gRPC
+- 网络分配: `round-robin=16` , 一个 TiDB 对每个 TiKV 都维护多个连接, 通过 Round-Robin 选择连接
+
+### 如何处理错误
+
+TiDB 内部通过 RegionRequestSender 对象调用 Client 接口触发 RPC, 同时负责网络错误和部分 Region 错误
+
+#### Region 错误
+
+常见的 Region 错误有:
+1. NotLeader: 发送的操作必须 Leader 处理, 但是之前 Leader 被 PD 调度了
+2. StaleEpoch: Region 版本错误
+3. ServerlsBusy: TiKV-server 待处理请求过多
+
+#### 网络错误
+
+1. Tikv-client 遇到网络隔离或者 tikv-server down 的错误会调用 OnSendFail 方法; 并且会在 RegionCache 里把这个请求失败的 tikv-server 上的所有 region 都 drop 掉, 避免后续发生同样错误
+2. 面对可以重试的错误: 通过 **指数退避** 计算每一次重试前的等待
+
+```go
+// store/tikv/region_request.go
+// 该对象用于将 KV/COP 请求发送到 tikv , 并处理网络错误和部分 Region 错误
+type RegionRequestSender struct {
+	regionCache  *RegionCache
+	client       Client
+	storeAddr    string
+	rpcError     error
+	failStoreIDs map[uint64]struct{}
+}
+
+// SendReqCtx sends a request to tikv server and return response and RPCCtx of this RPC.
+func (s *RegionRequestSender) SendReqCtx(
+	bo *Backoffer,
+	req *tikvrpc.Request,
+	regionID RegionVerID,
+	timeout time.Duration,
+	sType kv.StoreType,
+) (
+	resp *tikvrpc.Response,
+	rpcCtx *RPCContext,
+	err error,
+) {
+    // 错误模拟
+	failpoint.Inject("tikvStoreSendReqResult", func(val failpoint.Value) {
+		switch val.(string) {
+		case "timeout":
+			failpoint.Return(nil, nil, errors.New("timeout"))
+		case "GCNotLeader":
+			if req.Type == tikvrpc.CmdGC {
+				failpoint.Return(&tikvrpc.Response{
+					Resp: &kvrpcpb.GCResponse{
+                        RegionError: &errorpb.Error{
+                            NotLeader: &errorpb.NotLeader{}
+                        }
+                    },
+				}, nil, nil)
+			}
+		case "GCServerIsBusy":
+			if req.Type == tikvrpc.CmdGC {
+				failpoint.Return(&tikvrpc.Response{
+					Resp: &kvrpcpb.GCResponse{
+                        RegionError: &errorpb.Error{
+                            ServerIsBusy: &errorpb.ServerIsBusy{}
+                        }
+                    },
+				}, nil, nil)
+			}
+		}
+	})
+
+    // 部分请求必须要求 Leader 处理
+	if req.ReplicaRead {
+		replicaRead = kv.ReplicaReadFollower
+	} else {
+		replicaRead = kv.ReplicaReadLeader
+    }
+    // TODO:
+}
+```
+
+```go
+// store/tikv/backoff.go
+// Backoffer is a utility for retrying queries.
+type Backoffer struct {
+	ctx context.Context
+
+	fn         map[backoffType]func(context.Context, int) int
+	maxSleep   int
+	totalSleep int
+	errors     []error
+	types      []fmt.Stringer
+	vars       *kv.Variables
+	noop       bool
+}
+
+// TODO:
+```
+
+#### 指数退避算法
+
+TODO:
 
 ---
 
