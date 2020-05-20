@@ -12,3 +12,5 @@ vim/
 IT/ECC.org
 
 **/*.pdf
+
+.vscode/
