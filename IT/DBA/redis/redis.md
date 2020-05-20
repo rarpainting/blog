@@ -39,6 +39,17 @@ redis 计算 cluster: `solt = crc16(key) & (16384-1)`
 1. 资源隔离性较差, 容易出现相互影响的情况
 2. 数据通过异步复制, 不保证数据的强一致性
 
+#### HashTag
+
+集群下, **涉及多个 key 的操作**如 `MSet`/`MGet`, `Pipeline` 等可能导致以下错误
+
+`CROSSSLOT Keys in request don't hash to the same slot`
+
+即 key 不在同一个 slot 而导致的操作错误
+
+- 解决: `HashTag` 通过添加 `{}` 符号, 例如 `{user}1` 使符合该规则的 key 落到同一个 slot
+- 不足: 过多的 key 分配到同一个 slot 中, 可能造成数据倾斜影响系统的吞吐量
+
 ## 功能
 
 ### 分布式锁
