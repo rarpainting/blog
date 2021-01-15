@@ -998,6 +998,13 @@ select count(distinct col)/count(*) as dist from table;
 经验:
 - 使用 `str like "STR%"` 可以经过字符串前缀索引(, 其他形式 (`"%STR"`, `"S%TR"`) 无效)
 
+##### 部分参数
+
+- `innodb_large_prefix`:
+  - MySQL 索引长度有单列不超过 *767byte* 、总长度不超过 *3072byte* 的限制
+  - `innodb_large_prefix` 用于去除单列长度限制, 但总长度限制依然存在
+  - MySQL5.6 默认为 **OFF**, MySQL5.7 后默认为 **ON**
+
 #### 索引失效案例及其起因
 
 ##### 索引低区分度的大表
