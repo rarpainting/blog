@@ -1985,6 +1985,11 @@ truncate table `performance_schema`.`file_summary_by_event_name`;
 #### rm 删除数据
 
 - 集群 方案解决
+
+![NDB 【读写分离+数据分片】集群方案](ndb_cluster.png)
+
+![InnoDB 【读写分离】集群方案](innodb_cluster.png)
+
 - 跨机房/跨城市 备份
   - 如果数据量大, 用物理备份 [xtrabackup](https://github.com/percona/percona-xtrabackup)
   - 如果数据量小, 用 mysqldump / mysqldumper
