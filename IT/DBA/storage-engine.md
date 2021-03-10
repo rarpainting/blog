@@ -43,6 +43,8 @@ B+Tree 的放大特性: 如果 B+Tree 的 block size 为 B, 故每个内部节�
 
 ### 放大特性
 
+- **空间放大(Space Amplification)**: 由于 LSM 本身都是顺序写(Append-Only) , 不是原地更新(In-Place Update), 因此会随时间推移残留过期数据; LSM 通过合并来减少空间放大, 但也因此引入了写放大
+
 #### Leveld LSM Tree
 
 如果数据集大小为 N, 放大因子为 k, 最小一层一个文件大小为 B, 每层文件的单个文件大小相同为 B, 不过每层文件个数不同
