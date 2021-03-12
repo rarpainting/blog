@@ -27,3 +27,5 @@ enum RecordType {
 ## SSTable
 
 ![SSTable 格式](v2-969d40895a0659d356c3c2e6bd59f904_r.jpeg)
+
+- 为什么 index block 在 metaindex block 之前？是因为 metaindex block 是被可以被省略？
