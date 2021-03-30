@@ -1,4 +1,29 @@
 # 一致性
+<!-- TOC -->
+
+- [一致性](#一致性)
+	- [事务](#事务)
+		- [OCC/Optimistic Concurrency Control](#occoptimistic-concurrency-control)
+			- [冲突检测](#冲突检测)
+			- [总结](#总结)
+		- [MVCC](#mvcc)
+		- [2PL](#2pl)
+	- [分布式一致性/分布式事务](#分布式一致性分布式事务)
+		- [XA 协议 -- 2PC](#xa-协议----2pc)
+		- [3PC](#3pc)
+		- [TCC/Try-Confirm-Cancel](#tcctry-confirm-cancel)
+		- [Saga](#saga)
+		- [基于(异步)消息的分布式事务](#基于异步消息的分布式事务)
+			- [本地消息表](#本地消息表)
+			- [事务消息](#事务消息)
+	- [InnoDB 一致性](#innodb-一致性)
+		- [事务的隔离级别](#事务的隔离级别)
+			- [事务的大坑 -- 丢失更新](#事务的大坑----丢失更新)
+		- [MVCC -- InnoDB 的多版本并发控制](#mvcc----innodb-的多版本并发控制)
+		- [Innodb 锁相关](#innodb-锁相关)
+		- [普通索引的 更新(update) -- change buffer](#普通索引的-更新update----change-buffer)
+
+<!-- /TOC -->
 
 ## 事务
 
@@ -70,6 +95,12 @@ MySQL:
 以一次下单流程为例:
 
 ![示例流程](2181742491-5787b689b2df1_articlex.jpeg)
+
+### Saga
+
+- TCC 和 Saga 都是以上层组件(中控)的方式调度各个流程的, 持有各个资源的调度权限
+- 不可避免的需要嵌入到业务逻辑
+- 中控持有业务的 rollback 资源; 各个流程点被动调用以处理相关资源
 
 ### 基于(异步)消息的分布式事务
 
