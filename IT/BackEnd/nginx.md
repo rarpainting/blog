@@ -103,3 +103,11 @@ int epoll_wait(int epfd, struct epoll_event *events,
 #### kqueue
 
 ### libuv
+
+### 配置
+
+强制转换 http 到 https
+```
+# If they come here using HTTP, bounce them to the correct scheme
+  error_page 497 https://$server_name:$server_port$request_uri;
+```
