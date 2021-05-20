@@ -1384,3 +1384,15 @@ func poolCleanup() {
 // Put adds x to the pool.
 func (p *Pool) Put(x interface{}) {}
 ```
+
+```go
+// 获取下一个月的时间
+now := time.Date(2021, 5, 31, 0, 0, 0, 0, time.Local)
+
+// NO 2021-07-01
+now.AddDate(0, 1, 0)
+
+// YES 2021-06-30
+y, m, _ := now.Date()
+time.Date(y, m+2, 1, 0, 0, 0, 0, time.Local).AddDate(0, 0, -1)
+```
