@@ -87,3 +87,17 @@ props.put("compression.type", "gzip");
 
 Producer<String, String> producer = new KafkaProducer<>(props);
 ```
+
+### 管理 TCP 连接
+
+![Producer TCP 管理](kafka_producer_process.png)
+
+简短内容:
+- `KafkaProducer.send()` 随 `KafkaProducer` 被构建且执行创建线程
+- 待发送的消息首先进入 `RecordAccumulator` , 等待被 `KafkaThread` 扫描并实际发送
+- 数据包结构 -- `ProducerRecord`; 发送失败数据包将再次进入 , `RecordAccumulator`, 而不会马上再发送
+- 发送成功 (消息成功写入 kafka), 就返回一个 RecordMetaData 对象; 该对象包换了主题和分区信息, 以及记录在分区里的偏移量
+
+- TCP 连接的创建时机:
+  - 必定会创建: KafkaProducer 实例被创建
+  - 可能会创建: 更新元数据/消息发送 时, 如果发现与 Broker 未连接则会尝试连接
