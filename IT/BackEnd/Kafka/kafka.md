@@ -101,3 +101,55 @@ Producer<String, String> producer = new KafkaProducer<>(props);
 - TCP 连接的创建时机:
   - 必定会创建: KafkaProducer 实例被创建
   - 可能会创建: 更新元数据/消息发送 时, 如果发现与 Broker 未连接则会尝试连接
+
+### 幂等性
+
+#### 幂等性 Producer
+
+```java
+props.put("enable.idempotence", ture)
+// 或
+props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true)
+```
+
+```java
+if ps.parent.conf.Producer.Idempotent && msg.sequenceNumber < set.recordsToSend.RecordBatch.FirstSequence {
+  return errors.New("assertion failed: message out of sequence added to a batch")
+}
+```
+
+- `batch.FirstSequence = msg.sequenceNumber`: 当前操作批次的初始序列以当前消息为准(效果参考第二部分代码)
+- `config.Net.MaxOpenRequests = 1`: 并发数为1
+- 该幂等性由当前 Producer 会话保证; 即 **单分区单会话** 的幂等性
+
+#### 事务型 Producer
+
+开启要求:
+- 和幂等性 Producer 一样, 开启 `enable.idempotence = true`
+- 设置 Producer 端参数 `transactional.id`
+
+特点:
+- Consumer 能通过配置 isolation.level 获取事务消息
+- `read_uncommitted`: 不论事务型 Producer 提交事务(commit)还是终止事务(abort), 其写入的消息都可以读取
+- `read_committed`: Consumer 读取事务型 Producer 成功提交事务写入的消息 以及 **非事务型 Producer 写入的所有消息**
+
+#### 消费者组
+
+- 新版本(>=2.0)的 Consumer Group 将位移保存在 Broker 端的内部主题中 -- `__consumer_offsets`
+
+重平衡 `rebalance` 触发条件
+- 组成员数(group-member)变化
+- 主题数(topic)变更
+- 订阅主题的分区数(partition)发生变更
+
+#### 位移主题/Offsets Topic
+
+`offset topic` 的三种消息格式:
+- 通信中: `<GroupID, TopicID, PartitionNo>`
+- 注册 Consumer Group : 用于保存 Consumer Group 信息的消息
+- `tombstone` / `Delete Mark`
+  - 作用: 用于删除 Group 过期位移甚至是删除 Group 的消息
+  - 写入时机: 一旦某个 Consumer Group 下的所有 Consumer 实例都停止了, 而且它们的位移数据都已被删除时, Kafka 会向位移主题的对应分区写入 tombstone 消息
+
+`offset topic` 的创建流程:
+- 当 Kafka 集群中的第一个 Consumer 程序启动时, Kafka 会自动创建位移主题
