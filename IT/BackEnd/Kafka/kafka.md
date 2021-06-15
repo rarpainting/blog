@@ -151,5 +151,23 @@ if ps.parent.conf.Producer.Idempotent && msg.sequenceNumber < set.recordsToSend.
   - 作用: 用于删除 Group 过期位移甚至是删除 Group 的消息
   - 写入时机: 一旦某个 Consumer Group 下的所有 Consumer 实例都停止了, 而且它们的位移数据都已被删除时, Kafka 会向位移主题的对应分区写入 tombstone 消息
 
-`offset topic` 的创建流程:
 - 当 Kafka 集群中的第一个 Consumer 程序启动时, Kafka 会自动创建位移主题
+- 自动创建的 `offset topic` 会创建 `offsets.topic.num.partitions` 的分区数, `offsets.topic.replication.factor` 的副本数
+- `enable.auto.commit`(default: `true`): Consumer 端的参数
+  - 为 true 则 *定期* 提交位移; 提交间隔由 `auto.commit.interval.ms` 控制
+  - 为 false 需要 Consumer 通过 `consumer.CommitSync` 手动操作提交位移
+
+Kafka 通过 Compaction 策略以删除位移主题中的 *过期* 消息; Kafka 通过 `Log Cleaner` 的后台进程定期地巡检待 Compact 的主题, 检查是否存在满足条件的可删除数据:
+
+![Compaction 策略](86a44073aa60ac33e0833e6a9bfd9ae7.webp)
+
+#### Rebalance
+
+![Rebalance](321c73b51f5e5c3124765101edc53ed3.webp)
+
+有助于减少 Rebalance 的参数
+- `session.timeout.ms`: 会话超时间隔
+- `heartbeat.interval.ms`: 心跳发送间隔
+  - 保证 Consumer 实例在被判定为 dead 之前, 能够发送至少 3 轮的心跳请求
+  - `session.timeout.ms` >= 3 * `heartbeat.interval.ms`
+- `max.poll.interval.ms`: Consumer 重新拉取数据的消费间隔
