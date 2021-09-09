@@ -155,3 +155,20 @@ Redis 的 "事务" 不满足 ACID 原则, 无跨行事务
 - Redis 的事务只是将一系列的操作排成一个队列, 在 `EXEC` 后统一执行
 - `watch` 指令监控的 key 如果在执行事务前发生了变化(expire 后 key 失效, watch 前 key 不存在但是 watch 后 key 被 set , so on), 那么后面的第一个事务不会被执行
 - 后续的事务在没有任何 `watch` 的前提下能继续正常使用
+
+## Pipeline
+
+- pipeline 本身不交互, 一次提交, 一次返回
+- 执行顺序上, pipeline 只保证同一个 solt 中的顺序是符合命令序的, 不同 solt 的顺序不符合
+- 返回结果上, pipeline 保证顺序符合命令序(无论是否在同一个 solt)
+
+## Lua 脚本
+
+> Atomicity of scripts
+> Redis uses the same Lua interpreter to run all the commands. Also Redis guarantees that a script is executed in an atomic way:
+> no other script or Redis command will be executed while a script is being executed.
+> This semantic is similar to the one of MULTI / EXEC.
+> From the point of view of all the other clients the effects of a script are either still not visible or already completed.
+
+- Redis 单线程的特性, 使得脚本在执行过程中是原子性
+- Redis-Lua 结果本身不带原子性: 由于失败执行导致的脚本中断(例如 call 执行失败), redis 只会返回错误, 而不回滚
