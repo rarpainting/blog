@@ -153,8 +153,9 @@ Redis 内存回收体现在:
 Redis 的 "事务" 不满足 ACID 原则, 无跨行事务
 
 - Redis 的事务只是将一系列的操作排成一个队列, 在 `EXEC` 后统一执行
-- `watch` 指令监控的 key 如果在执行事务前发生了变化(expire 后 key 失效, watch 前 key 不存在但是 watch 后 key 被 set , so on), 那么后面的第一个事务不会被执行
-- 后续的事务在没有任何 `watch` 的前提下能继续正常使用
+- `WATCH` 指令监控的 key 如果在执行事务前发生了变化(expire 后 key 失效, watch 前 key 不存在但是 watch 后 key 被 set , so on), 那么后面的第一个事务(第一次 `EXEC`)不会被执行
+- 后续的事务在没有任何 `WATCH` 的前提下能继续正常使用
+- 总结: 事务的原子安全由 `WATCH` 保证(回滚); 且不具有对中间命令的交互性
 
 ## Pipeline
 
