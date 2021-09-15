@@ -171,3 +171,5 @@ Kafka 通过 Compaction 策略以删除位移主题中的 *过期* 消息; Kafka
   - 保证 Consumer 实例在被判定为 dead 之前, 能够发送至少 3 轮的心跳请求
   - `session.timeout.ms` >= 3 * `heartbeat.interval.ms`
 - `max.poll.interval.ms`: Consumer 重新拉取数据的消费间隔
+
+#### 消费位移

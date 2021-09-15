@@ -13,8 +13,11 @@
 			- [M/Machine](#mmachine)
 			- [P/Processor](#pprocessor)
 			- [G/Goroutine](#ggoroutine)
-			- [抢占式](#抢占式)
+		- [抢占式](#抢占式)
 	- [编译指示](#编译指示)
+		- [Timer](#timer)
+			- [1.12.17](#11217)
+			- [1.15](#115)
 	- [Go Ast](#go-ast)
 		- [ast.Ident](#astident)
 		- [ast.Object](#astobject)
@@ -42,6 +45,7 @@
 		- [schedule](#schedule)
 		- [syscall](#syscall)
 			- [总结](#总结-1)
+			- [Syscall 与 RawSyscall](#syscall-与-rawsyscall)
 		- [math/rand](#mathrand)
 		- [MySQL](#mysql)
 			- [`go-sql-driver/mysql`](#go-sql-drivermysql)
@@ -50,6 +54,11 @@
 		- [1.13 的 `sync.Pool`](#113-的-syncpool)
 			- [victim cache](#victim-cache)
 			- [Pool](#pool)
+			- [Time](#time)
+	- [内存分配器](#内存分配器)
+		- [分配](#分配)
+			- [fixalloc](#fixalloc)
+			- [linearAlloc](#linearalloc)
 
 <!-- /TOC -->
 
@@ -142,7 +151,7 @@ channel 的 happen before 规则:
 
 ![G 状态转换](009.png)
 
-#### 抢占式
+### 抢占式
 
 runtime 在初始化时启动 sysmon 线程, 周期性做 epoll 操作和 P 检测:
 - P 处于 Psyscall 并超过一个 sysmon 时间周期(20us) , 且有其他 G 任务, 则切换 P
@@ -160,6 +169,62 @@ runtime 在初始化时启动 sysmon 线程, 周期性做 epoll 操作和 P 检�
 - `//go:nosplit`: 跳过 溢出栈检测
 - `//go:noescape`: 禁止 逃逸, 且必须指示一个只有声明没有主体的函数
 - `//go:norace`: 跳过 竞态检测
+
+### Timer
+
+#### 1.12.17
+
+Timer 创建
+```go
+//go:linkname startTimer time.startTimer
+func startTimer(t *timer) {
+  // ...
+	addtimer(t)
+}
+
+func addtimer(t *timer) {
+	tb := t.assignBucket() // 取出当前 g 所在 p 的 timerBucket
+	lock(&tb.lock)
+	ok := tb.addtimerLocked(t) // 将新的 timer 绑在 tb 中
+	unlock(&tb.lock)
+  // ...
+}
+
+func (tb *timersBucket) addtimerLocked(t *timer) bool {
+	// when must never be negative; otherwise timerproc will overflow
+	// during its delta calculation and never expire other runtime timers.
+	if t.when < 0 {
+		t.when = 1<<63 - 1
+	}
+	t.i = len(tb.t)
+	tb.t = append(tb.t, t)
+	if !siftupTimer(tb.t, t.i) { // 通过 t.when 整理 tb 堆
+		return false
+	}
+	if t.i == 0 { // t 被设置到首位, 则尝试启动该 t
+		// siftup moved to top: new earliest deadline.
+		if tb.sleeping && tb.sleepUntil > t.when {
+			tb.sleeping = false
+			notewakeup(&tb.waitnote)
+		}
+		if tb.rescheduling {
+			tb.rescheduling = false
+			goready(tb.gp, 0)
+		}
+		if !tb.created {
+			tb.created = true
+			go timerproc(tb)
+		}
+	}
+	return true
+}
+```
+
+#### 1.15
+
+[计时器](https://golang.design/under-the-hood/zh-cn/part2runtime/ch06sched/timer/)
+
+![timer 状态转换](timers.png)
 
 ## Go Ast
 
@@ -1211,6 +1276,11 @@ user code             |2) casgstatus(_g_, _Grunning, _Gsyscall)             |
 
 - G 在进入 Gsyscall(entersyscall) 后会剥离 P , 只与 M 结合, 随后 P 继续找其他的 runnable G
 
+#### Syscall 与 RawSyscall
+
+- Syscall 在进入系统调用的时候, 调用了 `runtime·entersyscall(SB)` 函数, 在结束系统调用的时候调用了 `runtime·exitsyscall(SB)` ;做到进入和退出 syscall 的时候通知 runtime
+- 这两个函数 `runtime·entersyscall` 和 `runtime·exitsyscall` 的实现在 proc.go 文件里面; 其实在 `runtime·entersyscall` 函数里面, 通知系统调用时候, 是会将 g 的 M 的 P 解绑, P 可以去继续获取 M 执行其余的 g , 这样提升效率; 所以如果用户代码使用了 RawSyscall 来做一些阻塞的系统调用，是有可能阻塞其它的 g 的; RawSyscall 只是为了在执行那些一定 **不会阻塞的系统调用** 时, 能节省两次对 runtime 的函数调用消耗
+
 ### math/rand
 
 - 全局的 `rand.globalRand` 使用 `lockedSource` 为 source
@@ -1385,6 +1455,9 @@ func poolCleanup() {
 func (p *Pool) Put(x interface{}) {}
 ```
 
+
+#### Time
+
 ```go
 // 获取下一个月的时间
 now := time.Date(2021, 5, 31, 0, 0, 0, 0, time.Local)
@@ -1396,3 +1469,24 @@ now.AddDate(0, 1, 0)
 y, m, _ := now.Date()
 time.Date(y, m+2, 1, 0, 0, 0, 0, time.Local).AddDate(0, 0, -1)
 ```
+
+## 内存分配器
+
+![GO 内存分配](mem-struct.png)
+
+Go 的内存分配器主要包含以下几个核心组件:
+- heapArena: 保留整个虚拟地址空间; 64bit-64M
+- mheap: 分配的堆, 在页大小为 8KB 的粒度上进行管理
+- mspan: 是 mheap 上管理的一连串的页; < 32k
+- mcentral: 收集了给定大小等级的所有 span
+- mcache: 为 per-P 的缓存
+
+### 分配
+
+#### fixalloc
+
+> 自由表策略
+
+#### linearAlloc
+
+> 线性分配策略
