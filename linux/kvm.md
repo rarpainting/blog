@@ -14,7 +14,7 @@
 		- [硬件辅助的全虚拟化](#硬件辅助的全虚拟化)
 			- [Intel-VT(Virtualization Technology)](#intel-vtvirtualization-technology)
 		- [SMP MPP NUMA](#smp-mpp-numa)
-			- [SMP](#smp)
+			- [SMP/UMA](#smpuma)
 			- [MPP](#mpp)
 			- [NUMA](#numa)
 		- [KVM 的 CPU 虚拟化](#kvm-的-cpu-虚拟化)
@@ -161,33 +161,43 @@ VM-exit: 调用 `VMCALL` 指令调用 VMM 服务, 硬件挂起 Guest OS, 切换�
 
 ### SMP MPP NUMA
 
-#### SMP
+#### SMP/UMA
+
+![uma-architecture](uma-architecture.png)
 
 多处理器架构
 
-所有 CPU 共享全部资源(总线, 内存, IO 系统等) 操作系统或数据库只有一个副本
-
-多个 CPU 之间没有区别, 平等的访问内存 外设 唯一一个操作系统
-
-扩展能力有限, SMP 服务器 CPU 利用率最好在 2 到 4 个 CPU
+- 所有 CPU 共享全部资源(总线, 内存, IO 系统等) 操作系统或数据库只有一个副本
+- 多个 CPU 之间没有区别, 平等的访问内存 外设 唯一一个操作系统
+- 扩展能力有限, SMP 服务器 CPU 利用率最好在 2 到 4 个 CPU
 
 #### MPP
 
 海量并行处理结构: 分布式存储器模式
 
-一个分布式存储器模式, 具有多个节点, 每个节点都有自己的(不共享的)存储器
-
-能配置为 SMP 结构, 也能配置为非 SMP 结构
-
-MPP 能理解为单一 SMP 的横向扩展集群, 需要软件实现
+- 一个分布式存储器模式, 具有多个节点, 每个节点都有自己的(不共享的)存储器
+- 能配置为 SMP 结构, 也能配置为非 SMP 结构
+- MPP 能理解为单一 SMP 的横向扩展集群, 需要软件实现
 
 #### NUMA
 
+![numa-architecture](numa-architecture.png)
+
 非一致存储访问结构
 
-由多个 SMP 服务器通过一定的节点以**互联网**的形式连接, 协同工作, 从用户的角度是一个完整的服务器系统
+- 由多个 SMP 服务器通过一定的节点以**互联网**的形式连接, 协同工作, 从用户的角度是一个完整的服务器系统
+- 多个 SMP 系统通过节点互联网连接而成, 每个节点都优先访问自己的本地资源(内存, 存储等), 当本地内存不足时通过其它 NUMA 上分配内存工作
+  - 远程 NUMA 调用是跨网络调用, 因此除了 NUMA 节点本身外, 调用性能还会受到 NUMA 网络性能的影响
 
-多个 SMP 系统通过节点互联网连接而成, 每个节点都只访问自己的本地资源(内存, 存储等), 是一种完全 **无共享(Share Nothing)** 结构
+linux - zone_reclaim_mode: 它用来管理当一个内存区域(zone)内部的内存耗尽时, 是从其内部进行内存回收还是可以从其他zone进行回收(Zone_reclaim_mode allows someone to set more or less aggressive approaches to reclaim memory when a zone runs out of memory); 参数选择:
+- 0 = Allocate from all nodes before reclaiming memory
+- 1 = Reclaim memory from local node vs allocating from next node
+- 2 = Zone reclaim writes dirty pages out
+- 4 = Zone reclaim swaps pages
+
+mysql - innodb_numa_interleave
+
+![Broadwell_HCC_Architecture](03-05-Broadwell_HCC_Architecture.svg)
 
 ### KVM 的 CPU 虚拟化
 
