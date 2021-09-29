@@ -1,5 +1,16 @@
 # Linux
 
+<!-- TOC -->
+
+- [Linux](#linux)
+	- [fork / vfork / clone](#fork--vfork--clone)
+		- [copy-on-write/写时复制](#copy-on-write写时复制)
+		- [vfork](#vfork)
+		- [clone](#clone)
+	- [Connect](#connect)
+
+<!-- /TOC -->
+
 ## fork / vfork / clone
 
 三者底层调用的都是 `do_fork`
@@ -48,3 +59,9 @@
 ```c
 int clone(int (fn)(void ), void *child_stack, int flags, void *arg);
 ```
+
+## Connect
+
+四元组: (src_ip, src_port, dst_ip, dst_port)
+
+- TCP 以四元组定义唯一的一个连接
