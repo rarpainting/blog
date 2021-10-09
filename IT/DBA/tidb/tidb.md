@@ -37,9 +37,16 @@
 			- [最大最小消除](#最大最小消除)
 			- [投影消除](#投影消除)
 			- [谓词下推](#谓词下推)
+			- [外连接消除](#外连接消除)
+			- [聚合消除](#聚合消除)
+			- [子查询优化/去相关](#子查询优化去相关)
 			- [构建节点属性](#构建节点属性)
 		- [物理优化 -- CBO/cost based optimization](#物理优化----cbocost-based-optimization)
 			- [代价评估](#代价评估)
+				- [统计信息](#统计信息)
+				- [Expected Count](#expected-count)
+				- [Task](#task)
+				- [Prune Properties](#prune-properties)
 	- [Hash Join](#hash-join)
 		- [Classic Hash Join](#classic-hash-join)
 		- [Grace Hash Join](#grace-hash-join)
@@ -52,7 +59,7 @@
 	- [Chuck 和执行框架](#chuck-和执行框架)
 		- [Column](#column)
 	- [Index Lookup Join](#index-lookup-join)
-	- [统计信息](#统计信息)
+	- [统计信息](#统计信息-1)
 		- [蓄水池抽样](#蓄水池抽样)
 		- [Count-Min Sketch](#count-min-sketch)
 		- [列直方图](#列直方图)
@@ -715,15 +722,49 @@ func (p *LogicalJoin) PruneColumns(parentUsedCols []*expression.Column) error
 
 #### 投影消除
 
+消除不必要的 Projection 操作
+
 ```go
 func (pe *projectionEliminater) eliminate(p LogicalPlan, replace map[string]*expression.Column, canEliminate bool) LogicalPlan
 ```
 
 #### 谓词下推
 
+将联合查询中的外连接修改成各个 table 的内连接再联合
+
 ```go
 func (p *baseLogicalPlan) PredicatePushDown(predicates []expression.Expression) ([]expression.Expression, LogicalPlan)
 ```
+
+#### 外连接消除
+
+外连接消除需要满足一定条件：
+
+- 条件 1: LogicalJoin的父亲算子只会用到 LogicalJoin 的 outer plan 所输出的列
+- 条件 2:
+  - 条件 2.1: LogicalJoin 中的 join key 在 inner plan 的输出结果中满足唯一性属性
+  - 条件 2.2: LogicalJoin 的父亲算子会对输入的记录去重
+
+条件 1 和条件 2 必须同时满足, 但条件 2.1 和条件 2.2 只需满足一条即可
+
+#### 聚合消除
+
+若 SQL 查询中 `Group By` 语句所使用的列是否具有唯一性属性, 则将执行计划中相应的 `LogicalAggregation` 算子替换为 `LogicalProjection` 算子
+
+#### 子查询优化/去相关
+
+子查询分为非相关子查询和相关子查询，例如:
+
+```
+-- 非相关子查询
+select * from t1 where t1.a > (select t2.a from t2 limit 1);
+-- 相关子查询
+select * from t1 where t1.a > (select t2.a from t2 where t2.b > t1.b limit 1);
+```
+
+代码逻辑 : `expressionRewriter`
+
+TODO:
 
 #### 构建节点属性
 
@@ -753,7 +794,41 @@ func (p *baseLogicalPlan) PredicatePushDown(predicates []expression.Expression) 
 
 #### 代价评估
 
-TODO:
+##### 统计信息
+
+```go
+// statsInfo stores the  basic information of statistics for the plan's output. It is used for cost  estimation.
+type statsInfo struct {
+    count       float64
+    cardinality []float64
+}
+```
+
+##### Expected Count
+
+整个 SQL 结束前此算子期望读取的行数
+
+##### Task
+
+在代价评估时将物理算子关联到 `task` 这个对象结构
+
+`task` 结构类型:
+
+- cop single
+- cop double
+- root
+
+代价公式:
+
+```
+Cost(p) = N(p)*FN+M(p)*FM+C(p)*FC // 其中 N 表示网络开销,M 表示内存开销, C 表示 CPU 开销, F 表示因子
+```
+
+##### Prune Properties
+
+预处理 property: 裁剪掉物理计划中搜索路径上的分支
+
+- 有 n 个等式条件, 那么理论上会有 n! 种可能的 property
 
 ## Hash Join
 
