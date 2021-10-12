@@ -62,14 +62,27 @@
 - no-appendfsync-on-rewrite -- always / everysec 可能导致大量的磁盘读写(fsync),  设置 yes 在 BGSAVE 或 BGREWRITEAOF 时, 阻止主进程调用 fsync
 - auto-aof-rewrite-percentage(min-size) -- 以**最近一次**被重写的日志结果为基础, 当AOF日志以(指定百分比)增长时, redis 触发 BGREWRITEAOF 以一个(指定最小尺寸)重写日志文件,  (百分比为零默认禁用自动重写)
 
+### AOF 重写
+
+- AOF 重写阶段, 会同时写入到当前有效的 AOF 文件和 AOF 重写缓存
+- AOF 重写结束后, 将重写缓存中的数据写入到新的 AOF 文件中, 保证新 AOF 文件和数据库主进程的状态一致; 原子覆盖原有 AOF 文件, 完成新旧文件替换
+- 对 **主进程** 的影响: 在整个 AOF 重写及数据替换阶段, 添加了 **写入 AOF 重写缓存** 和 **新 AOF 替换 旧文件** 这两个需要阻塞进程的操作
+
 ## SLOWLOG -- 记录查询执行时间的日志系统
-	slow log 运行在内存中
+
+```
+  slow log 运行在内存中
+```
 
 - slowlog-log-slower-than (ms) -- 记录**执行时间**大于该设置的事务
 - slowlog-max-len -- slowlog -- 最多保存的日志数
 
 ## 虚拟内存配置
+
+```
 	...
+```
+
 ## ADVANCED CONFIG
 
 Hash 储存格式
