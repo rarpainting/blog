@@ -68,6 +68,12 @@
 - AOF 重写结束后, 将重写缓存中的数据写入到新的 AOF 文件中, 保证新 AOF 文件和数据库主进程的状态一致; 原子覆盖原有 AOF 文件, 完成新旧文件替换
 - 对 **主进程** 的影响: 在整个 AOF 重写及数据替换阶段, 添加了 **写入 AOF 重写缓存** 和 **新 AOF 替换 旧文件** 这两个需要阻塞进程的操作
 
+重写触发方式:
+- `BGREWRITEAO` 命令
+- 相关参数:
+  - `auto-aof-rewrite-percentage`
+  - `auto-aof-rewrite-min-size`
+
 ## SLOWLOG -- 记录查询执行时间的日志系统
 
 ```
