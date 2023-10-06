@@ -968,6 +968,13 @@ show index from table;
   - 根据创建联合索引的顺序, 以最左原则进行 where 检索, 比如 (age, name) 以 `age=1` 或 `age=1 and name='张三'` (同时 `name='张三' and age=1` 由于 server 会优化顺序, 与前者结果相同) 可以使用索引; 单以 name=‘张三’ 不会使用索引, 考虑到存储空间的问题, 还请根据业务需求, 将查找频繁的数据进行 **靠左** 创建索引
 4. 索引下推
   - `like 'hello%'and age > 10` 检索, MySQL 5.6 版本之前, 会对匹配的数据进行回表查询; 5.6 版本后, 会先过滤掉 age<10 的数据, 再进行回表查询, 减少回表率, 提升检索速度
+5. `change buffer(merge tree)`:
+  - `innodb_change_buffer_max_size` -- change buffer 占 buffer pool 的百分比(最高 100)
+  - **更新数据页时**, (如果数据页在内存中就直接更新;) 还没有在内存中的话, 在不影响数据一致性的前提下, InnoDB 会将这些更新操作缓存在 change buffer 中, 而不直接持久化
+  - 下次需要访问 查询 这个数据页的时候, 将数据页读入内存, change buffer 中与这个页有关的内容执行 merge
+  - **唯一索引** 需要保证索引的唯一性, 所有的更新操作都需要检查 唯一性约束, 因此唯一索引的更新不能触发 change buffer 优化
+
+![change buffer](u45zwcoilv.jpg)
 
 #### 字符串索引
 

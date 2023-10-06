@@ -33,12 +33,22 @@ Linux 提供了以下 7 种不同的命名空间
 ## 网络
 
 Docker 的网络模式
-- Host
+- None: 禁止网络功能 (For this container, disable all networking). 通常用在使用自定义网络驱动的情形; none 模式对 swarm services 不适用
+- Bridge:
+  - docker 默认的network driver; 如果不显示指定driver类型, docker 默认会使用bridge 模式的 network
+  - 通常, 当应用程序运行在独立的容器中, 并且要相互通信, 可以使用 bridge 模式
+  - Bridge 模式下容器与 docker host 的网络是相互隔离的
+- Host: Host 模式下, 独立的容器与 docker host 的网络隔离被移除, 容器直接使用 docker host 的 network
+- Overlay
+  - Overlay network 能够连通不同的 Docker daemon, 能够使 swarm service 之间能够相互通信
+  - Overlay network 也能够使 swarm service 与独立的容器连通, 能够使位于不同 Docker daemon 上的独立的容器连通
+  - Overlay 模式省去了容器之间操作系统层级的路由工作
+- Macvlan:
+  - Macvlan network能够给容器分配一个MAC地址, 使的此容器就像一个此网络上的物理设备
+  - Docker Daemon 可以通过 MAC 地址给容器路由消息
+  - 对于一些遗留的应用需要直接连接到物理网络而不是通过 docker host 的网络栈转发时, macvlan 驱动是最好的选择
 - Container
-- None
-- Bridge
-
----
+- Network plugins: 可以使用第三方的 network 插件
 
 ## CGoup(Control Group)
 

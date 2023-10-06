@@ -14,6 +14,7 @@
 			- [P/Processor](#pprocessor)
 			- [G/Goroutine](#ggoroutine)
 		- [抢占式](#抢占式)
+		- [Plugin](#plugin)
 	- [编译指示](#编译指示)
 		- [Timer](#timer)
 			- [1.12.17](#11217)
@@ -162,6 +163,152 @@ runtime 在初始化时启动 sysmon 线程, 周期性做 epoll 操作和 P 检�
 - 切换开销: goroutine 由 runtime 调度, 期间不需要经过 系统调用(syscall) , 切换开销小 ; 半协同半抢占, 因此切换少
 - 无时间片, 无优先级
 - 调度环节为发生 **函数调用(`morestack`)** 时, 即如果一个 G 长时间没有调用任何函数, 那么该 G 也不会被调度
+
+### Plugin
+
+```go
+
+// 这个结构没有绑定 h(dlopen) , 所以没有办法 close plugin
+// Plugin is a loaded Go plugin.
+type Plugin struct {
+	pluginpath string        // plugin 路径
+	err        string        // set if plugin failed to load // plugin 读取失败的错误
+	loaded     chan struct{} // closed when loaded
+	syms       map[string]interface{}                        // symbol 表
+}
+
+/*
+#cgo linux LDFLAGS: -ldl
+#include <dlfcn.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+#include <stdio.h>
+
+static uintptr_t pluginOpen(const char* path, char** err) {
+	void* h = dlopen(path, RTLD_NOW|RTLD_GLOBAL);
+	if (h == NULL) {
+		*err = (char*)dlerror();
+	}
+	return (uintptr_t)h;
+}
+
+static void* pluginLookup(uintptr_t h, const char* name, char** err) {
+	void* r = dlsym((void*)h, name);
+	if (r == NULL) {
+		*err = (char*)dlerror();
+	}
+	return r;
+}
+*/
+
+func open(name string) (*Plugin, error) {
+	cPath := make([]byte, C.PATH_MAX+1)
+	cRelName := make([]byte, len(name)+1)
+	copy(cRelName, name)
+
+  // 检查文件是否有效
+	if C.realpath(
+		(*C.char)(unsafe.Pointer(&cRelName[0])),
+		(*C.char)(unsafe.Pointer(&cPath[0]))) == nil {
+		return nil, errors.New(`plugin.Open("` + name + `"): realpath failed`)
+	}
+
+	filepath := C.GoString((*C.char)(unsafe.Pointer(&cPath[0])))
+
+	pluginsMu.Lock()
+	if p := plugins[filepath]; p != nil {
+		pluginsMu.Unlock()
+		if p.err != "" {
+			return nil, errors.New(`plugin.Open("` + name + `"): ` + p.err + ` (previous failure)`)
+		}
+    // ???
+		<-p.loaded
+		return p, nil
+	}
+	var cErr *C.char
+	h := C.pluginOpen((*C.char)(unsafe.Pointer(&cPath[0])), &cErr)
+	if h == 0 {
+		pluginsMu.Unlock()
+		return nil, errors.New(`plugin.Open("` + name + `"): ` + C.GoString(cErr))
+	}
+	// TODO(crawshaw): look for plugin note, confirm it is a Go plugin
+	// and it was built with the correct toolchain.
+	if len(name) > 3 && name[len(name)-3:] == ".so" {
+		name = name[:len(name)-3]
+	}
+	if plugins == nil {
+		plugins = make(map[string]*Plugin)
+	}
+	pluginpath, syms, errstr := lastmoduleinit()
+	if errstr != "" {
+		plugins[filepath] = &Plugin{
+			pluginpath: pluginpath,
+			err:        errstr,
+		}
+		pluginsMu.Unlock()
+		return nil, errors.New(`plugin.Open("` + name + `"): ` + errstr)
+	}
+	// This function can be called from the init function of a plugin.
+	// Drop a placeholder in the map so subsequent opens can wait on it.
+	p := &Plugin{
+		pluginpath: pluginpath,
+		loaded:     make(chan struct{}),
+	}
+	plugins[filepath] = p
+	pluginsMu.Unlock()
+
+	initStr := make([]byte, len(pluginpath)+6)
+	copy(initStr, pluginpath)
+	copy(initStr[len(pluginpath):], ".init")
+
+  // init 的 符号链接 转为 调用地址
+	initFuncPC := C.pluginLookup(h, (*C.char)(unsafe.Pointer(&initStr[0])), &cErr)
+	if initFuncPC != nil {
+		initFuncP := &initFuncPC
+		initFunc := *(*func())(unsafe.Pointer(&initFuncP))
+		initFunc() // 初始化 go 插件 ==> pkg.init()
+	}
+
+	// Fill out the value of each plugin symbol.
+	updatedSyms := map[string]interface{}{}
+  // 将 h 中的符号链接先初始化到 sym[1] ==> [typeOff(ptab.typ), func sym()]
+	for symName, sym := range syms {
+		isFunc := symName[0] == '.'
+		if isFunc {
+			delete(syms, symName)
+			symName = symName[1:]
+		}
+
+		fullName := pluginpath + "." + symName
+		cname := make([]byte, len(fullName)+1)
+		copy(cname, fullName)
+
+		p := C.pluginLookup(h, (*C.char)(unsafe.Pointer(&cname[0])), &cErr)
+		if p == nil {
+			return nil, errors.New(`plugin.Open("` + name + `"): could not find symbol ` + symName + `: ` + C.GoString(cErr))
+		}
+		valp := (*[2]unsafe.Pointer)(unsafe.Pointer(&sym))
+    /*
+      (valp)[0] ==> typeOff(ptab.typ)
+      里面保存的是 plugin链接表的 类型偏移
+    */
+		if isFunc {
+			(*valp)[1] = unsafe.Pointer(&p)
+		} else {
+			(*valp)[1] = p
+		}
+		// we can't add to syms during iteration as we'll end up processing
+		// some symbols twice with the inability to tell if the symbol is a function
+		updatedSyms[symName] = sym
+	}
+	p.syms = updatedSyms // 从代码上看 map元素 其实是同样的地址?
+
+	close(p.loaded) // closed when loaded
+	return p, nil
+}
+```
 
 ## 编译指示
 

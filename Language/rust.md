@@ -14,3 +14,9 @@ C++ 的 exception safety 机制:
 - `Strong exception safety`: 强异常安全保证, 可以保证异常发生的时候, 所有的状态都可以"回滚"到初始状态, 不会导致状态不一致问题
 - `Basic exception safety`: 基本异常安全保证, 可以保证异常发生的时候, 不会导致资源泄漏
 - `No exception safety`: 没有任何异常安全保证
+
+## 线程
+
+### 状态共享
+
+![状态共享](Snipaste_2022-08-21_17-28-21.png)
