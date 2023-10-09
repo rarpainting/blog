@@ -162,7 +162,7 @@ FROM sales
 
 > 注: Frame 定义并非所有窗口函数都适用; 比如 `ROW_NUMBER()`、`RANK()`、`LEAD()` 等; 这些函数总是应用于整个分区, 而非当前 Frame
 
-### 窗口函数 与 聚合函数
+### 窗口函数 与 聚合函数 (可能有误)
 
 ![SQL 各部分的逻辑执行顺序](v2-8faf44f913ce39eef7bab322e4a1b4f9_r.jpg)
 
@@ -171,6 +171,14 @@ FROM sales
 ```
 x(cross-product 笛卡尔积) -> σ(selection 选择) -> Group by -> Having -> π(projection 投影) -> Window -> Order by -> asc/desc
 ```
+
+```sql
+select ta.*, (@rowNum := @rowNum + 1) as rowNo
+      from ta, (select (@rowNum := 0)) tb
+      order by ta.score desc
+```
+
+在以上SQL, rowNum会得到正确的排序, 不符合严格的顺序标准, 原因是:???
 
 ### 窗口函数的执行
 
