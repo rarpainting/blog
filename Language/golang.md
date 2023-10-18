@@ -1617,6 +1617,32 @@ y, m, _ := now.Date()
 time.Date(y, m+2, 1, 0, 0, 0, 0, time.Local).AddDate(0, 0, -1)
 ```
 
+```go
+func Test1(t *testing.T) {
+	var ti time.Time
+	t.Log(ti)
+	t.Log(ti.Unix())
+	t.Log(ti.IsZero())
+
+	ta := time.Unix(0, 0)
+	t.Log(ta)
+	t.Log(ta.Unix())
+	t.Log(ta.IsZero())
+
+  // 如果需要在与DB交流, 则需要统一 `time.Time{}` 的形式, 便于使用 IsZero 判断
+}
+
+// go test -v -timeout 0 -tags localtest -run ^Test1$ code.miyachat.com/mizos/server/src/test
+// === RUN   Test1
+//     t_test.go:10: 0001-01-01 00:00:00 +0000 UTC
+//     t_test.go:11: -62135596800
+//     t_test.go:12: true
+//     t_test.go:14: 1970-01-01 08:00:00 +0800 CST
+//     t_test.go:15: 0
+//     t_test.go:16: false
+// --- PASS: Test1 (0.00s)
+```
+
 ## 内存分配器
 
 ![GO 内存分配](mem-struct.png)
